@@ -158,6 +158,12 @@ nsCookieBannerService::Observe(nsISupports* aSubject, const char* aTopic,
     return RemoveWebProgressListener(aSubject);
   }
 
+  // Clear the executed data for private session when the last private browsing
+  // session exits.
+  if (nsCRT::strcmp(aTopic, "last-pb-context-exited") == 0) {
+    return RemoveAllExecutedRecords(true);
+  }
+
   return NS_OK;
 }
 
@@ -208,6 +214,8 @@ nsresult nsCookieBannerService::Init() {
   obsSvc->AddObserver(this, OBSERVER_TOPIC_BC_ATTACHED, false);
   obsSvc->AddObserver(this, OBSERVER_TOPIC_BC_DISCARDED, false);
 
+  obsSvc->AddObserver(this, "last-pb-context-exited", false);
+
   return NS_OK;
 }
 
@@ -234,6 +242,8 @@ nsresult nsCookieBannerService::Shutdown() {
 
   obsSvc->RemoveObserver(this, OBSERVER_TOPIC_BC_ATTACHED);
   obsSvc->RemoveObserver(this, OBSERVER_TOPIC_BC_DISCARDED);
+
+  obsSvc->RemoveObserver(this, "last-pb-context-exited");
 
   return NS_OK;
 }
@@ -424,9 +434,13 @@ nsresult nsCookieBannerService::GetClickRulesForDomainInternal(
       aDomain, aIsTopLevel, getter_AddRefs(ruleForDomain), aReportTelemetry);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  bool useGlobalSubFrameRules =
+      StaticPrefs::cookiebanners_service_enableGlobalRules_subFrames();
+
   // Extract click rule from an nsICookieBannerRule and if found append it to
   // the array returned.
-  auto appendClickRule = [&](const nsCOMPtr<nsICookieBannerRule>& bannerRule) {
+  auto appendClickRule = [&](const nsCOMPtr<nsICookieBannerRule>& bannerRule,
+                             bool isGlobal) {
     nsCOMPtr<nsIClickRule> clickRule;
     rv = bannerRule->GetClickRule(getter_AddRefs(clickRule));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -446,17 +460,33 @@ nsresult nsCookieBannerService::GetClickRulesForDomainInternal(
         (runContext == nsIClickRule::RUN_TOP && aIsTopLevel) ||
         (runContext == nsIClickRule::RUN_CHILD && !aIsTopLevel);
 
-    if (runContextMatchesRule) {
-      aRules.AppendElement(clickRule);
+    if (!runContextMatchesRule) {
+      return NS_OK;
     }
 
+    // If global sub-frame rules are disabled skip adding them.
+    if (!useGlobalSubFrameRules && isGlobal && !aIsTopLevel) {
+      if (MOZ_LOG_TEST(gCookieBannerLog, LogLevel::Debug)) {
+        nsAutoCString ruleId;
+        rv = bannerRule->GetId(ruleId);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        MOZ_LOG(gCookieBannerLog, LogLevel::Debug,
+                ("%s. Skip adding global sub-frame rule: %s.", __FUNCTION__,
+                 ruleId.get()));
+      }
+
+      return NS_OK;
+    }
+
+    aRules.AppendElement(clickRule);
     return NS_OK;
   };
 
   // If there is a domain-specific rule it takes precedence over the global
   // rules.
   if (ruleForDomain) {
-    return appendClickRule(ruleForDomain);
+    return appendClickRule(ruleForDomain, false);
   }
 
   if (!StaticPrefs::cookiebanners_service_enableGlobalRules()) {
@@ -466,7 +496,7 @@ nsresult nsCookieBannerService::GetClickRulesForDomainInternal(
 
   // Append all global click rules.
   for (nsICookieBannerRule* globalRule : mGlobalRules.Values()) {
-    rv = appendClickRule(globalRule);
+    rv = appendClickRule(globalRule, true);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -879,6 +909,122 @@ nsCookieBannerService::RemoveAllDomainPrefs(const bool aIsPrivate) {
 
   nsresult rv = mDomainPrefService->RemoveAll(aIsPrivate);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCookieBannerService::HasExecutedForSite(const nsACString& aSite,
+                                          const bool aIsTopLevel,
+                                          const bool aIsPrivate,
+                                          bool* aHasExecuted) {
+  if (!mIsInitialized) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  auto entry = mExecutedDataForSites.MaybeGet(aSite);
+
+  if (!entry) {
+    return NS_OK;
+  }
+
+  auto& data = entry.ref();
+
+  if (aIsPrivate) {
+    *aHasExecuted = aIsTopLevel ? data.hasExecutedInTopPrivate
+                                : data.hasExecutedInFramePrivate;
+  } else {
+    *aHasExecuted =
+        aIsTopLevel ? data.hasExecutedInTop : data.hasExecutedInFrame;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCookieBannerService::MarkSiteExecuted(const nsACString& aSite,
+                                        const bool aIsTopLevel,
+                                        const bool aIsPrivate) {
+  NS_ENSURE_TRUE(!aSite.IsEmpty(), NS_ERROR_INVALID_ARG);
+
+  if (!mIsInitialized) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  auto& data = mExecutedDataForSites.LookupOrInsert(aSite);
+
+  if (aIsPrivate) {
+    if (aIsTopLevel) {
+      data.hasExecutedInTopPrivate = true;
+    } else {
+      data.hasExecutedInFramePrivate = true;
+    }
+  } else {
+    if (aIsTopLevel) {
+      data.hasExecutedInTop = true;
+    } else {
+      data.hasExecutedInFrame = true;
+    }
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCookieBannerService::RemoveExecutedRecordForSite(const nsACString& aSite,
+                                                   const bool aIsPrivate) {
+  if (!mIsInitialized) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  auto entry = mExecutedDataForSites.Lookup(aSite);
+
+  if (!entry) {
+    return NS_OK;
+  }
+
+  auto data = entry.Data();
+
+  if (aIsPrivate) {
+    data.hasExecutedInTopPrivate = false;
+    data.hasExecutedInFramePrivate = false;
+  } else {
+    data.hasExecutedInTop = false;
+    data.hasExecutedInFrame = false;
+  }
+
+  // We can remove the entry if there is no flag set after removal.
+  if (!data.hasExecutedInTop && !data.hasExecutedInFrame &&
+      !data.hasExecutedInTopPrivate && !data.hasExecutedInFramePrivate) {
+    entry.Remove();
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCookieBannerService::RemoveAllExecutedRecords(const bool aIsPrivate) {
+  if (!mIsInitialized) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  for (auto iter = mExecutedDataForSites.Iter(); !iter.Done(); iter.Next()) {
+    auto& data = iter.Data();
+    // Clear the flags.
+    if (aIsPrivate) {
+      data.hasExecutedInTopPrivate = false;
+      data.hasExecutedInFramePrivate = false;
+    } else {
+      data.hasExecutedInTop = false;
+      data.hasExecutedInFrame = false;
+    }
+
+    // Remove the entry if there is no flag set.
+    if (!data.hasExecutedInTop && !data.hasExecutedInFrame &&
+        !data.hasExecutedInTopPrivate && !data.hasExecutedInFramePrivate) {
+      iter.Remove();
+    }
+  }
 
   return NS_OK;
 }

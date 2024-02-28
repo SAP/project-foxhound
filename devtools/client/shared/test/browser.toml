@@ -121,6 +121,7 @@ skip-if = ["verify"]
 ["browser_filter-editor-06.js"]
 
 ["browser_filter-editor-07.js"]
+fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_filter-editor-08.js"]
 
@@ -140,6 +141,7 @@ skip-if = ["verify"]
 skip-if = [
   "apple_catalina", # Bug 1713158
   "os == 'linux' && !asan && !debug && !swgl && !ccov", # Bug 1721159
+  "a11y_checks && debug", # Bugs 1849028 and 1858041 for causing intermittent test results
 ]
 
 ["browser_html_tooltip-03.js"]
@@ -312,5 +314,7 @@ skip-if = ["os == 'win'"] # Win: bug 1404197
 ["browser_treeWidget_basic.js"]
 
 ["browser_treeWidget_keyboard_interaction.js"]
+fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_treeWidget_mouse_interaction.js"]
+fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled

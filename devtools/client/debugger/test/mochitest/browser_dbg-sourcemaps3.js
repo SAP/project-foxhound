@@ -10,6 +10,7 @@ requestLongerTimeout(2);
 
 // This source map does not have source contents, so it's fetched separately
 add_task(async function () {
+  await pushPref("devtools.debugger.map-scopes-enabled", true);
   // NOTE: the CORS call makes the test run times inconsistent
   const dbg = await initDebugger(
     "doc-sourcemaps3.html",
@@ -17,7 +18,6 @@ add_task(async function () {
     "sorted.js",
     "test.js"
   );
-  dbg.actions.toggleMapScopes();
 
   ok(true, "Original sources exist");
   const sortedSrc = findSource(dbg, "sorted.js");
@@ -25,7 +25,7 @@ add_task(async function () {
   await selectSource(dbg, sortedSrc);
 
   // Test that breakpoint is not off by a line.
-  await addBreakpoint(dbg, sortedSrc, 9, 4);
+  await addBreakpoint(dbg, sortedSrc, 9, 5);
   is(dbg.selectors.getBreakpointCount(), 1, "One breakpoint exists");
   ok(
     dbg.selectors.getBreakpoint(
@@ -37,7 +37,7 @@ add_task(async function () {
   invokeInTab("test");
 
   await waitForPaused(dbg);
-  assertPausedAtSourceAndLine(dbg, sortedSrc.id, 9, 4);
+  assertPausedAtSourceAndLine(dbg, sortedSrc.id, 9, 5);
 
   is(getScopeNodeLabel(dbg, 1), "Block");
   is(getScopeNodeLabel(dbg, 2), "na");

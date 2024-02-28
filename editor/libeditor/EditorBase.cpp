@@ -1560,7 +1560,11 @@ bool EditorBase::CheckForClipboardCommandListener(
     return false;
   }
 
-  RefPtr<EventTarget> et = GetDOMEventTarget();
+  RefPtr<EventTarget> et = IsHTMLEditor()
+                               ? AsHTMLEditor()->ComputeEditingHost(
+                                     HTMLEditor::LimitInBodyElement::No)
+                               : GetDOMEventTarget();
+
   while (et) {
     EventListenerManager* elm = et->GetExistingListenerManager();
     if (elm && elm->HasListenersFor(aCommand)) {
@@ -4060,6 +4064,8 @@ EditorBase::CreateTransactionForCollapsedRange(
     // of previous editable content.
     nsIContent* previousEditableContent = HTMLEditUtils::GetPreviousContent(
         *point.GetContainer(), {WalkTreeOption::IgnoreNonEditableNode},
+        IsTextEditor() ? BlockInlineCheck::UseHTMLDefaultStyle
+                       : BlockInlineCheck::UseComputedDisplayOutsideStyle,
         anonymousDivOrEditingHost);
     if (!previousEditableContent) {
       NS_WARNING("There was no editable content before the collapsed range");
@@ -4108,6 +4114,8 @@ EditorBase::CreateTransactionForCollapsedRange(
     // next editable content.
     nsIContent* nextEditableContent = HTMLEditUtils::GetNextContent(
         *point.GetContainer(), {WalkTreeOption::IgnoreNonEditableNode},
+        IsTextEditor() ? BlockInlineCheck::UseHTMLDefaultStyle
+                       : BlockInlineCheck::UseComputedDisplayOutsideStyle,
         anonymousDivOrEditingHost);
     if (!nextEditableContent) {
       NS_WARNING("There was no editable content after the collapsed range");
@@ -4175,9 +4183,11 @@ EditorBase::CreateTransactionForCollapsedRange(
         aHowToHandleCollapsedRange == HowToHandleCollapsedRange::ExtendBackward
             ? HTMLEditUtils::GetPreviousContent(
                   point, {WalkTreeOption::IgnoreNonEditableNode},
+                  BlockInlineCheck::UseComputedDisplayOutsideStyle,
                   anonymousDivOrEditingHost)
             : HTMLEditUtils::GetNextContent(
                   point, {WalkTreeOption::IgnoreNonEditableNode},
+                  BlockInlineCheck::UseComputedDisplayOutsideStyle,
                   anonymousDivOrEditingHost);
     if (!editableContent) {
       NS_WARNING("There was no editable content around the collapsed range");
@@ -4191,9 +4201,11 @@ EditorBase::CreateTransactionForCollapsedRange(
                   HowToHandleCollapsedRange::ExtendBackward
               ? HTMLEditUtils::GetPreviousContent(
                     *editableContent, {WalkTreeOption::IgnoreNonEditableNode},
+                    BlockInlineCheck::UseComputedDisplayOutsideStyle,
                     anonymousDivOrEditingHost)
               : HTMLEditUtils::GetNextContent(
                     *editableContent, {WalkTreeOption::IgnoreNonEditableNode},
+                    BlockInlineCheck::UseComputedDisplayOutsideStyle,
                     anonymousDivOrEditingHost);
     }
     if (!editableContent) {
@@ -4557,7 +4569,7 @@ nsresult EditorBase::HandleDropEvent(DragEvent* aDropEvent) {
   // same document, jump through some hoops to determine if mouse is over
   // selection (bail) and whether user wants to copy selection or delete it.
   if (sourceNode && sourceNode->IsEditable() && srcdoc == document) {
-    bool isPointInSelection = EditorUtils::IsPointInSelection(
+    bool isPointInSelection = nsContentUtils::IsPointInSelection(
         SelectionRef(), *droppedAt.GetContainer(), droppedAt.Offset());
     if (isPointInSelection) {
       // If source document and destination document is same and dropping
@@ -6743,8 +6755,8 @@ void EditorBase::TopLevelEditSubActionData::WillDeleteContent(
 }
 
 void EditorBase::TopLevelEditSubActionData::DidSplitContent(
-    EditorBase& aEditorBase, nsIContent& aSplitContent, nsIContent& aNewContent,
-    SplitNodeDirection aSplitNodeDirection) {
+    EditorBase& aEditorBase, nsIContent& aSplitContent,
+    nsIContent& aNewContent) {
   MOZ_ASSERT(aEditorBase.AsHTMLEditor());
 
   if (!aEditorBase.mInitSucceeded || aEditorBase.Destroyed()) {
@@ -6755,14 +6767,9 @@ void EditorBase::TopLevelEditSubActionData::DidSplitContent(
     return;  // Temporarily disabled by edit sub-action handler.
   }
 
-  DebugOnly<nsresult> rvIgnored =
-      aSplitNodeDirection == SplitNodeDirection::LeftNodeIsNewOne
-          ? AddRangeToChangedRange(*aEditorBase.AsHTMLEditor(),
-                                   EditorRawDOMPoint(&aNewContent, 0),
-                                   EditorRawDOMPoint(&aSplitContent, 0))
-          : AddRangeToChangedRange(*aEditorBase.AsHTMLEditor(),
-                                   EditorRawDOMPoint::AtEndOf(aSplitContent),
-                                   EditorRawDOMPoint::AtEndOf(aNewContent));
+  DebugOnly<nsresult> rvIgnored = AddRangeToChangedRange(
+      *aEditorBase.AsHTMLEditor(), EditorRawDOMPoint::AtEndOf(aSplitContent),
+      EditorRawDOMPoint::AtEndOf(aNewContent));
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
                        "TopLevelEditSubActionData::AddRangeToChangedRange() "
                        "failed, but ignored");

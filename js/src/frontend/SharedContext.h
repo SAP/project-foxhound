@@ -20,7 +20,7 @@
 #include "frontend/ParserAtom.h"          // TaggedParserAtomIndex
 #include "frontend/ScopeIndex.h"          // ScopeIndex
 #include "frontend/ScriptIndex.h"         // ScriptIndex
-#include "js/ColumnNumber.h"              // JS::LimitedColumnNumberZeroOrigin
+#include "js/ColumnNumber.h"              // JS::LimitedColumnNumberOneOrigin
 #include "vm/FunctionFlags.h"             // js::FunctionFlags
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
 #include "vm/Scope.h"
@@ -628,7 +628,7 @@ class FunctionBox : public SuspendableContext {
   bool useAsmOrInsideUseAsm() const { return useAsm; }
 
   void setStart(uint32_t offset, uint32_t line,
-                JS::LimitedColumnNumberZeroOrigin column) {
+                JS::LimitedColumnNumberOneOrigin column) {
     MOZ_ASSERT(!isScriptExtraFieldCopiedToStencil);
     extent_.sourceStart = offset;
     extent_.lineno = line;

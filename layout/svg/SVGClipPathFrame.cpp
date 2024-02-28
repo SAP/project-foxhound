@@ -102,14 +102,13 @@ void SVGClipPathFrame::PaintChildren(gfxContext& aMaskContext,
   SVGClipPathFrame* clipPathThatClipsClipPath;
   // XXX check return value?
   SVGObserverUtils::GetAndObserveClipPath(this, &clipPathThatClipsClipPath);
-  SVGUtils::MaskUsage maskUsage;
-  SVGUtils::DetermineMaskUsage(this, true, maskUsage);
+  SVGUtils::MaskUsage maskUsage = SVGUtils::DetermineMaskUsage(this, true);
 
   gfxGroupForBlendAutoSaveRestore autoGroupForBlend(&aMaskContext);
-  if (maskUsage.shouldApplyClipPath) {
+  if (maskUsage.ShouldApplyClipPath()) {
     clipPathThatClipsClipPath->ApplyClipPath(aMaskContext, aClippedFrame,
                                              aMatrix);
-  } else if (maskUsage.shouldGenerateClipMaskLayer) {
+  } else if (maskUsage.ShouldGenerateClipMaskLayer()) {
     RefPtr<SourceSurface> maskSurface = clipPathThatClipsClipPath->GetClipMask(
         aMaskContext, aClippedFrame, aMatrix);
     // We want the mask to be untransformed so use the inverse of the current
@@ -125,7 +124,7 @@ void SVGClipPathFrame::PaintChildren(gfxContext& aMaskContext,
     PaintFrameIntoMask(kid, aClippedFrame, aMaskContext);
   }
 
-  if (maskUsage.shouldApplyClipPath) {
+  if (maskUsage.ShouldApplyClipPath()) {
     aMaskContext.PopClip();
   }
 }
@@ -143,6 +142,9 @@ void SVGClipPathFrame::PaintClipMask(gfxContext& aMaskContext,
                                         &sRefChainLengthCounter);
   if (MOZ_UNLIKELY(!refChainGuard.Reference())) {
     return;  // Break reference chain
+  }
+  if (!IsValid()) {
+    return;
   }
 
   DrawTarget* maskDT = aMaskContext.GetDrawTarget();
@@ -181,14 +183,13 @@ void SVGClipPathFrame::PaintFrameIntoMask(nsIFrame* aFrame,
     return;
   }
 
-  SVGUtils::MaskUsage maskUsage;
-  SVGUtils::DetermineMaskUsage(aFrame, true, maskUsage);
+  SVGUtils::MaskUsage maskUsage = SVGUtils::DetermineMaskUsage(aFrame, true);
   gfxGroupForBlendAutoSaveRestore autoGroupForBlend(&aTarget);
-  if (maskUsage.shouldApplyClipPath) {
+  if (maskUsage.ShouldApplyClipPath()) {
     clipPathThatClipsChild->ApplyClipPath(
         aTarget, aClippedFrame,
         SVGUtils::GetTransformMatrixInUserSpace(aFrame) * mMatrixForChildren);
-  } else if (maskUsage.shouldGenerateClipMaskLayer) {
+  } else if (maskUsage.ShouldGenerateClipMaskLayer()) {
     RefPtr<SourceSurface> maskSurface = clipPathThatClipsChild->GetClipMask(
         aTarget, aClippedFrame,
         SVGUtils::GetTransformMatrixInUserSpace(aFrame) * mMatrixForChildren);
@@ -218,7 +219,7 @@ void SVGClipPathFrame::PaintFrameIntoMask(nsIFrame* aFrame,
   // only the geometry (opaque black) if set.
   frame->PaintSVG(aTarget, toChildsUserSpace, imgParams);
 
-  if (maskUsage.shouldApplyClipPath) {
+  if (maskUsage.ShouldApplyClipPath()) {
     aTarget.PopClip();
   }
 }
@@ -251,6 +252,9 @@ bool SVGClipPathFrame::PointIsInsideClipPath(nsIFrame* aClippedFrame,
                                         &sRefChainLengthCounter);
   if (MOZ_UNLIKELY(!refChainGuard.Reference())) {
     return false;  // Break reference chain
+  }
+  if (!IsValid()) {
+    return false;
   }
 
   gfxMatrix matrix = GetClipPathTransform(aClippedFrame);
@@ -331,17 +335,6 @@ bool SVGClipPathFrame::IsTrivial(ISVGDisplayableFrame** aSingleChild) {
 }
 
 bool SVGClipPathFrame::IsValid() {
-  static int16_t sRefChainLengthCounter = AutoReferenceChainGuard::noChain;
-
-  // A clipPath can reference another clipPath, creating a chain of clipPaths
-  // that must all be applied.  We re-enter this method for each clipPath in a
-  // chain, so we need to protect against reference chain related crashes etc.:
-  AutoReferenceChainGuard refChainGuard(this, &mIsBeingProcessed,
-                                        &sRefChainLengthCounter);
-  if (MOZ_UNLIKELY(!refChainGuard.Reference())) {
-    return false;  // Break reference chain
-  }
-
   if (SVGObserverUtils::GetAndObserveClipPath(this, nullptr) ==
       SVGObserverUtils::eHasRefsSomeInvalid) {
     return false;

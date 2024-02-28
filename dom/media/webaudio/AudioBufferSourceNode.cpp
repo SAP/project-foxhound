@@ -68,10 +68,9 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
 
   void SetSourceTrack(AudioNodeTrack* aSource) { mSource = aSource; }
 
-  void RecvTimelineEvent(uint32_t aIndex,
-                         dom::AudioTimelineEvent& aEvent) override {
+  void RecvTimelineEvent(uint32_t aIndex, AudioParamEvent& aEvent) override {
     MOZ_ASSERT(mDestination);
-    WebAudioUtils::ConvertAudioTimelineEventToTicks(aEvent, mDestination);
+    aEvent.ConvertToTicks(mDestination);
     mRecomputeOutRate = true;
 
     switch (aIndex) {

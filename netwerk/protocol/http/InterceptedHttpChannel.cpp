@@ -41,8 +41,7 @@ InterceptedHttpChannel::InterceptedHttpChannel(
       mProgressReported(0),
       mSynthesizedStreamLength(-1),
       mResumeStartPos(0),
-      mCallingStatusAndProgress(false),
-      mTimeStamps() {
+      mCallingStatusAndProgress(false) {
   // Pre-set the creation and AsyncOpen times based on the original channel
   // we are intercepting.  We don't want our extra internal redirect to mask
   // any time spent processing the channel.
@@ -418,8 +417,7 @@ void InterceptedHttpChannel::MaybeCallStatusAndProgress() {
     nsCOMPtr<nsIRunnable> r = NewRunnableMethod(
         "InterceptedHttpChannel::MaybeCallStatusAndProgress", this,
         &InterceptedHttpChannel::MaybeCallStatusAndProgress);
-    MOZ_ALWAYS_SUCCEEDS(
-        SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
+    MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
 
     return;
   }
@@ -1194,6 +1192,20 @@ InterceptedHttpChannel::OnDataAvailable(nsIRequest* aRequest,
   }
 
   return mListener->OnDataAvailable(this, aInputStream, aOffset, aCount);
+}
+
+NS_IMETHODIMP
+InterceptedHttpChannel::OnDataFinished(nsresult aStatus) {
+  if (mCanceled || !mListener) {
+    return aStatus;
+  }
+  nsCOMPtr<nsIThreadRetargetableStreamListener> retargetableListener =
+      do_QueryInterface(mListener);
+  if (retargetableListener) {
+    return retargetableListener->OnDataFinished(aStatus);
+  }
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP

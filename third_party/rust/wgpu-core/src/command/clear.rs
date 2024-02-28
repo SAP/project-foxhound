@@ -79,7 +79,8 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         offset: BufferAddress,
         size: Option<BufferSize>,
     ) -> Result<(), ClearError> {
-        profiling::scope!("CommandEncoder::fill_buffer");
+        profiling::scope!("CommandEncoder::clear_buffer");
+        log::trace!("CommandEncoder::clear_buffer {dst:?}");
 
         let hub = A::hub(self);
         let mut token = Token::root();
@@ -158,6 +159,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         subresource_range: &ImageSubresourceRange,
     ) -> Result<(), ClearError> {
         profiling::scope!("CommandEncoder::clear_texture");
+        log::trace!("CommandEncoder::clear_texture {dst:?}");
 
         let hub = A::hub(self);
         let mut token = Token::root();
@@ -219,6 +221,9 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         }
 
         let device = &device_guard[cmd_buf.device_id.value];
+        if !device.is_valid() {
+            return Err(ClearError::InvalidDevice(cmd_buf.device_id.value.0));
+        }
 
         clear_texture(
             &*texture_guard,
@@ -326,7 +331,7 @@ fn clear_texture_via_buffer_copies<A: hal::Api>(
     let mut zero_buffer_copy_regions = Vec::new();
     let buffer_copy_pitch = alignments.buffer_copy_pitch.get() as u32;
     let (block_width, block_height) = texture_desc.format.block_dimensions();
-    let block_size = texture_desc.format.block_size(None).unwrap();
+    let block_size = texture_desc.format.block_copy_size(None).unwrap();
 
     let bytes_per_row_alignment = get_lowest_common_denom(buffer_copy_pitch, block_size);
 

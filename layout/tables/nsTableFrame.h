@@ -16,7 +16,6 @@
 #include "TableArea.h"
 
 struct BCPaintBorderAction;
-struct BCPropertyData;
 class nsTableCellFrame;
 class nsTableCellMap;
 class nsTableColFrame;
@@ -26,10 +25,10 @@ class nsTableColGroupFrame;
 class nsITableLayoutStrategy;
 
 namespace mozilla {
-
 class LogicalMargin;
 class PresShell;
 class WritingMode;
+struct TableBCData;
 struct TableReflowInput;
 
 namespace layers {
@@ -133,7 +132,6 @@ class nsTableFrame : public nsContainerFrame {
   typedef mozilla::image::ImgDrawResult ImgDrawResult;
   typedef mozilla::WritingMode WritingMode;
   typedef mozilla::LogicalMargin LogicalMargin;
-  typedef mozilla::TableReflowInput TableReflowInput;
 
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsTableFrame)
@@ -211,10 +209,6 @@ class nsTableFrame : public nsContainerFrame {
   nsMargin GetUsedBorder() const override;
   nsMargin GetUsedPadding() const override;
   nsMargin GetUsedMargin() const override;
-
-  // Get the offset from the border box to the area where the row groups fit
-  LogicalMargin GetChildAreaOffset(const WritingMode aWM,
-                                   const ReflowInput* aReflowInput) const;
 
   /** helper method to find the table parent of any table frame object */
   static nsTableFrame* GetTableFrame(nsIFrame* aSourceFrame);
@@ -493,8 +487,6 @@ class nsTableFrame : public nsContainerFrame {
                                 bool aAddToTable);
 
   void MatchCellMapToColCache(nsTableCellMap* aCellMap);
-  /** empty the column frame cache */
-  void ClearColCache();
 
   void DidResizeColumns();
 
@@ -579,15 +571,14 @@ class nsTableFrame : public nsContainerFrame {
   void SetRowInserted(bool aValue);
 
  protected:
-  // A helper function to reflow a header or footer with unconstrained height
-  // to see if it should be made repeatable.
-  // @return the desired height for a header or footer.
-  // XXX: This helper should be converted to logic coordinates.
-  nscoord SetupHeaderFooterChild(const TableReflowInput& aReflowInput,
+  // A helper function to reflow a header or footer with unconstrained
+  // block-size to see if it should be made repeatable.
+  // @return the desired block-size for a header or footer.
+  nscoord SetupHeaderFooterChild(const mozilla::TableReflowInput& aReflowInput,
                                  nsTableRowGroupFrame* aFrame);
 
-  void ReflowChildren(TableReflowInput& aReflowInput, nsReflowStatus& aStatus,
-                      nsIFrame*& aLastChildReflowed,
+  void ReflowChildren(mozilla::TableReflowInput& aReflowInput,
+                      nsReflowStatus& aStatus, nsIFrame*& aLastChildReflowed,
                       mozilla::OverflowAreas& aOverflowAreas);
 
   // This calls the col group and column reflow methods, which do two things:
@@ -637,57 +628,53 @@ class nsTableFrame : public nsContainerFrame {
      new height of the table after reflow. */
   void ProcessRowInserted(nscoord aNewHeight);
 
-  // WIDTH AND HEIGHT CALCULATION
-
- public:
-  // calculate the computed block-size of aFrame including its border and
-  // padding given its reflow input.
+ protected:
+  // Calculate the border-box block-size of this table, with the min-block-size,
+  // max-block-size, and intrinsic border-box block considered.
   nscoord CalcBorderBoxBSize(const ReflowInput& aReflowInput,
                              const LogicalMargin& aBorderPadding,
                              nscoord aIntrinsicBorderBoxBSize);
 
- protected:
-  // update the  desired block-size of this table taking into account the
-  // current reflow input, the table attributes and the content driven rowgroup
-  // bsizes this function can change the overflow area
-  void CalcDesiredBSize(const ReflowInput& aReflowInput,
-                        ReflowOutput& aDesiredSize);
+  // Calculate the desired block-size of this table.
+  //
+  // Note: this method is accurate after the children are reflowed. It might
+  // distribute extra block-size to table rows if the table has a specified
+  // block-size larger than the intrinsic block-size.
+  nscoord CalcDesiredBSize(const ReflowInput& aReflowInput);
 
   // The following is a helper for CalcDesiredBSize
-
   void DistributeBSizeToRows(const ReflowInput& aReflowInput, nscoord aAmount);
 
-  void PlaceChild(TableReflowInput& aReflowInput, nsIFrame* aKidFrame,
+  void PlaceChild(mozilla::TableReflowInput& aReflowInput, nsIFrame* aKidFrame,
                   const ReflowInput& aKidReflowInput,
                   const mozilla::LogicalPoint& aKidPosition,
                   const nsSize& aContainerSize, ReflowOutput& aKidDesiredSize,
                   const nsRect& aOriginalKidRect,
                   const nsRect& aOriginalKidInkOverflow);
-  void PlaceRepeatedFooter(TableReflowInput& aReflowInput,
-                           nsTableRowGroupFrame* aTfoot, nscoord aFooterHeight);
-
-  nsIFrame* GetFirstBodyRowGroupFrame();
+  void PlaceRepeatedFooter(mozilla::TableReflowInput& aReflowInput,
+                           nsTableRowGroupFrame* aTfoot, nscoord aFooterBSize);
 
  public:
-  typedef AutoTArray<nsTableRowGroupFrame*, 8> RowGroupArray;
-  /**
-   * Push all our child frames from the aRowGroups array, in order, starting
-   * from the frame at aPushFrom to the end of the array. The frames are put on
-   * our overflow list or moved directly to our next-in-flow if one exists.
-   */
+  using RowGroupArray = AutoTArray<nsTableRowGroupFrame*, 8>;
+
  protected:
-  void PushChildren(const RowGroupArray& aRowGroups, int32_t aPushFrom);
+  // Push all our non-repeatable child frames from the aRowGroups array, in
+  // order, starting from the frame at aPushFrom to the end of the array. The
+  // pushed frames are put on our overflow list. This is a table specific
+  // version that takes into account repeated header and footer frames when
+  // continuing table frames.
+  void PushChildrenToOverflow(const RowGroupArray& aRowGroups,
+                              size_t aPushFrom);
 
  public:
-  // put the children frames in the display order (e.g. thead before tbodies
-  // before tfoot). This will handle calling GetRowGroupFrame() on the
-  // children, and not append nulls, so the array is guaranteed to contain
-  // nsTableRowGroupFrames.  If there are multiple theads or tfoots, all but
-  // the first one are treated as tbodies instead.
-
-  void OrderRowGroups(RowGroupArray& aChildren,
-                      nsTableRowGroupFrame** aHead = nullptr,
-                      nsTableRowGroupFrame** aFoot = nullptr) const;
+  // Return the children frames in the display order (e.g. thead before tbodies
+  // before tfoot). If there are multiple theads or tfoots, all but the first
+  // one are treated as tbodies instead.
+  //
+  // @param aHead Outparam for the first thead if there is any.
+  // @param aFoot Outparam for the first tfoot if there is any.
+  RowGroupArray OrderedRowGroups(nsTableRowGroupFrame** aHead = nullptr,
+                                 nsTableRowGroupFrame** aFoot = nullptr) const;
 
   // Returns true if there are any cells above the row at
   // aRowIndex and spanning into the row at aRowIndex, the number of
@@ -751,11 +738,12 @@ class nsTableFrame : public nsContainerFrame {
 
   nsTArray<nsTableColFrame*>& GetColCache();
 
+  mozilla::TableBCData* GetTableBCData() const;
+
  protected:
   void SetBorderCollapse(bool aValue);
 
-  BCPropertyData* GetBCProperty() const;
-  BCPropertyData* GetOrCreateBCProperty();
+  mozilla::TableBCData* GetOrCreateTableBCData();
   void SetFullBCDamageArea();
   void CalcBCBorders();
 

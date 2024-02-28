@@ -208,7 +208,8 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   void ReallyCloseWindow();
 
   // nsISupports
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_IMETHOD_(void) DeleteCycleCollectable() override;
 
   // nsWrapperCache
   virtual JSObject* WrapObject(JSContext* cx,
@@ -982,14 +983,8 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   }
 
   // Dispatch a runnable related to the global.
-  virtual nsresult Dispatch(mozilla::TaskCategory aCategory,
-                            already_AddRefed<nsIRunnable>&& aRunnable) override;
-
-  virtual nsISerialEventTarget* EventTargetFor(
-      mozilla::TaskCategory aCategory) const override;
-
-  virtual mozilla::AbstractThread* AbstractMainThreadFor(
-      mozilla::TaskCategory aCategory) override;
+  nsresult Dispatch(already_AddRefed<nsIRunnable>&&) const final;
+  nsISerialEventTarget* SerialEventTarget() const final;
 
  protected:
   nsresult ProcessWidgetFullscreenRequest(FullscreenReason aReason,
@@ -1106,6 +1101,10 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
     // flag on this pres shell.
     nsWeakPtr mFullscreenPresShell;
   } mChromeFields;
+
+  // Whether the chrome window is currently in a full screen transition. This
+  // flag is updated from FullscreenTransitionTask.
+  bool mIsInFullScreenTransition = false;
 
   friend class nsDOMWindowUtils;
   friend class mozilla::dom::BrowsingContext;

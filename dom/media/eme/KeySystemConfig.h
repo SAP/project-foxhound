@@ -38,6 +38,7 @@ struct KeySystemConfig {
   static constexpr auto EME_CODEC_H264 = "h264"_ns;
   static constexpr auto EME_CODEC_VP8 = "vp8"_ns;
   static constexpr auto EME_CODEC_VP9 = "vp9"_ns;
+  static constexpr auto EME_CODEC_HEVC = "hevc"_ns;
 
   using EMEEncryptionSchemeString = nsCString;
   static constexpr auto EME_ENCRYPTION_SCHEME_CENC = "cenc"_ns;
@@ -94,7 +95,6 @@ struct KeySystemConfig {
       mCodecsDecrypted.AppendElement(aCodec);
     }
 
-#ifdef DEBUG
     EMECodecString GetDebugInfo() const {
       EMECodecString info;
       info.AppendLiteral("decoding: [");
@@ -111,7 +111,7 @@ struct KeySystemConfig {
       info.AppendLiteral("]");
       return info;
     }
-#endif
+
    private:
     nsTArray<EMECodecString> mCodecsDecoded;
     nsTArray<EMECodecString> mCodecsDecrypted;
@@ -154,9 +154,11 @@ struct KeySystemConfig {
   KeySystemConfig(KeySystemConfig&&) = default;
   KeySystemConfig& operator=(KeySystemConfig&&) = default;
 
-#ifdef DEBUG
   nsString GetDebugInfo() const;
-#endif
+
+  // Return true if the given key system is equal to `mKeySystem`, or it can be
+  // mapped to the same key system
+  bool IsSameKeySystem(const nsAString& aKeySystem) const;
 
   nsString mKeySystem;
   nsTArray<nsString> mInitDataTypes;

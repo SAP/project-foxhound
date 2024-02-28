@@ -103,7 +103,7 @@ static const char* kBaseFonts[] = {
 
 // Additional fonts provided by language-pack installation.
 static const char* kLangPackFonts[] = {
-  "Aharoni Bold",  // Hebrew Supplemental Fonts
+  "Aharoni",  // Hebrew Supplemental Fonts
   "Aldhabi",  // Arabic Script Supplemental Fonts
   "Andalus",  // Arabic Script Supplemental Fonts
   "Angsana New",  // Thai Supplemental Fonts
@@ -161,6 +161,7 @@ static const char* kLangPackFonts[] = {
   "MingLiU",  // Chinese (Traditional) Supplemental Fonts
   "MingLiU_HKSCS",  // Chinese (Traditional) Supplemental Fonts
   "Miriam",  // Hebrew Supplemental Fonts
+  "Miriam Fixed",  // Hebrew Supplemental Fonts
   "MoolBoran",  // Khmer Supplemental Fonts
   "MS Mincho",  // Japanese Supplemental Fonts
   "MS PMincho",  // Japanese Supplemental Fonts

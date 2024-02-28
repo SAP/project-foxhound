@@ -40,7 +40,7 @@ use function::*;
 use crate::{
     arena::{Arena, Handle, UniqueArena},
     proc::{Alignment, Layouter},
-    FastHashMap, FastHashSet,
+    FastHashMap, FastHashSet, FastIndexMap,
 };
 
 use num_traits::cast::FromPrimitive;
@@ -54,17 +54,13 @@ pub const SUPPORTED_CAPABILITIES: &[spirv::Capability] = &[
     spirv::Capability::CullDistance,
     spirv::Capability::SampleRateShading,
     spirv::Capability::DerivativeControl,
-    spirv::Capability::InterpolationFunction,
     spirv::Capability::Matrix,
     spirv::Capability::ImageQuery,
     spirv::Capability::Sampled1D,
     spirv::Capability::Image1D,
     spirv::Capability::SampledCubeArray,
     spirv::Capability::ImageCubeArray,
-    spirv::Capability::ImageMSArray,
     spirv::Capability::StorageImageExtendedFormats,
-    spirv::Capability::Sampled1D,
-    spirv::Capability::SampledCubeArray,
     spirv::Capability::Int8,
     spirv::Capability::Int16,
     spirv::Capability::Int64,
@@ -596,11 +592,7 @@ pub struct Frontend<I> {
     /// use that target block id.
     ///
     /// Used to preserve allocations between instruction parsing.
-    switch_cases: indexmap::IndexMap<
-        spirv::Word,
-        (BodyIndex, Vec<i32>),
-        std::hash::BuildHasherDefault<rustc_hash::FxHasher>,
-    >,
+    switch_cases: FastIndexMap<spirv::Word, (BodyIndex, Vec<i32>)>,
 
     /// Tracks access to gl_PerVertex's builtins, it is used to cull unused builtins since initializing those can
     /// affect performance and the mere presence of some of these builtins might cause backends to error since they
@@ -641,7 +633,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
             dummy_functions: Arena::new(),
             function_call_graph: GraphMap::new(),
             options: options.clone(),
-            switch_cases: indexmap::IndexMap::default(),
+            switch_cases: FastIndexMap::default(),
             gl_per_vertex_builtin_access: FastHashSet::default(),
         }
     }
@@ -793,7 +785,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
         id: spirv::Word,
         lookup: &LookupExpression,
         ctx: &mut BlockContext,
-        emitter: &mut super::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         body_idx: BodyIndex,
     ) -> Handle<crate::Expression> {
@@ -855,7 +847,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
     fn parse_expr_unary_op(
         &mut self,
         ctx: &mut BlockContext,
-        emitter: &mut super::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -884,7 +876,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
     fn parse_expr_binary_op(
         &mut self,
         ctx: &mut BlockContext,
-        emitter: &mut super::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -918,7 +910,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
     fn parse_expr_unary_op_sign_adjusted(
         &mut self,
         ctx: &mut BlockContext,
-        emitter: &mut super::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -973,7 +965,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
     fn parse_expr_binary_op_sign_adjusted(
         &mut self,
         ctx: &mut BlockContext,
-        emitter: &mut super::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -1051,7 +1043,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
     fn parse_expr_int_comparison(
         &mut self,
         ctx: &mut BlockContext,
-        emitter: &mut super::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -1122,7 +1114,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
     fn parse_expr_shift_op(
         &mut self,
         ctx: &mut BlockContext,
-        emitter: &mut super::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -1165,7 +1157,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
     fn parse_expr_derivative(
         &mut self,
         ctx: &mut BlockContext,
-        emitter: &mut super::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -1296,7 +1288,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
             })
         }
 
-        let mut emitter = super::Emitter::default();
+        let mut emitter = crate::proc::Emitter::default();
         emitter.start(ctx.expressions);
 
         // Find the `Body` to which this block contributes.
@@ -1399,7 +1391,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                         let init_id = self.next()?;
                         let lconst = self.lookup_constant.lookup(init_id)?;
                         Some(
-                            ctx.const_expressions
+                            ctx.expressions
                                 .append(crate::Expression::Constant(lconst.handle), span),
                         )
                     } else {
@@ -2563,7 +2555,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                         &mut block,
                         block_id,
                         body_idx,
-                        crate::UnaryOperator::Not,
+                        crate::UnaryOperator::BitwiseNot,
                     )?;
                 }
                 Op::ShiftRightLogical => {
@@ -2837,22 +2829,22 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
 
                     let value_lexp = self.lookup_expression.lookup(value_id)?;
                     let ty_lookup = self.lookup_type.lookup(result_type_id)?;
-                    let (kind, width) = match ctx.type_arena[ty_lookup.handle].inner {
-                        crate::TypeInner::Scalar { kind, width }
-                        | crate::TypeInner::Vector { kind, width, .. } => (kind, width),
-                        crate::TypeInner::Matrix { width, .. } => (crate::ScalarKind::Float, width),
+                    let scalar = match ctx.type_arena[ty_lookup.handle].inner {
+                        crate::TypeInner::Scalar(scalar)
+                        | crate::TypeInner::Vector { scalar, .. } => scalar,
+                        crate::TypeInner::Matrix { width, .. } => crate::Scalar::float(width),
                         _ => return Err(Error::InvalidAsType(ty_lookup.handle)),
                     };
 
                     let expr = crate::Expression::As {
                         expr: get_expr_handle!(value_id, value_lexp),
-                        kind,
-                        convert: if kind == crate::ScalarKind::Bool {
+                        kind: scalar.kind,
+                        convert: if scalar.kind == crate::ScalarKind::Bool {
                             Some(crate::BOOL_WIDTH)
                         } else if inst.op == Op::Bitcast {
                             None
                         } else {
-                            Some(width)
+                            Some(scalar.width)
                         },
                     };
                     self.lookup_expression.insert(
@@ -2957,7 +2949,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                         Glo::InverseSqrt => Mf::InverseSqrt,
                         Glo::MatrixInverse => Mf::Inverse,
                         Glo::Determinant => Mf::Determinant,
-                        Glo::Modf => Mf::Modf,
+                        Glo::ModfStruct => Mf::Modf,
                         Glo::FMin | Glo::UMin | Glo::SMin | Glo::NMin => Mf::Min,
                         Glo::FMax | Glo::UMax | Glo::SMax | Glo::NMax => Mf::Max,
                         Glo::FClamp | Glo::UClamp | Glo::SClamp | Glo::NClamp => Mf::Clamp,
@@ -2965,7 +2957,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                         Glo::Step => Mf::Step,
                         Glo::SmoothStep => Mf::SmoothStep,
                         Glo::Fma => Mf::Fma,
-                        Glo::Frexp => Mf::Frexp, //TODO: FrexpStruct?
+                        Glo::FrexpStruct => Mf::Frexp,
                         Glo::Ldexp => Mf::Ldexp,
                         Glo::Length => Mf::Length,
                         Glo::Distance => Mf::Distance,
@@ -2986,7 +2978,16 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                         Glo::UnpackSnorm2x16 => Mf::Unpack2x16snorm,
                         Glo::FindILsb => Mf::FindLsb,
                         Glo::FindUMsb | Glo::FindSMsb => Mf::FindMsb,
-                        _ => return Err(Error::UnsupportedExtInst(inst_id)),
+                        // TODO: https://github.com/gfx-rs/naga/issues/2526
+                        Glo::Modf | Glo::Frexp => return Err(Error::UnsupportedExtInst(inst_id)),
+                        Glo::IMix
+                        | Glo::PackDouble2x32
+                        | Glo::UnpackDouble2x32
+                        | Glo::InterpolateAtCentroid
+                        | Glo::InterpolateAtSample
+                        | Glo::InterpolateAtOffset => {
+                            return Err(Error::UnsupportedExtInst(inst_id))
+                        }
                     };
 
                     let arg_count = fun.argument_count();
@@ -3037,7 +3038,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                 // Relational and Logical Instructions
                 Op::LogicalNot => {
                     inst.expect(4)?;
-                    parse_expr_op!(crate::UnaryOperator::Not, UNARY)?;
+                    parse_expr_op!(crate::UnaryOperator::LogicalNot, UNARY)?;
                 }
                 Op::LogicalOr => {
                     inst.expect(5)?;
@@ -3253,7 +3254,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                                 } else {
                                     ctx.expressions.append(
                                         crate::Expression::Unary {
-                                            op: crate::UnaryOperator::Not,
+                                            op: crate::UnaryOperator::LogicalNot,
                                             expr: condition,
                                         },
                                         span,
@@ -3355,10 +3356,10 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                     let selector_lty = self.lookup_type.lookup(selector_lexp.type_id)?;
                     let selector_handle = get_expr_handle!(selector, selector_lexp);
                     let selector = match ctx.type_arena[selector_lty.handle].inner {
-                        crate::TypeInner::Scalar {
+                        crate::TypeInner::Scalar(crate::Scalar {
                             kind: crate::ScalarKind::Uint,
                             width: _,
-                        } => {
+                        }) => {
                             // IR expects a signed integer, so do a bitcast
                             ctx.expressions.append(
                                 crate::Expression::As {
@@ -3369,10 +3370,10 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                                 span,
                             )
                         }
-                        crate::TypeInner::Scalar {
+                        crate::TypeInner::Scalar(crate::Scalar {
                             kind: crate::ScalarKind::Sint,
                             width: _,
-                        } => selector_handle,
+                        }) => selector_handle,
                         ref other => unimplemented!("Unexpected selector {:?}", other),
                     };
 
@@ -4243,10 +4244,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
         self.switch(ModuleState::Type, inst.op)?;
         inst.expect(2)?;
         let id = self.next()?;
-        let inner = crate::TypeInner::Scalar {
-            kind: crate::ScalarKind::Bool,
-            width: crate::BOOL_WIDTH,
-        };
+        let inner = crate::TypeInner::Scalar(crate::Scalar::BOOL);
         self.lookup_type.insert(
             id,
             LookupType {
@@ -4274,14 +4272,14 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
         let id = self.next()?;
         let width = self.next()?;
         let sign = self.next()?;
-        let inner = crate::TypeInner::Scalar {
+        let inner = crate::TypeInner::Scalar(crate::Scalar {
             kind: match sign {
                 0 => crate::ScalarKind::Uint,
                 1 => crate::ScalarKind::Sint,
                 _ => return Err(Error::InvalidSign(sign)),
             },
             width: map_width(width)?,
-        };
+        });
         self.lookup_type.insert(
             id,
             LookupType {
@@ -4308,10 +4306,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
         inst.expect(3)?;
         let id = self.next()?;
         let width = self.next()?;
-        let inner = crate::TypeInner::Scalar {
-            kind: crate::ScalarKind::Float,
-            width: map_width(width)?,
-        };
+        let inner = crate::TypeInner::Scalar(crate::Scalar::float(map_width(width)?));
         self.lookup_type.insert(
             id,
             LookupType {
@@ -4339,15 +4334,14 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
         let id = self.next()?;
         let type_id = self.next()?;
         let type_lookup = self.lookup_type.lookup(type_id)?;
-        let (kind, width) = match module.types[type_lookup.handle].inner {
-            crate::TypeInner::Scalar { kind, width } => (kind, width),
+        let scalar = match module.types[type_lookup.handle].inner {
+            crate::TypeInner::Scalar(scalar) => scalar,
             _ => return Err(Error::InvalidInnerType(type_id)),
         };
         let component_count = self.next()?;
         let inner = crate::TypeInner::Vector {
             size: map_vector_size(component_count)?,
-            kind,
-            width,
+            scalar,
         };
         self.lookup_type.insert(
             id,
@@ -4380,10 +4374,10 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
 
         let vector_type_lookup = self.lookup_type.lookup(vector_type_id)?;
         let inner = match module.types[vector_type_lookup.handle].inner {
-            crate::TypeInner::Vector { size, width, .. } => crate::TypeInner::Matrix {
+            crate::TypeInner::Vector { size, scalar } => crate::TypeInner::Matrix {
                 columns: map_vector_size(num_columns)?,
                 rows: size,
-                width,
+                width: scalar.width,
             },
             _ => return Err(Error::InvalidInnerType(vector_type_id)),
         };
@@ -4760,11 +4754,10 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
             crate::Type {
                 name: None,
                 inner: {
-                    let kind = crate::ScalarKind::Float;
-                    let width = 4;
+                    let scalar = crate::Scalar::F32;
                     match dim.required_coordinate_size() {
-                        None => crate::TypeInner::Scalar { kind, width },
-                        Some(size) => crate::TypeInner::Vector { size, kind, width },
+                        None => crate::TypeInner::Scalar(scalar),
+                        Some(size) => crate::TypeInner::Vector { size, scalar },
                     }
                 },
             },
@@ -4869,30 +4862,30 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
         let ty = type_lookup.handle;
 
         let literal = match module.types[ty].inner {
-            crate::TypeInner::Scalar {
+            crate::TypeInner::Scalar(crate::Scalar {
                 kind: crate::ScalarKind::Uint,
                 width,
-            } => {
+            }) => {
                 let low = self.next()?;
                 match width {
                     4 => crate::Literal::U32(low),
                     _ => return Err(Error::InvalidTypeWidth(width as u32)),
                 }
             }
-            crate::TypeInner::Scalar {
+            crate::TypeInner::Scalar(crate::Scalar {
                 kind: crate::ScalarKind::Sint,
                 width,
-            } => {
+            }) => {
                 let low = self.next()?;
                 match width {
                     4 => crate::Literal::I32(low as i32),
                     _ => return Err(Error::InvalidTypeWidth(width as u32)),
                 }
             }
-            crate::TypeInner::Scalar {
+            crate::TypeInner::Scalar(crate::Scalar {
                 kind: crate::ScalarKind::Float,
                 width,
-            } => {
+            }) => {
                 let low = self.next()?;
                 match width {
                     4 => crate::Literal::F32(f32::from_bits(low)),
@@ -5166,17 +5159,15 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                         | crate::BuiltIn::SampleIndex
                         | crate::BuiltIn::VertexIndex
                         | crate::BuiltIn::PrimitiveIndex
-                        | crate::BuiltIn::LocalInvocationIndex => Some(crate::TypeInner::Scalar {
-                            kind: crate::ScalarKind::Uint,
-                            width: 4,
-                        }),
+                        | crate::BuiltIn::LocalInvocationIndex => {
+                            Some(crate::TypeInner::Scalar(crate::Scalar::U32))
+                        }
                         crate::BuiltIn::GlobalInvocationId
                         | crate::BuiltIn::LocalInvocationId
                         | crate::BuiltIn::WorkGroupId
                         | crate::BuiltIn::WorkGroupSize => Some(crate::TypeInner::Vector {
                             size: crate::VectorSize::Tri,
-                            kind: crate::ScalarKind::Uint,
-                            width: 4,
+                            scalar: crate::Scalar::U32,
                         }),
                         _ => None,
                     };
@@ -5286,7 +5277,7 @@ fn make_index_literal(
     ctx: &mut BlockContext,
     index: u32,
     block: &mut crate::Block,
-    emitter: &mut super::Emitter,
+    emitter: &mut crate::proc::Emitter,
     index_type: Handle<crate::Type>,
     index_type_id: spirv::Word,
     span: crate::Span,

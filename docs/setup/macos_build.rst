@@ -45,12 +45,10 @@ need Mercurial to download and update the code. Additionally, we'll
 put user-wide python package installations on the ``$PATH``, so that
 both ``hg`` and ``moz-phab`` will be easily accessible:
 
-**NOTE** Pay special attention to the `==6.1.4`, as Mercurial >=6.2 is incompatible with several plugins
-
 .. code-block:: shell
 
     echo 'export PATH="'"$(python3 -m site --user-base)"'/bin:$PATH"' >> ~/.zshenv
-    python3 -m pip install --user mercurial==6.1.4
+    python3 -m pip install --user mercurial
 
 Now, restart your shell so that the ``PATH`` change took effect.
 You can test that Mercurial is installed by running:
@@ -106,9 +104,19 @@ Now that your system is bootstrapped, you should be able to build!
     cd mozilla-unified
     hg up -C central
     ./mach build
-    ./mach run
 
 🎉 Congratulations! You've built your own home-grown Firefox!
+You should see the following message in your terminal after a successful build:
+
+.. code-block:: console
+
+    Your build was successful!
+    To take your build for a test drive, run: |mach run|
+    For more information on what to do now, see https://firefox-source-docs.mozilla.org/setup/contributing_code.html
+
+You can now use the ``./mach run`` command to run your locally built Firefox!
+
+If your build fails, please reference the steps in the `Troubleshooting section <#troubleshooting>`_.
 
 Now the fun starts
 ------------------
@@ -119,3 +127,14 @@ say hello in the `Introduction channel
 start working on <https://codetribute.mozilla.org/>`_.
 See the :ref:`Firefox Contributors' Quick Reference` to learn how to test your changes,
 send patches to Mozilla, update your source code locally, and more.
+
+Troubleshooting
+---------------
+
+Build errors
+~~~~~~~~~~~~
+
+If you encounter a build error when trying to setup your development environment, please follow these steps:
+   1. Copy the entire build error to your clipboard
+   2. Paste this error to `paste.mozilla.org <https://paste.mozilla.org>`_ in the text area and change the "Expire in one hour" option to "Expire in one week". Note: it won't take a week to get help but it's better to have the snippet be around for a bit longer than expected.
+   3. Go to the `introduction channel <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`__ and ask for help with your build error. Make sure to post the link to the paste.mozilla.org snippet you created!

@@ -8,7 +8,7 @@
 #define _CacheConstants_h_
 
 #include "nsGkAtoms.h"
-#include "RelationType.h"
+#include "mozilla/a11y/RelationType.h"
 
 namespace mozilla {
 namespace a11y {
@@ -82,6 +82,10 @@ static constexpr RelationData kRelationTypeAtoms[] = {
      RelationType::DESCRIPTION_FOR},
     {nsGkAtoms::aria_flowto, nullptr, RelationType::FLOWS_TO,
      RelationType::FLOWS_FROM},
+    {nsGkAtoms::aria_details, nullptr, RelationType::DETAILS,
+     RelationType::DETAILS_FOR},
+    {nsGkAtoms::aria_errormessage, nullptr, RelationType::ERRORMSG,
+     RelationType::ERRORMSG_FOR},
 };
 
 // The count of numbers needed to serialize an nsRect. This is used when

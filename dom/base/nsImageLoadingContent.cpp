@@ -55,6 +55,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/intl/Locale.h"
+#include "mozilla/dom/LargestContentfulPaint.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/widget/TextRecognition.h"
 
@@ -254,9 +255,11 @@ void nsImageLoadingContent::OnLoadComplete(imgIRequest* aRequest,
     FireEvent(u"error"_ns);
   }
 
-  SVGObserverUtils::InvalidateDirectRenderingObservers(
-      AsContent()->AsElement());
+  Element* element = AsContent()->AsElement();
+  SVGObserverUtils::InvalidateDirectRenderingObservers(element);
   MaybeResolveDecodePromises();
+  LargestContentfulPaint::MaybeProcessImageForElementTiming(mCurrentRequest,
+                                                            element);
 }
 
 void nsImageLoadingContent::OnUnlockedDraw() {
@@ -347,8 +350,7 @@ already_AddRefed<Promise> nsImageLoadingContent::QueueDecodeAsync(
    public:
     QueueDecodeTask(nsImageLoadingContent* aOwner, Promise* aPromise,
                     uint32_t aRequestGeneration)
-        : MicroTaskRunnable(),
-          mOwner(aOwner),
+        : mOwner(aOwner),
           mPromise(aPromise),
           mRequestGeneration(aRequestGeneration) {}
 
@@ -1792,11 +1794,12 @@ bool nsImageLoadingContent::ScriptedImageObserver::CancelRequests() {
 }
 
 Element* nsImageLoadingContent::FindImageMap() {
-  nsIContent* thisContent = AsContent();
-  Element* thisElement = thisContent->AsElement();
+  return FindImageMap(AsContent()->AsElement());
+}
 
+/* static */ Element* nsImageLoadingContent::FindImageMap(Element* aElement) {
   nsAutoString useMap;
-  thisElement->GetAttr(nsGkAtoms::usemap, useMap);
+  aElement->GetAttr(nsGkAtoms::usemap, useMap);
   if (useMap.IsEmpty()) {
     return nullptr;
   }
@@ -1817,15 +1820,15 @@ Element* nsImageLoadingContent::FindImageMap() {
   }
 
   RefPtr<nsContentList> imageMapList;
-  if (thisElement->IsInUncomposedDoc()) {
+  if (aElement->IsInUncomposedDoc()) {
     // Optimize the common case and use document level image map.
-    imageMapList = thisElement->OwnerDoc()->ImageMapList();
+    imageMapList = aElement->OwnerDoc()->ImageMapList();
   } else {
     // Per HTML spec image map should be searched in the element's scope,
     // so using SubtreeRoot() here.
     // Because this is a temporary list, we don't need to make it live.
     imageMapList =
-        new nsContentList(thisElement->SubtreeRoot(), kNameSpaceID_XHTML,
+        new nsContentList(aElement->SubtreeRoot(), kNameSpaceID_XHTML,
                           nsGkAtoms::map, nsGkAtoms::map, true, /* deep */
                           false /* live */);
   }
@@ -1850,7 +1853,7 @@ nsLoadFlags nsImageLoadingContent::LoadFlags() {
   auto* image = HTMLImageElement::FromNode(AsContent());
   if (image && image->OwnerDoc()->IsScriptEnabled() &&
       !image->OwnerDoc()->IsStaticDocument() &&
-      image->LoadingState() == HTMLImageElement::Loading::Lazy) {
+      image->LoadingState() == Element::Loading::Lazy) {
     // Note that LOAD_BACKGROUND is not about priority of the load, but about
     // whether it blocks the load event (by bypassing the loadgroup).
     return nsIRequest::LOAD_BACKGROUND;

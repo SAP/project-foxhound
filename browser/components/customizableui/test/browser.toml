@@ -38,6 +38,11 @@ skip-if = ["verify"]
 ["browser_1795260_searchbar_overflow_toolbar.js"]
 tags = "overflowable-toolbar"
 
+["browser_1856572_ensure_Fluent_works_in_customizeMode.js"]
+# Bug 1856572: Causes a drag-drop native loop assertion failure on debug
+# MacOS builds in browser_876926_customize_mode_wrapping.js
+skip-if = ["os == 'mac' && debug"]
+
 ["browser_694291_searchbar_preference.js"]
 
 ["browser_873501_handle_specials.js"]
@@ -103,6 +108,7 @@ skip-if = ["os == 'mac'"]
 ["browser_940013_registerToolbarNode_calls_registerArea.js"]
 
 ["browser_940307_panel_click_closure_handling.js"]
+fail-if = ["a11y_checks"] # Bug 1854536 clicked toolbarbutton may not be focusable
 skip-if = ["verify && debug && os == 'linux'"]
 
 ["browser_940946_removable_from_navbar_customizemode.js"]
@@ -180,11 +186,13 @@ skip-if = ["verify"]
 ["browser_981305_separator_insertion.js"]
 
 ["browser_981418-widget-onbeforecreated-handler.js"]
+fail-if = ["a11y_checks"] # Bug 1854536 clicked chromeclass-toolbar-additional toolbarbutton may not be labeled
 skip-if = ["verify"]
 
 ["browser_982656_restore_defaults_builtin_widgets.js"]
 
 ["browser_984455_bookmarks_items_reparenting.js"]
+skip-if = ["a11y_checks"] # Bugs 1858041, 1857056, and 1854537 for causing intermittent crashes on Autoland
 
 ["browser_985815_propagate_setToolbarVisibility.js"]
 
@@ -237,6 +245,7 @@ skip-if = ["verify"]
 ["browser_check_tooltips_in_navbar.js"]
 
 ["browser_create_button_widget.js"]
+fail-if = ["a11y_checks"] # Bug 1854536 clicked chromeclass-toolbar-additional toolbarbutton may not be labeled
 
 ["browser_ctrl_click_panel_opening.js"]
 
@@ -340,6 +349,7 @@ skip-if = ["verify"]
 ["browser_switch_to_customize_mode.js"]
 
 ["browser_synced_tabs_menu.js"]
+fail-if = ["a11y_checks"] # Bug 1854536 clicked #PanelUI-remotetabs-connect-device-button may not be focusable
 
 ["browser_tabbar_big_widgets.js"]
 

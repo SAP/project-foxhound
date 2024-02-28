@@ -67,7 +67,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
-#include "mozilla/AutoTimelineMarker.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/Base64.h"
 #include "mozilla/BasePrincipal.h"
@@ -76,6 +75,7 @@
 #include "mozilla/CORSMode.h"
 #include "mozilla/CallState.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Components.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/CycleCollectedJSContext.h"
@@ -113,6 +113,7 @@
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ScrollbarPreferences.h"
+#include "mozilla/ShutdownPhase.h"
 #include "mozilla/Span.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_browser.h"
@@ -125,7 +126,6 @@
 #include "mozilla/StaticPrefs_test.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/TaskCategory.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
@@ -204,6 +204,7 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/XULCommandEvent.h"
+#include "mozilla/glean/GleanPings.h"
 #include "mozilla/fallible.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/BaseMargin.h"
@@ -845,10 +846,15 @@ nsresult nsContentUtils::Init() {
 
   Element::InitCCCallbacks();
 
-  Unused << nsRFPService::GetOrCreate();
+  RefPtr<nsRFPService> rfpService = nsRFPService::GetOrCreate();
+  MOZ_ASSERT(rfpService);
 
   if (XRE_IsParentProcess()) {
     AsyncPrecreateStringBundles();
+
+    RunOnShutdown(
+        [&] { glean_pings::UseCounters.Submit("app_shutdown_confirmed"_ns); },
+        ShutdownPhase::AppShutdownConfirmed);
   }
 
   RefPtr<UserInteractionObserver> uio = new UserInteractionObserver();
@@ -2170,7 +2176,7 @@ bool nsContentUtils::IsCallerChromeOrElementTransformGettersEnabled(
 
 /* static */
 bool nsContentUtils::ShouldResistFingerprinting(RFPTarget aTarget) {
-  return nsRFPService::IsRFPEnabledFor(aTarget);
+  return nsRFPService::IsRFPEnabledFor(aTarget, Nothing());
 }
 
 /* static */
@@ -5411,8 +5417,6 @@ nsresult nsContentUtils::ParseFragmentHTML(
     const nsAString& aSourceBuffer, nsIContent* aTargetNode,
     nsAtom* aContextLocalName, int32_t aContextNamespace, bool aQuirks,
     bool aPreventScriptExecution, int32_t aFlags) {
-  AutoTimelineMarker m(aTargetNode->OwnerDoc()->GetDocShell(), "Parse HTML");
-
   if (nsContentUtils::sFragmentParsingActive) {
     MOZ_ASSERT_UNREACHABLE("Re-entrant fragment parsing attempted.");
     return NS_ERROR_DOM_INVALID_STATE_ERR;
@@ -5486,8 +5490,6 @@ nsresult nsContentUtils::ParseFragmentHTML(
 nsresult nsContentUtils::ParseDocumentHTML(
     const nsAString& aSourceBuffer, Document* aTargetDocument,
     bool aScriptingEnabledForNoscriptParsing) {
-  AutoTimelineMarker m(aTargetDocument->GetDocShell(), "Parse HTML");
-
   if (nsContentUtils::sFragmentParsingActive) {
     MOZ_ASSERT_UNREACHABLE("Re-entrant fragment parsing attempted.");
     return NS_ERROR_DOM_INVALID_STATE_ERR;
@@ -5510,8 +5512,6 @@ nsresult nsContentUtils::ParseFragmentXML(const nsAString& aSourceBuffer,
                                           bool aPreventScriptExecution,
                                           int32_t aFlags,
                                           DocumentFragment** aReturn) {
-  AutoTimelineMarker m(aDocument->GetDocShell(), "Parse XML");
-
   if (nsContentUtils::sFragmentParsingActive) {
     MOZ_ASSERT_UNREACHABLE("Re-entrant fragment parsing attempted.");
     return NS_ERROR_DOM_INVALID_STATE_ERR;
@@ -6542,12 +6542,13 @@ SameOriginCheckerImpl::GetInterface(const nsIID& aIID, void** aResult) {
 /* static */
 nsresult nsContentUtils::GetWebExposedOriginSerialization(nsIURI* aURI,
                                                           nsACString& aOrigin) {
+  nsresult rv;
   MOZ_ASSERT(aURI, "missing uri");
 
   // For Blob URI, the path is the URL of the owning page.
   if (aURI->SchemeIs(BLOBURI_SCHEME)) {
     nsAutoCString path;
-    nsresult rv = aURI->GetPathQueryRef(path);
+    rv = aURI->GetPathQueryRef(path);
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIURI> uri;
@@ -6560,13 +6561,30 @@ nsresult nsContentUtils::GetWebExposedOriginSerialization(nsIURI* aURI,
     return GetWebExposedOriginSerialization(uri, aOrigin);
   }
 
+  nsAutoCString scheme;
+  aURI->GetScheme(scheme);
+
+  // If the protocol doesn't have URI_HAS_WEB_EXPOSED_ORIGIN, then
+  // return "null" as the origin serialization.
+  // We make an exception for "ftp" since we don't have a protocol handler
+  // for this scheme
+  uint32_t flags = 0;
+  nsCOMPtr<nsIIOService> io = mozilla::components::IO::Service(&rv);
+  if (!scheme.Equals("ftp") && NS_SUCCEEDED(rv) &&
+      NS_SUCCEEDED(io->GetProtocolFlags(scheme.get(), &flags))) {
+    if (!(flags & nsIProtocolHandler::URI_HAS_WEB_EXPOSED_ORIGIN)) {
+      aOrigin.AssignLiteral("null");
+      return NS_OK;
+    }
+  }
+
   aOrigin.Truncate();
 
   nsCOMPtr<nsIURI> uri = NS_GetInnermostURI(aURI);
   NS_ENSURE_TRUE(uri, NS_ERROR_UNEXPECTED);
 
   nsAutoCString host;
-  nsresult rv = uri->GetAsciiHost(host);
+  rv = uri->GetAsciiHost(host);
 
   if (NS_SUCCEEDED(rv) && !host.IsEmpty()) {
     nsAutoCString userPass;
@@ -7317,6 +7335,32 @@ int32_t nsContentUtils::GetAdjustedOffsetInTextControl(nsIFrame* aOffsetFrame,
   // Otherwise, we're within one of the text frames, in which case our offset
   // has already been correctly calculated.
   return aOffset;
+}
+
+// static
+bool nsContentUtils::IsPointInSelection(
+    const mozilla::dom::Selection& aSelection, const nsINode& aNode,
+    const uint32_t aOffset) {
+  if (aSelection.IsCollapsed()) {
+    return false;
+  }
+
+  const uint32_t rangeCount = aSelection.RangeCount();
+  for (const uint32_t i : IntegerRange(rangeCount)) {
+    MOZ_ASSERT(aSelection.RangeCount() == rangeCount);
+    RefPtr<const nsRange> range = aSelection.GetRangeAt(i);
+    if (NS_WARN_IF(!range)) {
+      // Don't bail yet, iterate through them all
+      continue;
+    }
+
+    // Done when we find a range that we are in
+    if (range->IsPointInRange(aNode, aOffset, IgnoreErrors())) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // static
@@ -10513,27 +10557,6 @@ uint32_t nsContentUtils::HtmlObjectContentTypeForMIMEType(
   }
 
   return nsIObjectLoadingContent::TYPE_NULL;
-}
-
-/* static */
-already_AddRefed<nsISerialEventTarget> nsContentUtils::GetEventTargetByLoadInfo(
-    nsILoadInfo* aLoadInfo, TaskCategory aCategory) {
-  if (NS_WARN_IF(!aLoadInfo)) {
-    return nullptr;
-  }
-
-  RefPtr<Document> doc;
-  aLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
-  nsCOMPtr<nsISerialEventTarget> target;
-  if (doc) {
-    if (DocGroup* group = doc->GetDocGroup()) {
-      target = group->EventTargetFor(aCategory);
-    }
-  } else {
-    target = GetMainThreadSerialEventTarget();
-  }
-
-  return target.forget();
 }
 
 /* static */

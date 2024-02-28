@@ -3,10 +3,9 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 export * from "./source-documents";
-export * from "./get-token-location";
 export * from "./source-search";
 export * from "../ui";
-export { onMouseOver } from "./token-events";
+export * from "./tokens";
 
 import { createEditor } from "./create-editor";
 
@@ -68,18 +67,13 @@ export function fromEditorLine(sourceId, line, sourceIsWasm) {
 }
 
 export function toEditorPosition(location) {
+  // Note that Spidermonkey, Debugger frontend and CodeMirror are all consistant regarding column
+  // and are 0-based. But only CodeMirror consider the line to be 0-based while the two others
+  // consider lines to be 1-based.
   return {
     line: toEditorLine(location.source.id, location.line),
     column:
-      isWasm(location.source.id) || !location.column ? 0 : location.column,
-  };
-}
-
-export function toEditorRange(sourceId, location) {
-  const { start, end } = location;
-  return {
-    start: toEditorPosition({ ...start, sourceId }),
-    end: toEditorPosition({ ...end, sourceId }),
+      isWasm(location.source.id) || (!location.column ? 0 : location.column),
   };
 }
 
@@ -225,14 +219,4 @@ export function getCursorLine(codeMirror) {
 
 export function getCursorColumn(codeMirror) {
   return codeMirror.getCursor().ch;
-}
-
-export function getTokenEnd(codeMirror, line, column) {
-  const token = codeMirror.getTokenAt({
-    line,
-    ch: column + 1,
-  });
-  const tokenString = token.string;
-
-  return tokenString === "{" || tokenString === "[" ? null : token.end;
 }

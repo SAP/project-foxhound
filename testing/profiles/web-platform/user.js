@@ -44,7 +44,6 @@ user_pref("network.http.phishy-userpass-length", 255);
 // Disable safebrowsing components
 user_pref("browser.safebrowsing.blockedURIs.enabled", false);
 user_pref("browser.safebrowsing.downloads.enabled", false);
-user_pref("browser.safebrowsing.passwords.enabled", false);
 user_pref("browser.safebrowsing.malware.enabled", false);
 user_pref("browser.safebrowsing.phishing.enabled", false);
 user_pref("browser.safebrowsing.update.enabled", false);
@@ -87,7 +86,6 @@ user_pref("gecko.handlerService.defaultHandlersVersion", 100);
 user_pref("security.webauth.webauthn_enable_softtoken", true);
 // Disable hardware WebAuthn authenticators.
 user_pref("security.webauth.webauthn_enable_usbtoken", false);
-user_pref("security.webauth.webauthn_enable_android_fido2", false);
 // Disable the WebAuthn direct attestation consent prompt.
 user_pref("security.webauth.webauthn_testing_allow_direct_attestation", true);
 // Disable captive portal service

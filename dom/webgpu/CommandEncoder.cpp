@@ -73,7 +73,9 @@ static ffi::WGPUImageCopyTexture ConvertTextureCopyView(
 
 CommandEncoder::CommandEncoder(Device* const aParent,
                                WebGPUChild* const aBridge, RawId aId)
-    : ChildOf(aParent), mId(aId), mBridge(aBridge) {}
+    : ChildOf(aParent), mId(aId), mBridge(aBridge) {
+  MOZ_RELEASE_ASSERT(aId);
+}
 
 CommandEncoder::~CommandEncoder() { Cleanup(); }
 
@@ -81,7 +83,7 @@ void CommandEncoder::Cleanup() {
   if (mValid) {
     mValid = false;
     if (mBridge->IsOpen()) {
-      mBridge->SendCommandEncoderDestroy(mId);
+      mBridge->SendCommandEncoderDrop(mId);
     }
   }
 }

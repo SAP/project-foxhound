@@ -16,6 +16,7 @@
 #include "mozilla/Unused.h"
 #include "mozilla/GfxMessageUtils.h"  // For ParamTraits<GeckoProcessType>
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/Try.h"
 
 #ifdef MOZ_GECKO_PROFILER
 #  include "shared-libraries.h"
@@ -323,8 +324,7 @@ void nsHangDetails::Submit() {
         }
       });
 
-  nsresult rv =
-      SchedulerGroup::Dispatch(TaskCategory::Other, notifyObservers.forget());
+  nsresult rv = SchedulerGroup::Dispatch(notifyObservers.forget());
   MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
 }
 

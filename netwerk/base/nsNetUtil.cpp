@@ -1867,9 +1867,6 @@ nsresult NS_NewURI(nsIURI** aURI, const nsACString& aSpec,
   if (scheme.EqualsLiteral("ftp")) {
     return NewStandardURI(aSpec, aCharset, aBaseURI, 21, aURI);
   }
-  if (scheme.EqualsLiteral("ssh")) {
-    return NewStandardURI(aSpec, aCharset, aBaseURI, 22, aURI);
-  }
 
   if (scheme.EqualsLiteral("file")) {
     nsAutoCString buf(aSpec);
@@ -1996,6 +1993,10 @@ nsresult NS_NewURI(nsIURI** aURI, const nsACString& aSpec,
   // manually check agains set of known protocols schemes until more general
   // solution is in place (See Bug 1569733)
   if (!StaticPrefs::network_url_useDefaultURI()) {
+    if (scheme.EqualsLiteral("ssh")) {
+      return NewStandardURI(aSpec, aCharset, aBaseURI, 22, aURI);
+    }
+
     if (scheme.EqualsLiteral("dweb") || scheme.EqualsLiteral("dat") ||
         scheme.EqualsLiteral("ipfs") || scheme.EqualsLiteral("ipns") ||
         scheme.EqualsLiteral("ssb") || scheme.EqualsLiteral("wtp")) {
@@ -3370,6 +3371,108 @@ bool SchemeIsFTP(nsIURI* aURI) {
   return aURI->SchemeIs("ftp");
 }
 
+bool SchemeIsSpecial(const nsACString& aScheme) {
+  // See https://url.spec.whatwg.org/#special-scheme
+  return aScheme.EqualsIgnoreCase("ftp") || aScheme.EqualsIgnoreCase("file") ||
+         aScheme.EqualsIgnoreCase("http") ||
+         aScheme.EqualsIgnoreCase("https") || aScheme.EqualsIgnoreCase("ws") ||
+         aScheme.EqualsIgnoreCase("wss");
+}
+
+bool IsSchemeChangePermitted(nsIURI* aOldURI, const nsACString& newScheme) {
+  // See step 2.1 in https://url.spec.whatwg.org/#special-scheme
+  // Note: The spec text uses "buffer" instead of newScheme, and "url"
+  MOZ_ASSERT(aOldURI);
+
+  nsAutoCString tmp;
+  nsresult rv = aOldURI->GetScheme(tmp);
+  // If url's scheme is a special scheme and buffer is not a
+  // special scheme, then return.
+  // If url's scheme is not a special scheme and buffer is a
+  // special scheme, then return.
+  if (NS_FAILED(rv) || SchemeIsSpecial(tmp) != SchemeIsSpecial(newScheme)) {
+    return false;
+  }
+
+  // If url's scheme is "file" and its host is an empty host, then return.
+  if (aOldURI->SchemeIs("file")) {
+    rv = aOldURI->GetHost(tmp);
+    if (NS_FAILED(rv) || tmp.IsEmpty()) {
+      return false;
+    }
+  }
+
+  // URL Spec: If url includes credentials or has a non-null port, and
+  // buffer is "file", then return.
+  if (newScheme.EqualsIgnoreCase("file")) {
+    bool hasUserPass;
+    if (NS_FAILED(aOldURI->GetHasUserPass(&hasUserPass)) || hasUserPass) {
+      return false;
+    }
+    int32_t port;
+    rv = aOldURI->GetPort(&port);
+    if (NS_FAILED(rv) || port != -1) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+already_AddRefed<nsIURI> TryChangeProtocol(nsIURI* aURI,
+                                           const nsAString& aProtocol) {
+  MOZ_ASSERT(aURI);
+
+  nsAString::const_iterator start;
+  aProtocol.BeginReading(start);
+
+  nsAString::const_iterator end;
+  aProtocol.EndReading(end);
+
+  nsAString::const_iterator iter(start);
+  FindCharInReadable(':', iter, end);
+
+  // Changing the protocol of a URL, changes the "nature" of the URI
+  // implementation. In order to do this properly, we have to serialize the
+  // existing URL and reparse it in a new object.
+  nsCOMPtr<nsIURI> clone;
+  nsresult rv = NS_MutateURI(aURI)
+                    .SetScheme(NS_ConvertUTF16toUTF8(Substring(start, iter)))
+                    .Finalize(clone);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+
+  if (StaticPrefs::network_url_strict_protocol_setter()) {
+    nsAutoCString newScheme;
+    rv = clone->GetScheme(newScheme);
+    if (NS_FAILED(rv) || !net::IsSchemeChangePermitted(aURI, newScheme)) {
+      nsAutoCString url;
+      Unused << clone->GetSpec(url);
+      AutoTArray<nsString, 2> params;
+      params.AppendElement(NS_ConvertUTF8toUTF16(url));
+      params.AppendElement(NS_ConvertUTF8toUTF16(newScheme));
+      nsContentUtils::ReportToConsole(
+          nsIScriptError::warningFlag, "Strict Url Protocol Setter"_ns, nullptr,
+          nsContentUtils::eNECKO_PROPERTIES, "StrictUrlProtocolSetter", params);
+      return nullptr;
+    }
+  }
+
+  nsAutoCString href;
+  rv = clone->GetSpec(href);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+
+  RefPtr<nsIURI> uri;
+  rv = NS_NewURI(getter_AddRefs(uri), href);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+  return uri.forget();
+}
+
 // Decode a parameter value using the encoding defined in RFC 5987 (in place)
 //
 //   charset  "'" [ language ] "'" value-chars
@@ -3425,6 +3528,7 @@ void LinkHeader::Reset() {
   mReferrerPolicy.Truncate();
   mAs.Truncate();
   mCrossOrigin.SetIsVoid(true);
+  mFetchPriority.Truncate();
 }
 
 nsresult LinkHeader::NewResolveHref(nsIURI** aOutURI, nsIURI* aBaseURI) const {
@@ -3448,8 +3552,11 @@ bool LinkHeader::operator==(const LinkHeader& rhs) const {
          mSrcset == rhs.mSrcset && mSizes == rhs.mSizes && mType == rhs.mType &&
          mMedia == rhs.mMedia && mAnchor == rhs.mAnchor &&
          mCrossOrigin == rhs.mCrossOrigin &&
-         mReferrerPolicy == rhs.mReferrerPolicy && mAs == rhs.mAs;
+         mReferrerPolicy == rhs.mReferrerPolicy && mAs == rhs.mAs &&
+         mFetchPriority == rhs.mFetchPriority;
 }
+
+constexpr auto kTitleStar = "title*"_ns;
 
 nsTArray<LinkHeader> ParseLinkHeader(const nsAString& aLinkData) {
   nsTArray<LinkHeader> linkHeaders;
@@ -3592,17 +3699,7 @@ nsTArray<LinkHeader> ParseLinkHeader(const nsAString& aLinkData) {
           *unescaped = kNullCh;
         }
 
-        if (attr.LowerCaseEqualsLiteral("rel")) {
-          if (header.mRel.IsEmpty()) {
-            header.mRel = value;
-            header.mRel.CompressWhitespace();
-          }
-        } else if (attr.LowerCaseEqualsLiteral("title")) {
-          if (header.mTitle.IsEmpty()) {
-            header.mTitle = value;
-            header.mTitle.CompressWhitespace();
-          }
-        } else if (attr.LowerCaseEqualsLiteral("title*")) {
+        if (attr.LowerCaseEqualsASCII(kTitleStar.get())) {
           if (titleStar.IsEmpty() && !wasQuotedString) {
             // RFC 5987 encoding; uses token format only, so skip if we get
             // here with a quoted-string
@@ -3616,61 +3713,8 @@ nsTArray<LinkHeader> ParseLinkHeader(const nsAString& aLinkData) {
               titleStar.Truncate();
             }
           }
-        } else if (attr.LowerCaseEqualsLiteral("type")) {
-          if (header.mType.IsEmpty()) {
-            header.mType = value;
-            header.mType.StripWhitespace();
-          }
-        } else if (attr.LowerCaseEqualsLiteral("media")) {
-          if (header.mMedia.IsEmpty()) {
-            header.mMedia = value;
-
-            // The HTML5 spec is formulated in terms of the CSS3 spec,
-            // which specifies that media queries are case insensitive.
-            nsContentUtils::ASCIIToLower(header.mMedia);
-          }
-        } else if (attr.LowerCaseEqualsLiteral("anchor")) {
-          if (header.mAnchor.IsEmpty()) {
-            header.mAnchor = value;
-            header.mAnchor.StripWhitespace();
-          }
-        } else if (attr.LowerCaseEqualsLiteral("crossorigin")) {
-          if (header.mCrossOrigin.IsVoid()) {
-            header.mCrossOrigin.SetIsVoid(false);
-            header.mCrossOrigin = value;
-            header.mCrossOrigin.StripWhitespace();
-          }
-        } else if (attr.LowerCaseEqualsLiteral("as")) {
-          if (header.mAs.IsEmpty()) {
-            header.mAs = value;
-            header.mAs.CompressWhitespace();
-          }
-        } else if (attr.LowerCaseEqualsLiteral("referrerpolicy")) {
-          // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#referrer-policy-attribute
-          // Specs says referrer policy attribute is an enumerated attribute,
-          // case insensitive and includes the empty string
-          // We will parse the value with AttributeReferrerPolicyFromString
-          // later, which will handle parsing it as an enumerated attribute.
-          if (header.mReferrerPolicy.IsEmpty()) {
-            header.mReferrerPolicy = value;
-          }
-
-        } else if (attr.LowerCaseEqualsLiteral("nonce")) {
-          if (header.mNonce.IsEmpty()) {
-            header.mNonce = value;
-          }
-        } else if (attr.LowerCaseEqualsLiteral("integrity")) {
-          if (header.mIntegrity.IsEmpty()) {
-            header.mIntegrity = value;
-          }
-        } else if (attr.LowerCaseEqualsLiteral("imagesrcset")) {
-          if (header.mSrcset.IsEmpty()) {
-            header.mSrcset = value;
-          }
-        } else if (attr.LowerCaseEqualsLiteral("imagesizes")) {
-          if (header.mSizes.IsEmpty()) {
-            header.mSizes = value;
-          }
+        } else {
+          header.MaybeUpdateAttribute(attr, value);
         }
       }
     }
@@ -3706,6 +3750,84 @@ nsTArray<LinkHeader> ParseLinkHeader(const nsAString& aLinkData) {
   }
 
   return linkHeaders;
+}
+
+void LinkHeader::MaybeUpdateAttribute(const nsAString& aAttribute,
+                                      const char16_t* aValue) {
+  MOZ_ASSERT(!aAttribute.LowerCaseEqualsASCII(kTitleStar.get()));
+
+  if (aAttribute.LowerCaseEqualsLiteral("rel")) {
+    if (mRel.IsEmpty()) {
+      mRel = aValue;
+      mRel.CompressWhitespace();
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("title")) {
+    if (mTitle.IsEmpty()) {
+      mTitle = aValue;
+      mTitle.CompressWhitespace();
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("type")) {
+    if (mType.IsEmpty()) {
+      mType = aValue;
+      mType.StripWhitespace();
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("media")) {
+    if (mMedia.IsEmpty()) {
+      mMedia = aValue;
+
+      // The HTML5 spec is formulated in terms of the CSS3 spec,
+      // which specifies that media queries are case insensitive.
+      nsContentUtils::ASCIIToLower(mMedia);
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("anchor")) {
+    if (mAnchor.IsEmpty()) {
+      mAnchor = aValue;
+      mAnchor.StripWhitespace();
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("crossorigin")) {
+    if (mCrossOrigin.IsVoid()) {
+      mCrossOrigin.SetIsVoid(false);
+      mCrossOrigin = aValue;
+      mCrossOrigin.StripWhitespace();
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("as")) {
+    if (mAs.IsEmpty()) {
+      mAs = aValue;
+      mAs.CompressWhitespace();
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("referrerpolicy")) {
+    // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#referrer-policy-attribute
+    // Specs says referrer policy attribute is an enumerated attribute,
+    // case insensitive and includes the empty string
+    // We will parse the aValue with AttributeReferrerPolicyFromString
+    // later, which will handle parsing it as an enumerated attribute.
+    if (mReferrerPolicy.IsEmpty()) {
+      mReferrerPolicy = aValue;
+    }
+
+  } else if (aAttribute.LowerCaseEqualsLiteral("nonce")) {
+    if (mNonce.IsEmpty()) {
+      mNonce = aValue;
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("integrity")) {
+    if (mIntegrity.IsEmpty()) {
+      mIntegrity = aValue;
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("imagesrcset")) {
+    if (mSrcset.IsEmpty()) {
+      mSrcset = aValue;
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("imagesizes")) {
+    if (mSizes.IsEmpty()) {
+      mSizes = aValue;
+    }
+  } else if (aAttribute.LowerCaseEqualsLiteral("fetchpriority")) {
+    if (mFetchPriority.IsEmpty()) {
+      LOG(("Update fetchPriority to \"%s\"",
+           NS_ConvertUTF16toUTF8(aValue).get()));
+      mFetchPriority = aValue;
+    }
+  }
 }
 
 // We will use official mime-types from:

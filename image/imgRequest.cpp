@@ -63,6 +63,7 @@ imgRequest::imgRequest(imgLoader* aLoader, const ImageCacheKey& aCacheKey)
       mImageAvailable(false),
       mIsDeniedCrossSiteCORSRequest(false),
       mIsCrossSiteNoCORSRequest(false),
+      mShouldReportRenderTimeForLCP(false),
       mMutex("imgRequest"),
       mProgressTracker(new ProgressTracker()),
       mIsMultiPartChannel(false),
@@ -641,6 +642,7 @@ imgRequest::OnStartRequest(nsIRequest* aRequest) {
     mIsCrossSiteNoCORSRequest = loadInfo->GetTainting() == LoadTainting::Opaque;
   }
 
+  UpdateShouldReportRenderTimeForLCP();
   // Figure out if we're multipart.
   nsCOMPtr<nsIMultiPartChannel> multiPartChannel = do_QueryInterface(aRequest);
   {
@@ -837,6 +839,9 @@ imgRequest::CheckListenerChain() {
   NS_ASSERTION(NS_IsMainThread(), "Should be on the main thread!");
   return NS_OK;
 }
+
+NS_IMETHODIMP
+imgRequest::OnDataFinished(nsresult) { return NS_OK; }
 
 /** nsIStreamListener methods **/
 
@@ -1228,4 +1233,14 @@ imgRequest::OnRedirectVerifyCallback(nsresult result) {
   mRedirectCallback->OnRedirectVerifyCallback(NS_OK);
   mRedirectCallback = nullptr;
   return NS_OK;
+}
+
+void imgRequest::UpdateShouldReportRenderTimeForLCP() {
+  if (mTimedChannel) {
+    bool allRedirectPassTAO = false;
+    mTimedChannel->GetAllRedirectsPassTimingAllowCheck(&allRedirectPassTAO);
+    mShouldReportRenderTimeForLCP =
+        mTimedChannel->TimingAllowCheck(mTriggeringPrincipal) &&
+        allRedirectPassTAO;
+  }
 }

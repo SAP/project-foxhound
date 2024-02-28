@@ -587,11 +587,12 @@ class GCRuntime {
   void checkHashTablesAfterMovingGC();
 #endif
 
-#ifdef DEBUG
   // Crawl the heap to check whether an arbitary pointer is within a cell of
-  // the given kind.
-  bool isPointerWithinTenuredCell(void* ptr, JS::TraceKind traceKind);
+  // the given kind. (TraceKind::Null means to ignore the kind.)
+  bool isPointerWithinTenuredCell(
+      void* ptr, JS::TraceKind traceKind = JS::TraceKind::Null);
 
+#ifdef DEBUG
   bool hasZone(Zone* target);
 #endif
 
@@ -776,6 +777,8 @@ class GCRuntime {
       ParallelMarking allowParallelMarking = SingleThreadedMarking,
       ShouldReportMarkTime reportTime = ReportMarkTime);
   bool canMarkInParallel() const;
+  bool initParallelMarkers();
+  void finishParallelMarkers();
 
   bool hasMarkingWork(MarkColor color) const;
 
@@ -1098,6 +1101,9 @@ class GCRuntime {
 
   /* Whether the heap will be compacted at the end of GC. */
   MainThreadData<bool> isCompacting;
+
+  /* Whether to use parallel marking. */
+  MainThreadData<ParallelMarking> useParallelMarking;
 
   /* The invocation kind of the current GC, set at the start of collection. */
   MainThreadOrGCTaskData<mozilla::Maybe<JS::GCOptions>> maybeGcOptions;

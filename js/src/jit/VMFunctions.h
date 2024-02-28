@@ -300,6 +300,8 @@ struct VMFunctionData {
     return count;
   }
 
+  size_t sizeOfOutParamStackSlot() const;
+
   constexpr VMFunctionData(const char* name, uint32_t explicitArgs,
                            uint32_t argumentProperties,
                            uint32_t argumentPassedInFloatRegs,
@@ -691,6 +693,8 @@ void Printf1(const char* output, uintptr_t value);
 enum class VMFunctionId;
 
 extern const VMFunctionData& GetVMFunction(VMFunctionId id);
+
+extern size_t NumVMFunctions();
 
 }  // namespace jit
 }  // namespace js

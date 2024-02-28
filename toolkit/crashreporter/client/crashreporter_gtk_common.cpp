@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "crashreporter.h"
-
 #include <unistd.h>
 #include <dlfcn.h>
 #include <errno.h>
@@ -78,7 +76,9 @@ static bool RestartApplication() {
   if (pid == -1) {
     free(argv);
     return false;
-  } else if (pid == 0) {
+  }
+
+  if (pid == 0) {
     (void)execv(argv[0], argv);
     _exit(1);
   }

@@ -170,7 +170,11 @@ describe("<DSCard>", () => {
           event: "CLICK",
           source: "FOO",
           action_position: 1,
-          value: { card_type: "organic" },
+          value: {
+            card_type: "organic",
+            recommendation_id: undefined,
+            tile_id: "fooidx",
+          },
         })
       );
       assert.calledWith(
@@ -178,7 +182,14 @@ describe("<DSCard>", () => {
         ac.ImpressionStats({
           click: 0,
           source: "FOO",
-          tiles: [{ id: "fooidx", pos: 1, type: "organic" }],
+          tiles: [
+            {
+              id: "fooidx",
+              pos: 1,
+              type: "organic",
+              recommendation_id: undefined,
+            },
+          ],
           window_inner_width: 1000,
           window_inner_height: 900,
         })
@@ -197,7 +208,11 @@ describe("<DSCard>", () => {
           event: "CLICK",
           source: "FOO",
           action_position: 1,
-          value: { card_type: "spoc" },
+          value: {
+            card_type: "spoc",
+            recommendation_id: undefined,
+            tile_id: "fooidx",
+          },
         })
       );
       assert.calledWith(
@@ -205,7 +220,14 @@ describe("<DSCard>", () => {
         ac.ImpressionStats({
           click: 0,
           source: "FOO",
-          tiles: [{ id: "fooidx", pos: 1, type: "spoc" }],
+          tiles: [
+            {
+              id: "fooidx",
+              pos: 1,
+              type: "spoc",
+              recommendation_id: undefined,
+            },
+          ],
           window_inner_width: 1000,
           window_inner_height: 900,
         })
@@ -231,7 +253,12 @@ describe("<DSCard>", () => {
           event: "CLICK",
           source: "FOO",
           action_position: 1,
-          value: { card_type: "organic" },
+          value: {
+            card_type: "organic",
+            recommendation_id: undefined,
+            tile_id: "fooidx",
+            shim: "click shim",
+          },
         })
       );
       assert.calledWith(
@@ -240,7 +267,13 @@ describe("<DSCard>", () => {
           click: 0,
           source: "FOO",
           tiles: [
-            { id: "fooidx", pos: 1, shim: "click shim", type: "organic" },
+            {
+              id: "fooidx",
+              pos: 1,
+              shim: "click shim",
+              type: "organic",
+              recommendation_id: undefined,
+            },
           ],
           window_inner_width: 1000,
           window_inner_height: 900,
@@ -354,7 +387,11 @@ describe("<DSCard>", () => {
           event: "SAVE_TO_POCKET",
           source: "CARDGRID_HOVER",
           action_position: 1,
-          value: { card_type: "organic" },
+          value: {
+            card_type: "organic",
+            recommendation_id: undefined,
+            tile_id: "fooidx",
+          },
         })
       );
       assert.calledWith(
@@ -366,6 +403,7 @@ describe("<DSCard>", () => {
             {
               id: "fooidx",
               pos: 1,
+              recommendation_id: undefined,
             },
           ],
         })

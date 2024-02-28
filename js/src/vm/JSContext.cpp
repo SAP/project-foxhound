@@ -1025,9 +1025,6 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       canSkipEnqueuingJobs(this, false),
       promiseRejectionTrackerCallback(this, nullptr),
       promiseRejectionTrackerCallbackData(this, nullptr),
-#ifdef JS_STRUCTURED_SPEW
-      structuredSpewer_(),
-#endif
       insideDebuggerEvaluationWithOnNativeCallHook(this, nullptr) {
   MOZ_ASSERT(static_cast<JS::RootingContext*>(this) ==
              JS::RootingContext::get(this));
@@ -1252,7 +1249,7 @@ void AutoEnterOOMUnsafeRegion::crash_impl(const char* reason) {
   // In non-DEBUG builds MOZ_CRASH normally doesn't print to stderr so we have
   // to do this explicitly (the jit-test allow-unhandlable-oom annotation and
   // fuzzers depend on it).
-  MOZ_ReportCrash(msgbuf, __FILE__, __LINE__);
+  fprintf(stderr, "Hit MOZ_CRASH(%s) at %s:%d\n", msgbuf, __FILE__, __LINE__);
 #endif
   MOZ_CRASH_UNSAFE(msgbuf);
 }

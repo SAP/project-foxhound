@@ -194,7 +194,9 @@ fi
 HANDLE_NOOP_COMMIT=""
 
 # save the current patch stack in case we need to reconstitute it later
+echo_log "Save patch-stack"
 ./mach python $SCRIPT_DIR/save_patch_stack.py \
+    --skip-startup-sanity \
     --repo-path $MOZ_LIBWEBRTC_SRC \
     --branch $MOZ_LIBWEBRTC_BRANCH \
     --patch-path "third_party/libwebrtc/moz-patch-stack" \
@@ -252,7 +254,10 @@ ERROR_HELP=""
 if [ "x$MOZ_BUILD_CHANGE_CNT" != "x0" ]; then
   TRY_FUZZY_QUERY_STRING="^build-"
   CURRENT_TIME=`date`
-  echo_log "Starting try builds with '$TRY_FUZZY_QUERY_STRING' at $CURRENT_TIME"
+  echo_log "Detected modified moz.build files, starting try builds with"
+  echo_log "'$TRY_FUZZY_QUERY_STRING' at $CURRENT_TIME"
+  echo_log "This try push is started to help earlier detection of build issues"
+  echo_log "across different platforms supported by Mozilla."
   echo_log "Note - this step can take a long time (occasionally in the 10min range)"
   echo_log "       with little or no feedback."
   # Show the time used for this command, and don't let it fail if the

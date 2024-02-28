@@ -23,6 +23,16 @@
 
 #include "DefaultBrowser.h"
 
+#ifdef IMPL_LIBXUL
+#  include "mozilla/ErrorResult.h"
+#  include "mozilla/intl/Localization.h"
+#  include "nsString.h"
+#  include "nsTArray.h"
+using mozilla::intl::Localization;
+#endif
+
+namespace mozilla::default_agent {
+
 const wchar_t* kTaskVendor = L"" MOZ_APP_VENDOR;
 // kTaskName should have the unique token appended before being used.
 const wchar_t* kTaskName = L"" MOZ_APP_DISPLAYNAME " Default Browser Agent ";
@@ -53,21 +63,22 @@ bool GetTaskDescription(mozilla::UniquePtr<wchar_t[]>& description) {
     LOG_ERROR_MESSAGE(L"Failed to get install directory");
     return false;
   }
-  const wchar_t* iniFormat = L"%s\\defaultagent_localized.ini";
-  int bufferSize = _scwprintf(iniFormat, installPath.get());
-  ++bufferSize;  // Extra character for terminating null
-  mozilla::UniquePtr<wchar_t[]> iniPath =
-      mozilla::MakeUnique<wchar_t[]>(bufferSize);
-  _snwprintf_s(iniPath.get(), bufferSize, _TRUNCATE, iniFormat,
-               installPath.get());
-
-  IniReader reader(iniPath.get());
-  reader.AddKey("DefaultBrowserAgentTaskDescription", &description);
-  int status = reader.Read();
-  if (status != OK) {
-    LOG_ERROR_MESSAGE(L"Failed to read task description: %d", status);
+#ifdef IMPL_LIBXUL
+  nsTArray<nsCString> resIds = {"branding/brand.ftl"_ns,
+                                "browser/backgroundtasks/defaultagent.ftl"_ns};
+  RefPtr<Localization> l10n = Localization::Create(resIds, true);
+  nsAutoCString daTaskDesc;
+  mozilla::ErrorResult rv;
+  l10n->FormatValueSync("default-browser-agent-task-description"_ns, {},
+                        daTaskDesc, rv);
+  if (rv.Failed()) {
+    LOG_ERROR_MESSAGE(L"Failed to read task description");
     return false;
   }
+  NS_ConvertUTF8toUTF16 daTaskDescW(daTaskDesc);
+  description = mozilla::MakeUnique<wchar_t[]>(daTaskDescW.Length() + 1);
+  wcsncpy(description.get(), daTaskDescW.get(), daTaskDescW.Length() + 1);
+#endif
   return true;
 }
 
@@ -225,8 +236,15 @@ HRESULT RegisterTask(const wchar_t* uniqueToken,
   RefPtr<IExecAction> execAction;
   ENSURE(action->QueryInterface(IID_IExecAction, getter_AddRefs(execAction)));
 
-  BStrPtr binaryPathBStr =
-      BStrPtr(SysAllocString(mozilla::GetFullBinaryPath().get()));
+  // Register proxy instead of Firefox background task.
+  mozilla::UniquePtr<wchar_t[]> installPath = mozilla::GetFullBinaryPath();
+  if (!PathRemoveFileSpecW(installPath.get())) {
+    return E_FAIL;
+  }
+  std::wstring proxyPath(installPath.get());
+  proxyPath += L"\\default-browser-agent.exe";
+
+  BStrPtr binaryPathBStr = BStrPtr(SysAllocString(proxyPath.c_str()));
   ENSURE(execAction->put_Path(binaryPathBStr.get()));
 
   std::wstring taskArgs = L"do-task \"";
@@ -407,3 +425,5 @@ HRESULT RemoveTasks(const wchar_t* uniqueToken, WhichTasks tasksToRemove) {
 
   return deleteResult;
 }
+
+}  // namespace mozilla::default_agent

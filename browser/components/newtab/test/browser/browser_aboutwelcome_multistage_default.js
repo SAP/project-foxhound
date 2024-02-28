@@ -103,6 +103,31 @@ const TEST_DEFAULT_CONTENT = [
   },
 ];
 
+const TEST_AMO_CONTENT = [
+  {
+    id: "AW_AMO_INTRODUCE",
+    content: {
+      position: "split",
+      split_narrow_bkg_position: "-58px",
+      progress_bar: true,
+      logo: {},
+      title: { string_id: "amo-screen-title" },
+      subtitle: { string_id: "amo-screen-subtitle" },
+      primary_button: {
+        label: { string_id: "amo-screen-primary-cta" },
+      },
+      secondary_button: {
+        label: {
+          string_id: "mr2022-onboarding-secondary-skip-button-label",
+        },
+        action: {
+          navigate: true,
+        },
+      },
+    },
+  },
+];
+
 const TEST_DEFAULT_JSON = JSON.stringify(TEST_DEFAULT_CONTENT);
 
 async function openAboutWelcome() {
@@ -195,11 +220,6 @@ add_task(async function test_multistage_aboutwelcome_default() {
   );
 
   await onButtonClick(browser, "button.primary");
-
-  // No 3rd screen to go to for win7.
-  if (win7Content) {
-    return;
-  }
 
   await test_screen_content(
     browser,
@@ -368,9 +388,6 @@ add_task(async function test_AWMultistage_Primary_Action() {
 });
 
 add_task(async function test_AWMultistage_Secondary_Open_URL_Action() {
-  if (win7Content) {
-    return;
-  }
   let browser = await openAboutWelcome();
   let aboutWelcomeActor = await getAboutWelcomeParent(browser);
   const sandbox = sinon.createSandbox();
@@ -437,11 +454,6 @@ add_task(async function test_AWMultistage_Secondary_Open_URL_Action() {
 });
 
 add_task(async function test_AWMultistage_Themes() {
-  // No theme screen to test for win7.
-  if (win7Content) {
-    return;
-  }
-
   let browser = await openAboutWelcome();
   let aboutWelcomeActor = await getAboutWelcomeParent(browser);
 
@@ -588,10 +600,6 @@ add_task(async function test_AWMultistage_can_restore_theme() {
 });
 
 add_task(async function test_AWMultistage_Import() {
-  // No import screen to test for win7.
-  if (win7Content) {
-    return;
-  }
   let browser = await openAboutWelcome();
   let aboutWelcomeActor = await getAboutWelcomeParent(browser);
 
@@ -740,6 +748,45 @@ add_task(async function test_send_aboutwelcome_as_page_in_event_telemetry() {
   );
 
   registerCleanupFunction(() => {
+    sandbox.restore();
+  });
+});
+
+add_task(async function test_AMO_untranslated_strings() {
+  const sandbox = sinon.createSandbox();
+
+  await setAboutWelcomePref(true);
+  await setAboutWelcomeMultiStage(JSON.stringify(TEST_AMO_CONTENT));
+
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:welcome",
+    true
+  );
+  registerCleanupFunction(() => {
+    BrowserTestUtils.removeTab(tab);
+  });
+
+  let browser = tab.linkedBrowser;
+
+  await test_screen_content(
+    browser,
+    "renders the AMO screen with preview strings",
+    //Expected selectors
+    [
+      "main.AW_AMO_INTRODUCE",
+      `main.screen[pos="split"]`,
+      "button.primary[data-l10n-id='amo-screen-primary-cta']",
+      "h1[data-l10n-id='amo-screen-title']",
+      "h2[data-l10n-id='amo-screen-subtitle']",
+    ],
+
+    //Unexpected selectors:
+    ["main.AW_EASY_SETUP_NEEDS_DEFAULT"]
+  );
+
+  registerCleanupFunction(async () => {
+    await popPrefs(); // for setAboutWelcomePref()
     sandbox.restore();
   });
 });

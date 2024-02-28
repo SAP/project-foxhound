@@ -6,7 +6,7 @@
 
 #include "AudioDeviceInfo.h"
 #include "AudioStreamTrack.h"
-#include "MediaTrackGraphImpl.h"
+#include "MediaTrackGraph.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 
@@ -114,9 +114,8 @@ void CrossGraphTransmitter::ProcessInput(GraphTime aFrom, GraphTime aTo,
   }
 
   LOG(LogLevel::Verbose,
-      ("Transmitter (%p) mSegment: duration: %" PRId64 ", from %" PRId64
-       ", to %" PRId64 ", ticks %" PRId64 "",
-       this, mSegment->GetDuration(), aFrom, aTo, aTo - aFrom));
+      ("Transmitter (%p) from %" PRId64 ", to %" PRId64 ", ticks %" PRId64 "",
+       this, aFrom, aTo, aTo - aFrom));
 
   AudioSegment audio;
   GraphTime next;
@@ -160,9 +159,7 @@ CrossGraphReceiver::CrossGraphReceiver(TrackRate aSampleRate,
                                        TrackRate aTransmitterRate)
     : ProcessedMediaTrack(aSampleRate, MediaSegment::AUDIO,
                           static_cast<MediaSegment*>(new AudioSegment())),
-      mDriftCorrection(aTransmitterRate, aSampleRate,
-                       Preferences::GetInt("media.clockdrift.buffering", 50),
-                       PRINCIPAL_HANDLE_NONE) {}
+      mDriftCorrection(aTransmitterRate, aSampleRate, PRINCIPAL_HANDLE_NONE) {}
 
 uint32_t CrossGraphReceiver::NumberOfChannels() const {
   return GetData<AudioSegment>()->MaxChannelCount();

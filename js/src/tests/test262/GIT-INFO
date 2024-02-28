@@ -1,7 +1,5 @@
-commit 21c3097f92b244bfa2ae54ee9cf745839567b79a
+commit 873f2604789e40f18e3e4dffd5a7bd6c4bed245f
 Author: André Bargull <andre.bargull@gmail.com>
-Date:   Thu Jan 12 14:22:34 2023 +0100
+Date:   Mon Oct 16 13:28:25 2023 +0200
 
-    Update tests for PR "Read date-time options only once when creating DateTimeFormat objects"
-    
-    Update tests for PR tc39/ecma402#709.
+    Update likely subtags tests for CLDR 44

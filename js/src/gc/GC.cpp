@@ -2221,11 +2221,8 @@ void ArenaLists::checkEmptyArenaList(AllocKind kind) {
 }
 
 void GCRuntime::purgeRuntimeForMinorGC() {
-  // If external strings become nursery allocable, remember to call
-  // zone->externalStringCache().purge() (and delete this assert.)
-  MOZ_ASSERT(!IsNurseryAllocable(AllocKind::EXTERNAL_STRING));
-
   for (ZonesIter zone(this, SkipAtoms); !zone.done(); zone.next()) {
+    zone->externalStringCache().purge();
     zone->functionToStringCache().purge();
   }
 }
@@ -2523,7 +2520,6 @@ void GCRuntime::discardJITCodeForGC() {
 
     if (!zone->isPreservingCode()) {
       Zone::DiscardOptions options;
-      options.discardBaselineCode = true;
       options.discardJitScripts = true;
       options.resetNurseryAllocSites = resetNurserySites;
       options.resetPretenuredAllocSites = resetPretenuredSites;
@@ -2848,11 +2844,6 @@ void GCRuntime::beginMarkPhase(AutoGCSession& session) {
   // get here.
   incMajorGcNumber();
 
-  MOZ_ASSERT(!hasDelayedMarking());
-  for (auto& marker : markers) {
-    marker->start();
-  }
-
 #ifdef DEBUG
   queuePos = 0;
   queueMarkColor.reset();
@@ -2872,6 +2863,19 @@ void GCRuntime::beginMarkPhase(AutoGCSession& session) {
     }
   }
 
+  updateSchedulingStateOnGCStart();
+  stats().measureInitialHeapSize();
+
+  useParallelMarking = SingleThreadedMarking;
+  if (canMarkInParallel() && initParallelMarkers()) {
+    useParallelMarking = AllowParallelMarking;
+  }
+
+  MOZ_ASSERT(!hasDelayedMarking());
+  for (auto& marker : markers) {
+    marker->start();
+  }
+
   if (rt->isBeingDestroyed()) {
     checkNoRuntimeRoots(session);
   } else {
@@ -2880,9 +2884,6 @@ void GCRuntime::beginMarkPhase(AutoGCSession& session) {
     traceRuntimeForMajorGC(marker().tracer(), session);
     marker().setRootMarkingMode(false);
   }
-
-  updateSchedulingStateOnGCStart();
-  stats().measureInitialHeapSize();
 }
 
 void GCRuntime::findDeadCompartments() {
@@ -2965,6 +2966,8 @@ void GCRuntime::updateSchedulingStateOnGCStart() {
 }
 
 inline bool GCRuntime::canMarkInParallel() const {
+  MOZ_ASSERT(state() >= gc::State::MarkRoots);
+
 #if defined(DEBUG) || defined(JS_OOM_BREAKPOINT)
   // OOM testing limits the engine to using a single helper thread.
   if (oom::simulator.targetThread() == THREAD_TYPE_GCPARALLEL) {
@@ -2974,6 +2977,21 @@ inline bool GCRuntime::canMarkInParallel() const {
 
   return markers.length() > 1 && stats().initialCollectedBytes() >=
                                      tunables.parallelMarkingThresholdBytes();
+}
+
+bool GCRuntime::initParallelMarkers() {
+  MOZ_ASSERT(canMarkInParallel());
+
+  // Allocate stack for parallel markers. The first marker always has stack
+  // allocated. Other markers have their stack freed in
+  // GCRuntime::finishCollection.
+  for (size_t i = 1; i < markers.length(); i++) {
+    if (!markers[i]->initStack()) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 IncrementalProgress GCRuntime::markUntilBudgetExhausted(
@@ -2987,7 +3005,8 @@ IncrementalProgress GCRuntime::markUntilBudgetExhausted(
     return NotFinished;
   }
 
-  if (allowParallelMarking && canMarkInParallel()) {
+  if (allowParallelMarking) {
+    MOZ_ASSERT(canMarkInParallel());
     MOZ_ASSERT(parallelMarkingEnabled);
     MOZ_ASSERT(reportTime);
     MOZ_ASSERT(!isBackgroundMarking());
@@ -3177,8 +3196,14 @@ void GCRuntime::finishCollection(JS::GCReason reason) {
   assertBackgroundSweepingFinished();
 
   MOZ_ASSERT(!hasDelayedMarking());
-  for (auto& marker : markers) {
+  for (size_t i = 0; i < markers.length(); i++) {
+    const auto& marker = markers[i];
     marker->stop();
+    if (i == 0) {
+      marker->resetStackCapacity();
+    } else {
+      marker->freeStack();
+    }
   }
 
   maybeStopPretenuring();
@@ -3623,7 +3648,7 @@ void GCRuntime::incrementalSlice(SliceBudget& budget, JS::GCReason reason,
 
       {
         gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::MARK);
-        if (markUntilBudgetExhausted(budget, AllowParallelMarking) ==
+        if (markUntilBudgetExhausted(budget, useParallelMarking) ==
             NotFinished) {
           break;
         }
@@ -4955,7 +4980,7 @@ void AutoAssertEmptyNursery::checkCondition(JSContext* cx) {
   MOZ_ASSERT(cx->nursery().isEmpty());
 }
 
-AutoEmptyNursery::AutoEmptyNursery(JSContext* cx) : AutoAssertEmptyNursery() {
+AutoEmptyNursery::AutoEmptyNursery(JSContext* cx) {
   MOZ_ASSERT(!cx->suppressGC);
   cx->runtime()->gc.stats().suspendPhases();
   cx->runtime()->gc.evictNursery(JS::GCReason::EVICT_NURSERY);

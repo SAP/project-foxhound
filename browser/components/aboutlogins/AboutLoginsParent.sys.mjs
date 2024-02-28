@@ -163,7 +163,7 @@ export class AboutLoginsParent extends JSWindowActorParent {
   }
 
   get #ownerGlobal() {
-    return this.browsingContext.embedderElement.ownerGlobal;
+    return this.browsingContext.embedderElement?.ownerGlobal;
   }
 
   async #createLogin(newLogin) {
@@ -199,6 +199,14 @@ export class AboutLoginsParent extends JSWindowActorParent {
     } catch (error) {
       this.#handleLoginStorageErrors(newLogin, error);
     }
+  }
+
+  get preselectedLogin() {
+    const preselectedLogin =
+      this.#ownerGlobal?.gBrowser.selectedTab.getAttribute("preselect-login") ||
+      this.browsingContext.currentURI?.ref;
+    this.#ownerGlobal?.gBrowser.selectedTab.removeAttribute("preselect-login");
+    return preselectedLogin || null;
   }
 
   #deleteLogin(loginObject) {
@@ -316,6 +324,7 @@ export class AboutLoginsParent extends JSWindowActorParent {
         importVisible:
           Services.policies.isAllowed("profileImport") &&
           AppConstants.platform != "linux",
+        preselectedLogin: this.preselectedLogin,
       });
 
       await AboutLogins.sendAllLoginRelatedObjects(

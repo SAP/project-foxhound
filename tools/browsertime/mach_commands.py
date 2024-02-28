@@ -81,9 +81,9 @@ def silence():
 
 def node_path(command_context):
     import platform
-    from distutils.version import StrictVersion
 
     from mozbuild.nodeutil import find_node_executable
+    from packaging.version import Version
 
     state_dir = command_context._mach_context.state_dir
     cache_path = os.path.join(state_dir, "browsertime", "node-16")
@@ -97,7 +97,7 @@ def node_path(command_context):
     )
 
     # Check standard locations first
-    node_exe = find_node_executable(min_version=StrictVersion(MIN_NODE_VERSION))
+    node_exe = find_node_executable(min_version=Version(MIN_NODE_VERSION))
     if node_exe and (node_exe[0] is not None):
         return os.path.abspath(node_exe[0])
     if not os.path.exists(cache_path):
@@ -308,7 +308,7 @@ def setup_browsertime(
 
         existing_body["devDependencies"]["browsertime"] = new_upstream_url
 
-        updated_body = json.dumps(existing_body)
+        updated_body = json.dumps(existing_body, indent=2)
 
         with open(package_json_path, "w") as f:
             f.write(updated_body)
@@ -500,7 +500,7 @@ def extra_default_args(command_context, args=[]):
         "Extracts the browser name if any"
         # These are BT arguments, it's BT job to check them
         # here we just want to extract the browser name
-        res = re.findall("(--browser|-b)[= ]([\w]+)", " ".join(args))
+        res = re.findall(r"(--browser|-b)[= ]([\w]+)", " ".join(args))
         if res == []:
             return None
         return res[0][-1]

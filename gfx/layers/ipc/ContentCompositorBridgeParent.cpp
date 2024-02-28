@@ -17,6 +17,7 @@
 #include "mozilla/layers/AnimationHelper.h"  // for CompositorAnimationStorage
 #include "mozilla/layers/APZCTreeManagerParent.h"  // for APZCTreeManagerParent
 #include "mozilla/layers/APZUpdater.h"             // for APZUpdater
+#include "mozilla/layers/CompositorManagerParent.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/LayerTreeOwnerTracker.h"
@@ -403,41 +404,14 @@ PTextureParent* ContentCompositorBridgeParent::AllocPTextureParent(
         << "Texture backend is wrong";
   }
 
-  return TextureHost::CreateIPDLActor(this, aSharedData, std::move(aReadLock),
-                                      aLayersBackend, aFlags, aSerial,
-                                      aExternalImageId);
+  return TextureHost::CreateIPDLActor(
+      this, aSharedData, std::move(aReadLock), aLayersBackend, aFlags,
+      mCompositorManager->GetContentId(), aSerial, aExternalImageId);
 }
 
 bool ContentCompositorBridgeParent::DeallocPTextureParent(
     PTextureParent* actor) {
   return TextureHost::DestroyIPDLActor(actor);
-}
-
-mozilla::ipc::IPCResult ContentCompositorBridgeParent::RecvInitPCanvasParent(
-    Endpoint<PCanvasParent>&& aEndpoint) {
-  MOZ_RELEASE_ASSERT(!mCanvasTranslator,
-                     "mCanvasTranslator must be released before recreating.");
-
-  mCanvasTranslator = CanvasTranslator::Create(std::move(aEndpoint));
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult
-ContentCompositorBridgeParent::RecvReleasePCanvasParent() {
-  MOZ_RELEASE_ASSERT(mCanvasTranslator,
-                     "mCanvasTranslator hasn't been created.");
-
-  mCanvasTranslator = nullptr;
-  return IPC_OK();
-}
-
-UniquePtr<SurfaceDescriptor>
-ContentCompositorBridgeParent::LookupSurfaceDescriptorForClientTexture(
-    const int64_t aTextureId) {
-  MOZ_RELEASE_ASSERT(mCanvasTranslator,
-                     "mCanvasTranslator hasn't been created.");
-
-  return mCanvasTranslator->WaitForSurfaceDescriptor(aTextureId);
 }
 
 bool ContentCompositorBridgeParent::IsSameProcess() const {

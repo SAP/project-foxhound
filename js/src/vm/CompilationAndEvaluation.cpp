@@ -22,7 +22,7 @@
 #include "frontend/FrontendContext.h"     // js::AutoReportFrontendContext
 #include "frontend/Parser.h"  // frontend::Parser, frontend::ParseGoal
 #include "js/CharacterEncoding.h"  // JS::UTF8Chars, JS::ConstUTF8CharsZ, JS::UTF8CharsToNewTwoByteCharsZ
-#include "js/ColumnNumber.h"            // JS::ColumnNumberZeroOrigin
+#include "js/ColumnNumber.h"            // JS::ColumnNumberOneOrigin
 #include "js/experimental/JSStencil.h"  // JS::Stencil
 #include "js/friend/ErrorMessages.h"    // js::GetErrorMessage, JSMSG_*
 #include "js/RootingAPI.h"              // JS::Rooted
@@ -65,7 +65,7 @@ static void ReportSourceTooLongImpl(JS::FrontendContext* fc, ...) {
   js::ErrorMetadata metadata;
   metadata.filename = JS::ConstUTF8CharsZ("<unknown>");
   metadata.lineNumber = 0;
-  metadata.columnNumber = JS::ColumnNumberZeroOrigin::zero();
+  metadata.columnNumber = JS::ColumnNumberOneOrigin();
   metadata.lineLength = 0;
   metadata.tokenOffset = 0;
   metadata.isMuted = false;
@@ -212,7 +212,7 @@ JS_PUBLIC_API bool JS_Utf8BufferIsCompilableUnit(JSContext* cx,
                                             /* foldConstants = */ true,
                                             compilationState,
                                             /* syntaxParser = */ nullptr);
-  if (!parser.checkOptions() || !parser.parse()) {
+  if (!parser.checkOptions() || parser.parse().isErr()) {
     // We ran into an error. If it was because we ran out of source, we
     // return false so our caller knows to try to collect more buffered
     // source.

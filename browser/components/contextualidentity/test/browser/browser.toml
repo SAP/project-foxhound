@@ -38,6 +38,8 @@ skip-if = ["true"] # Bug 1541885
 ["browser_imageCache.js"]
 skip-if = ["verify && debug && os == 'win'"]
 
+["browser_guessusercontext.js"]
+
 ["browser_middleClick.js"]
 skip-if = [
   "verify && debug && os == 'linux'",
@@ -66,6 +68,8 @@ support-files = [
 ]
 
 ["browser_serviceworkers.js"]
+
+["browser_switchTab_across_user_context.js"]
 
 ["browser_tab_color_update.js"]
 

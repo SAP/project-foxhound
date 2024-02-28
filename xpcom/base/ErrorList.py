@@ -88,6 +88,7 @@ modules["ERRORRESULT"] = Mod(43)
 # Win32 system error codes, which are not mapped to a specific other value,
 # see Bug 1686041.
 modules["WIN32"] = Mod(44)
+modules["WDBA"] = Mod(45)
 
 # NS_ERROR_MODULE_GENERAL should be used by modules that do not
 # care if return code values overlap. Callers of methods that
@@ -346,6 +347,9 @@ with modules["NETWORK"]:
     errors["NS_ERROR_BAD_HSTS_CERT"] = FAILURE(89)
     # Error parsing the status line of an HTTP response
     errors["NS_ERROR_PARSING_HTTP_STATUS_LINE"] = FAILURE(90)
+    # The user refused to navigate to a potentially unsafe URL with
+    # embedded credentials/superfluos authentication.
+    errors["NS_ERROR_SUPERFLUOS_AUTH"] = FAILURE(91)
 
     # XXX really need to better rationalize these error codes.  are consumers of
     # necko really expected to know how to discern the meaning of these??
@@ -1219,6 +1223,16 @@ with modules["ERRORRESULT"]:
     errors["NS_ERROR_INTERNAL_ERRORRESULT_TYPEERROR"] = FAILURE(4)
     # Used to indicate that we want to throw a RangeError.
     errors["NS_ERROR_INTERNAL_ERRORRESULT_RANGEERROR"] = FAILURE(5)
+
+
+# =======================================================================
+# 45: NS_ERROR_MODULE_WDBA
+# =======================================================================
+with modules["WDBA"]:
+    errors["NS_ERROR_WDBA_NO_PROGID"] = FAILURE(1)
+    errors["NS_ERROR_WDBA_HASH_CHECK"] = FAILURE(2)
+    errors["NS_ERROR_WDBA_REJECTED"] = FAILURE(3)
+    errors["NS_ERROR_WDBA_BUILD"] = FAILURE(4)
 
 
 # =======================================================================

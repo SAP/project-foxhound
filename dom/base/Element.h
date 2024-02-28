@@ -184,8 +184,13 @@ enum : uint32_t {
   // element or has a HTML datalist element ancestor.
   ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR = ELEMENT_FLAG_BIT(4),
 
+  // If this flag is set on an element, that means this element
+  // has been considered by our LargestContentfulPaint algorithm and
+  // it's not going to be considered again.
+  ELEMENT_PROCESSED_BY_LCP_FOR_TEXT = ELEMENT_FLAG_BIT(5),
+
   // Remaining bits are for subclasses
-  ELEMENT_TYPE_SPECIFIC_BITS_OFFSET = NODE_TYPE_SPECIFIC_BITS_OFFSET + 5
+  ELEMENT_TYPE_SPECIFIC_BITS_OFFSET = NODE_TYPE_SPECIFIC_BITS_OFFSET + 6
 };
 
 #undef ELEMENT_FLAG_BIT
@@ -617,6 +622,8 @@ class Element : public FragmentOrElement {
    * @param aData The custom element data.
    */
   void SetCustomElementData(UniquePtr<CustomElementData> aData);
+
+  nsTArray<RefPtr<nsAtom>>& EnsureCustomStates();
 
   /**
    * Gets the custom element definition used by web components custom element.
@@ -1093,6 +1100,9 @@ class Element : public FragmentOrElement {
 
   static nsStaticAtom* const* HTMLSVGPropertiesToTraverseAndUnlink();
 
+  MOZ_CAN_RUN_SCRIPT virtual void HandleInvokeInternal(nsAtom* aAction,
+                                                       ErrorResult& aRv) {}
+
  private:
   void DescribeAttribute(uint32_t index, nsAString& aOutDescription) const;
 
@@ -1308,6 +1318,15 @@ class Element : public FragmentOrElement {
   MOZ_CAN_RUN_SCRIPT already_AddRefed<DOMRectList> GetClientRects();
   MOZ_CAN_RUN_SCRIPT already_AddRefed<DOMRect> GetBoundingClientRect();
 
+  enum class Loading : uint8_t {
+    Eager,
+    Lazy,
+  };
+
+  Loading LoadingState() const;
+  void GetLoading(nsAString& aValue) const;
+  bool ParseLoadingAttribute(const nsAString& aValue, nsAttrValue& aResult);
+
   // Shadow DOM v1
   already_AddRefed<ShadowRoot> AttachShadow(const ShadowRootInit& aInit,
                                             ErrorResult& aError);
@@ -1383,7 +1402,18 @@ class Element : public FragmentOrElement {
     if (auto* slots = GetExistingExtendedDOMSlots()) {
       slots->mContentRelevancy.reset();
       slots->mVisibleForContentVisibility.reset();
+      slots->mTemporarilyVisibleForScrolledIntoViewDescendant = false;
     }
+  }
+
+  bool TemporarilyVisibleForScrolledIntoViewDescendant() const {
+    const auto* slots = GetExistingExtendedDOMSlots();
+    return slots && slots->mTemporarilyVisibleForScrolledIntoViewDescendant;
+  }
+
+  void SetTemporarilyVisibleForScrolledIntoViewDescendant(bool aVisible) {
+    ExtendedDOMSlots()->mTemporarilyVisibleForScrolledIntoViewDescendant =
+        aVisible;
   }
 
   // https://drafts.csswg.org/cssom-view-1/#dom-element-checkvisibility
@@ -2185,6 +2215,8 @@ inline bool Element::AttrValueIs(int32_t aNameSpaceID, const nsAtom* aName,
 
 }  // namespace dom
 }  // namespace mozilla
+
+NON_VIRTUAL_ADDREF_RELEASE(mozilla::dom::Element)
 
 inline mozilla::dom::Element* nsINode::AsElement() {
   MOZ_ASSERT(IsElement());

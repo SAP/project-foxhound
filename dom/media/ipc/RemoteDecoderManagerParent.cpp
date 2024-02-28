@@ -23,6 +23,7 @@
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/VideoBridgeChild.h"
 #include "mozilla/layers/VideoBridgeParent.h"
+#include "nsIObserverService.h"
 
 #ifdef MOZ_WMF_MEDIA_ENGINE
 #  include "MFMediaEngineParent.h"
@@ -126,7 +127,8 @@ PDMFactory& RemoteDecoderManagerParent::EnsurePDMFactory() {
 }
 
 bool RemoteDecoderManagerParent::CreateForContent(
-    Endpoint<PRemoteDecoderManagerParent>&& aEndpoint) {
+    Endpoint<PRemoteDecoderManagerParent>&& aEndpoint,
+    dom::ContentParentId aChildId) {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_RDD ||
              XRE_GetProcessType() == GeckoProcessType_Utility ||
              XRE_GetProcessType() == GeckoProcessType_GPU);
@@ -136,8 +138,8 @@ bool RemoteDecoderManagerParent::CreateForContent(
     return false;
   }
 
-  RefPtr<RemoteDecoderManagerParent> parent =
-      new RemoteDecoderManagerParent(sRemoteDecoderManagerParentThread);
+  RefPtr<RemoteDecoderManagerParent> parent = new RemoteDecoderManagerParent(
+      sRemoteDecoderManagerParentThread, aChildId);
 
   RefPtr<Runnable> task =
       NewRunnableMethod<Endpoint<PRemoteDecoderManagerParent>&&>(
@@ -175,8 +177,8 @@ bool RemoteDecoderManagerParent::CreateVideoBridgeToOtherProcess(
 }
 
 RemoteDecoderManagerParent::RemoteDecoderManagerParent(
-    nsISerialEventTarget* aThread)
-    : mThread(aThread) {
+    nsISerialEventTarget* aThread, dom::ContentParentId aContentId)
+    : mThread(aThread), mContentId(aContentId) {
   MOZ_COUNT_CTOR(RemoteDecoderManagerParent);
   auto& registrar =
       XRE_IsGPUProcess() ? GPUParent::GetSingleton()->AsyncShutdownService()
@@ -288,6 +290,32 @@ mozilla::ipc::IPCResult RemoteDecoderManagerParent::RecvReadback(
     return IPC_OK();
   }
 
+  // Let's try reading directly into the shmem first to avoid extra copies.
+  SurfaceDescriptorBuffer sdb;
+  nsresult rv = image->BuildSurfaceDescriptorBuffer(
+      sdb, Image::BuildSdbFlags::RgbOnly, [&](uint32_t aBufferSize) {
+        Shmem buffer;
+        if (!AllocShmem(aBufferSize, &buffer)) {
+          return MemoryOrShmem();
+        }
+        return MemoryOrShmem(std::move(buffer));
+      });
+
+  if (NS_SUCCEEDED(rv)) {
+    *aResult = std::move(sdb);
+    return IPC_OK();
+  }
+
+  if (sdb.data().type() == MemoryOrShmem::TShmem) {
+    DeallocShmem(sdb.data().get_Shmem());
+  }
+
+  if (rv != NS_ERROR_NOT_IMPLEMENTED) {
+    *aResult = null_t();
+    return IPC_OK();
+  }
+
+  // Fallback to reading to a SourceSurface and copying that into a shmem.
   RefPtr<SourceSurface> source = image->GetAsSourceSurface();
   if (!source) {
     *aResult = null_t();

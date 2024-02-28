@@ -14,7 +14,6 @@
 #include "GPUProcessManager.h"
 #include "gfxGradientCache.h"
 #include "GfxInfoBase.h"
-#include "CanvasManagerParent.h"
 #include "VRGPUChild.h"
 #include "VRManager.h"
 #include "VRManagerParent.h"
@@ -34,6 +33,7 @@
 #include "mozilla/RemoteDecoderManagerParent.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/MemoryReportRequest.h"
@@ -74,8 +74,11 @@
 #  include "gfxWindowsPlatform.h"
 #  include "mozilla/WindowsVersion.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
+#  include "mozilla/layers/GpuProcessD3D11TextureMap.h"
 #  include "mozilla/layers/TextureD3D11.h"
 #  include "mozilla/widget/WinCompositorWindowThread.h"
+#  include "MediaCodecsSupport.h"
+#  include "WMFDecoderModule.h"
 #else
 #  include <unistd.h>
 #endif
@@ -101,6 +104,67 @@ using namespace ipc;
 using namespace layers;
 
 static GPUParent* sGPUParent;
+
+static void ReportHardwareMediaCodecSupportIfNeeded() {
+  // We only need to report the result once.
+  static bool sReported = false;
+  if (sReported) {
+    return;
+  }
+#if defined(XP_WIN)
+  NS_GetCurrentThread()->Dispatch(NS_NewRunnableFunction(
+      "GPUParent:ReportHardwareMediaCodecSupportIfNeeded", []() {
+        // Only report telemetry when hardware decoding is avaliable.
+        if (!gfx::gfxVars::CanUseHardwareVideoDecoding()) {
+          return;
+        }
+        sReported = true;
+
+        // TODO : we can remove this after HEVC is enabled by default.
+        // HEVC is not enabled. We need to force to enable it in order to know
+        // its support as well, and it would be turn off later.
+        if (StaticPrefs::media_wmf_hevc_enabled() != 1) {
+          WMFDecoderModule::Init(WMFDecoderModule::Config::ForceEnableHEVC);
+        }
+        const auto support = PDMFactory::Supported(true /* force refresh */);
+        if (support.contains(
+                mozilla::media::MediaCodecsSupport::H264HardwareDecode)) {
+          Telemetry::ScalarSet(
+              Telemetry::ScalarID::MEDIA_DEVICE_HARDWARE_DECODING_SUPPORT,
+              u"h264"_ns, true);
+        }
+        if (support.contains(
+                mozilla::media::MediaCodecsSupport::VP8HardwareDecode)) {
+          Telemetry::ScalarSet(
+              Telemetry::ScalarID::MEDIA_DEVICE_HARDWARE_DECODING_SUPPORT,
+              u"vp8"_ns, true);
+        }
+        if (support.contains(
+                mozilla::media::MediaCodecsSupport::VP9HardwareDecode)) {
+          Telemetry::ScalarSet(
+              Telemetry::ScalarID::MEDIA_DEVICE_HARDWARE_DECODING_SUPPORT,
+              u"vp9"_ns, true);
+        }
+        if (support.contains(
+                mozilla::media::MediaCodecsSupport::AV1HardwareDecode)) {
+          Telemetry::ScalarSet(
+              Telemetry::ScalarID::MEDIA_DEVICE_HARDWARE_DECODING_SUPPORT,
+              u"av1"_ns, true);
+        }
+        if (support.contains(
+                mozilla::media::MediaCodecsSupport::HEVCHardwareDecode)) {
+          Telemetry::ScalarSet(
+              Telemetry::ScalarID::MEDIA_DEVICE_HARDWARE_DECODING_SUPPORT,
+              u"hevc"_ns, true);
+        }
+        if (StaticPrefs::media_wmf_hevc_enabled() != 1) {
+          WMFDecoderModule::Init();
+        }
+      }));
+#endif
+  // TODO : in the future, when we have GPU procss on MacOS, then we can report
+  // HEVC usage as well.
+}
 
 GPUParent::GPUParent() : mLaunchTime(TimeStamp::Now()) { sGPUParent = this; }
 
@@ -252,6 +316,17 @@ void GPUParent::NotifySwapChainInfo(layers::SwapChainInfo aInfo) {
   Unused << SendNotifySwapChainInfo(aInfo);
 }
 
+void GPUParent::NotifyDisableRemoteCanvas() {
+  if (!NS_IsMainThread()) {
+    NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "gfx::GPUParent::NotifyDisableRemoteCanvas", []() -> void {
+          GPUParent::GetSingleton()->NotifyDisableRemoteCanvas();
+        }));
+    return;
+  }
+  Unused << SendNotifyDisableRemoteCanvas();
+}
+
 mozilla::ipc::IPCResult GPUParent::RecvInit(
     nsTArray<GfxVarUpdate>&& vars, const DevicePrefs& devicePrefs,
     nsTArray<LayerTreeIdMapping>&& aMappings,
@@ -367,10 +442,8 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
 #endif
 
   // Make sure to do this *after* we update gfxVars above.
-  if (gfxVars::UseCanvasRenderThread()) {
-    gfx::CanvasRenderThread::Start();
-  }
   wr::RenderThread::Start(aWrNamespace);
+  gfx::CanvasRenderThread::Start();
   image::ImageMemoryReporter::InitForWebRender();
 
   VRManager::ManagerInit();
@@ -389,6 +462,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
             auto supported = PDMFactory::Supported();
             Unused << GPUParent::GetSingleton()->SendUpdateMediaCodecsSupported(
                 supported);
+            ReportHardwareMediaCodecSupportIfNeeded();
           }),
       2000 /* 2 seconds timeout */, EventQueuePriority::Idle));
 
@@ -410,7 +484,8 @@ mozilla::ipc::IPCResult GPUParent::RecvInitSandboxTesting(
 
 mozilla::ipc::IPCResult GPUParent::RecvInitCompositorManager(
     Endpoint<PCompositorManagerParent>&& aEndpoint) {
-  CompositorManagerParent::Create(std::move(aEndpoint), /* aIsRoot */ true);
+  CompositorManagerParent::Create(std::move(aEndpoint), ContentParentId(),
+                                  /* aIsRoot */ true);
   return IPC_OK();
 }
 
@@ -479,6 +554,7 @@ mozilla::ipc::IPCResult GPUParent::RecvUpdateVar(const GfxVarUpdate& aUpdate) {
           WMFDecoderModule::Init();
           Unused << GPUParent::GetSingleton()->SendUpdateMediaCodecsSupported(
               PDMFactory::Supported(true /* force refresh */));
+          ReportHardwareMediaCodecSupportIfNeeded();
         }
       });
 #endif
@@ -540,30 +616,34 @@ mozilla::ipc::IPCResult GPUParent::RecvSimulateDeviceReset() {
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvNewContentCompositorManager(
-    Endpoint<PCompositorManagerParent>&& aEndpoint) {
-  CompositorManagerParent::Create(std::move(aEndpoint), /* aIsRoot */ false);
+    Endpoint<PCompositorManagerParent>&& aEndpoint,
+    const ContentParentId& aChildId) {
+  CompositorManagerParent::Create(std::move(aEndpoint), aChildId,
+                                  /* aIsRoot */ false);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvNewContentImageBridge(
-    Endpoint<PImageBridgeParent>&& aEndpoint) {
-  if (!ImageBridgeParent::CreateForContent(std::move(aEndpoint))) {
+    Endpoint<PImageBridgeParent>&& aEndpoint, const ContentParentId& aChildId) {
+  if (!ImageBridgeParent::CreateForContent(std::move(aEndpoint), aChildId)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvNewContentVRManager(
-    Endpoint<PVRManagerParent>&& aEndpoint) {
-  if (!VRManagerParent::CreateForContent(std::move(aEndpoint))) {
+    Endpoint<PVRManagerParent>&& aEndpoint, const ContentParentId& aChildId) {
+  if (!VRManagerParent::CreateForContent(std::move(aEndpoint), aChildId)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvNewContentRemoteDecoderManager(
-    Endpoint<PRemoteDecoderManagerParent>&& aEndpoint) {
-  if (!RemoteDecoderManagerParent::CreateForContent(std::move(aEndpoint))) {
+    Endpoint<PRemoteDecoderManagerParent>&& aEndpoint,
+    const ContentParentId& aChildId) {
+  if (!RemoteDecoderManagerParent::CreateForContent(std::move(aEndpoint),
+                                                    aChildId)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
@@ -689,9 +769,10 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
           self->mVsyncBridge = nullptr;
         }
         VideoBridgeParent::Shutdown();
-        // This could be running on either the Compositor or the Renderer
-        // thread.
-        CanvasManagerParent::Shutdown();
+        // This could be running on either the Compositor thread, the Renderer
+        // thread, or the dedicated CanvasRender thread, so we need to shutdown
+        // before the former two.
+        CanvasRenderThread::Shutdown();
         CompositorThreadHolder::Shutdown();
         RemoteTextureMap::Shutdown();
         // There is a case that RenderThread exists when gfxVars::UseWebRender()
@@ -699,9 +780,6 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
         // compositor.
         if (wr::RenderThread::Get()) {
           wr::RenderThread::ShutDown();
-        }
-        if (gfx::CanvasRenderThread::Get()) {
-          gfx::CanvasRenderThread::ShutDown();
         }
 #ifdef XP_WIN
         if (widget::WinCompositorWindowThread::Get()) {

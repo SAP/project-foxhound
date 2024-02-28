@@ -28,6 +28,7 @@
 #include "mozilla/dom/ServiceWorkerRegistration.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/TouchEvent.h"
+#include "mozilla/dom/PerformanceMainThread.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ShapeUtils.h"
@@ -1220,7 +1221,7 @@ void nsDisplayListBuilder::LeavePresShell(const nsIFrame* aReferenceFrame,
       }
     }
     nsRootPresContext* rootPresContext = pc->GetRootPresContext();
-    if (!pc->HadFirstContentfulPaint() && rootPresContext) {
+    if (!pc->HasStoppedGeneratingLCP() && rootPresContext) {
       if (!CurrentPresShellState()->mIsBackgroundOnly) {
         if (pc->HasEverBuiltInvisibleText() ||
             DisplayListIsContentful(this, aPaintedContents)) {
@@ -3429,6 +3430,17 @@ bool nsDisplayBackgroundImage::CreateWebRenderCommands(
   if (result == ImgDrawResult::NOT_SUPPORTED) {
     return false;
   }
+
+  if (nsIContent* content = StyleFrame()->GetContent()) {
+    if (imgRequestProxy* requestProxy = mBackgroundStyle->StyleBackground()
+                                            ->mImage.mLayers[mLayer]
+                                            .mImage.GetImageRequest()) {
+      // LCP don't consider gradient backgrounds.
+      LCPHelpers::FinalizeLCPEntryForImage(content->AsElement(), requestProxy,
+                                           mBounds - ToReferenceFrame());
+    }
+  }
+
   return true;
 }
 
@@ -3746,8 +3758,7 @@ bool nsDisplayThemedBackground::CreateWebRenderCommands(
 }
 
 bool nsDisplayThemedBackground::IsWindowActive() const {
-  DocumentState docState = mFrame->GetContent()->OwnerDoc()->GetDocumentState();
-  return !docState.HasState(DocumentState::WINDOW_INACTIVE);
+  return !mFrame->PresContext()->Document()->IsTopLevelWindowInactive();
 }
 
 void nsDisplayThemedBackground::ComputeInvalidationRegion(
@@ -6171,7 +6182,9 @@ nsDisplayTransform::FrameTransformProperties::FrameTransformProperties(
       mRotate(aFrame->StyleDisplay()->mRotate),
       mScale(aFrame->StyleDisplay()->mScale),
       mTransform(aFrame->StyleDisplay()->mTransform),
-      mMotion(MotionPathUtils::ResolveMotionPath(aFrame, aRefBox)),
+      mMotion(aFrame->StyleDisplay()->mOffsetPath.IsNone()
+                  ? Nothing()
+                  : MotionPathUtils::ResolveMotionPath(aFrame, aRefBox)),
       mToTransformOrigin(
           GetDeltaToTransformOrigin(aFrame, aRefBox, aAppUnitsPerPixel)) {}
 
@@ -7482,6 +7495,10 @@ void nsDisplayText::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   // the WebRender fallback painting path, and we don't want to issue
   // recorded commands that are dependent on the visible/building rect.
   RenderToContext(aCtx, aBuilder, GetPaintRect(aBuilder, aCtx));
+
+  auto* textFrame = static_cast<nsTextFrame*>(mFrame);
+  LCPTextFrameHelper::MaybeUnionTextFrame(textFrame,
+                                          mBounds - ToReferenceFrame());
 }
 
 bool nsDisplayText::CreateWebRenderCommands(
@@ -7566,6 +7583,8 @@ bool nsDisplayText::CreateWebRenderCommands(
 
   gfxContext* textDrawer = aBuilder.GetTextContext(aResources, aSc, aManager,
                                                    this, bounds, deviceOffset);
+
+  LCPTextFrameHelper::MaybeUnionTextFrame(f, bounds - ToReferenceFrame());
 
   aBuilder.StartGroup(this);
 
@@ -7920,13 +7939,7 @@ bool nsDisplayMasksAndClipPaths::IsValidMask() {
     return false;
   }
 
-  nsIFrame* firstFrame =
-      nsLayoutUtils::FirstContinuationOrIBSplitSibling(mFrame);
-
-  return !(SVGObserverUtils::GetAndObserveClipPath(firstFrame, nullptr) ==
-               SVGObserverUtils::eHasRefsSomeInvalid ||
-           SVGObserverUtils::GetAndObserveMasks(firstFrame, nullptr) ==
-               SVGObserverUtils::eHasRefsSomeInvalid);
+  return SVGUtils::DetermineMaskUsage(mFrame, false).UsingMaskOrClipPath();
 }
 
 bool nsDisplayMasksAndClipPaths::PaintMask(nsDisplayListBuilder* aBuilder,
@@ -8013,7 +8026,7 @@ static Maybe<wr::WrClipChainId> CreateSimpleClipRegion(
   nsIFrame* frame = aDisplayItem.Frame();
   const auto* style = frame->StyleSVGReset();
   MOZ_ASSERT(style->HasClipPath() || style->HasMask());
-  if (!SVGIntegrationUtils::UsingSimpleClipPathForFrame(frame)) {
+  if (!SVGUtils::DetermineMaskUsage(frame, false).IsSimpleClipShape()) {
     return Nothing();
   }
 
@@ -8022,7 +8035,7 @@ static Maybe<wr::WrClipChainId> CreateSimpleClipRegion(
 
   auto appUnitsPerDevPixel = frame->PresContext()->AppUnitsPerDevPixel();
   const nsRect refBox =
-      nsLayoutUtils::ComputeGeometryBox(frame, clipPath.AsShape()._1);
+      nsLayoutUtils::ComputeClipPathGeometryBox(frame, clipPath.AsShape()._1);
 
   wr::WrClipId clipId{};
 
@@ -8079,7 +8092,7 @@ static Maybe<wr::WrClipChainId> CreateSimpleClipRegion(
       // without using a mask image.
       //
       // And if you _really really_ need to add an exception, add it to
-      // SVGIntegrationUtils::UsingSimpleClipPathForFrame
+      // SVGUtils::DetermineMaskUsage
       MOZ_ASSERT_UNREACHABLE("Unhandled shape id?");
       return Nothing();
   }
@@ -8103,7 +8116,7 @@ static void FillPolygonDataForDisplayItem(
   const auto& clipPath = style->mClipPath;
   const auto& shape = *clipPath.AsShape()._0;
   const nsRect refBox =
-      nsLayoutUtils::ComputeGeometryBox(frame, clipPath.AsShape()._1);
+      nsLayoutUtils::ComputeClipPathGeometryBox(frame, clipPath.AsShape()._1);
 
   // We only fill polygon data for polygons that are below a complexity
   // limit.
@@ -8180,7 +8193,7 @@ bool nsDisplayMasksAndClipPaths::CreateWebRenderCommands(
     bounds.MoveTo(0, 0);
 
     Maybe<float> opacity =
-        (SVGIntegrationUtils::UsingSimpleClipPathForFrame(mFrame) &&
+        (SVGUtils::DetermineMaskUsage(mFrame, false).IsSimpleClipShape() &&
          aBuilder.GetInheritedOpacity() != 1.0f)
             ? Some(aBuilder.GetInheritedOpacity())
             : Nothing();
@@ -8273,8 +8286,9 @@ bool nsDisplayBackdropFilters::CreateWebRenderCommands(
   bool initialized = true;
   if (!SVGIntegrationUtils::CreateWebRenderCSSFilters(filterChain, mFrame,
                                                       wrFilters) &&
-      !SVGIntegrationUtils::BuildWebRenderFilters(mFrame, filterChain,
-                                                  wrFilters, initialized)) {
+      !SVGIntegrationUtils::BuildWebRenderFilters(
+          mFrame, filterChain, StyleFilterType::BackdropFilter, wrFilters,
+          initialized)) {
     // TODO: If painting backdrop-filters on the content side is implemented,
     // consider returning false to fall back to that.
     wrFilters = {};
@@ -8388,6 +8402,7 @@ bool nsDisplayFilters::CreateWebRenderCommands(
   if (!SVGIntegrationUtils::CreateWebRenderCSSFilters(filterChain, mFrame,
                                                       wrFilters) &&
       !SVGIntegrationUtils::BuildWebRenderFilters(mFrame, filterChain,
+                                                  StyleFilterType::Filter,
                                                   wrFilters, initialized)) {
     if (mStyle) {
       // TODO(bug 1769223): Support fallback filters in the root code-path,

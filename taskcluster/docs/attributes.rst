@@ -45,7 +45,7 @@ Project names are the repositories.  They can be:
 * `mozilla-central`
 * `mozilla-beta`
 * `mozilla-release`
-* `mozilla-esr102`
+* `mozilla-esr115`
 * ... A partial list can be found in taskcluster/gecko_taskgraph/util/attributes.py
 
 For try, this attribute applies only if ``-p all`` is specified.  All jobs can
@@ -257,7 +257,7 @@ toolchain-command
 =================
 An extra attribute used to communicate to the build system bootstrap code the
 command used to build the toolchain. This is useful because the commands are
-formatted differently depending on the worker type, sometimes unconveniently
+formatted differently depending on the worker type, sometimes inconveniently
 to parse afterwards.
 
 always_target

@@ -12,7 +12,7 @@
 import { prefs, features } from "../utils/prefs";
 import { searchKeys } from "../constants";
 
-export const initialUIState = () => ({
+export const initialUIState = ({ supportsDebuggerStatementIgnore } = {}) => ({
   selectedPrimaryPaneTab: "sources",
   activeSearch: null,
   startPanelCollapsed: prefs.startPanelCollapsed,
@@ -56,8 +56,11 @@ export const initialUIState = () => ({
       excludePatterns: "",
     },
   },
+  projectSearchQuery: "",
   hideIgnoredSources: prefs.hideIgnoredSources,
   sourceMapIgnoreListEnabled: prefs.sourceMapIgnoreListEnabled,
+  // A server side trait to know if ignoring debugger statement is supported
+  supportsDebuggerStatementIgnore,
 });
 
 function update(state = initialUIState(), action) {
@@ -144,7 +147,7 @@ function update(state = initialUIState(), action) {
     }
 
     case "NAVIGATE": {
-      return { ...state, activeSearch: null, highlightedLineRange: null };
+      return { ...state, highlightedLineRange: null };
     }
 
     case "REMOVE_THREAD": {
@@ -168,6 +171,14 @@ function update(state = initialUIState(), action) {
       };
       prefs.searchOptions = state.mutableSearchOptions;
       return { ...state };
+    }
+
+    case "SET_PROJECT_SEARCH_QUERY": {
+      if (action.query != state.projectSearchQuery) {
+        state.projectSearchQuery = action.query;
+        return { ...state };
+      }
+      return state;
     }
 
     case "HIDE_IGNORED_SOURCES": {

@@ -24,6 +24,8 @@ browser.jar:
     content/browser/firefoxview/fxview-empty-state.css
     content/browser/firefoxview/fxview-empty-state.mjs
     content/browser/firefoxview/helpers.mjs
+    content/browser/firefoxview/fxview-search-textbox.css
+    content/browser/firefoxview/fxview-search-textbox.mjs
     content/browser/firefoxview/fxview-tab-list.css
     content/browser/firefoxview/fxview-tab-list.mjs
     content/browser/firefoxview/fxview-tab-row.css
@@ -44,5 +46,3 @@ browser.jar:
     content/browser/firefoxview/synced-tabs-error.svg (content/synced-tabs-error.svg)
     content/browser/callout-tab-pickup.svg (content/callout-tab-pickup.svg)
     content/browser/callout-tab-pickup-dark.svg (content/callout-tab-pickup-dark.svg)
-    content/browser/cfr-lightning.svg (content/cfr-lightning.svg)
-    content/browser/cfr-lightning-dark.svg (content/cfr-lightning-dark.svg)

@@ -549,12 +549,36 @@ void js::TraceWeakMapKeyEdgeInternal(JSTracer* trc, Zone* weakMapZone,
   TraceEdgeInternal(trc, thingp, name);
 }
 
+template <typename T>
+void js::TraceWeakMapKeyEdgeInternal(JSTracer* trc, Zone* weakMapZone,
+                                     T* thingp, const char* name) {
+  // We can't use ShouldTraceCrossCompartment here because that assumes the
+  // source of the edge is a CCW object which could be used to delay gray
+  // marking. Instead, assert that the weak map zone is in the same marking
+  // state as the target thing's zone and therefore we can go ahead and mark it.
+#ifdef DEBUG
+  if (trc->isMarkingTracer()) {
+    MOZ_ASSERT(weakMapZone->isGCMarking());
+    MOZ_ASSERT(weakMapZone->gcState() ==
+               gc::ToMarkable(*thingp)->zone()->gcState());
+  }
+#endif
+
+  // Clear expected compartment for cross-compartment edge.
+  AutoClearTracingSource acts(trc);
+
+  TraceEdgeInternal(trc, thingp, name);
+}
+
 template void js::TraceWeakMapKeyEdgeInternal<JSObject>(JSTracer*, Zone*,
                                                         JSObject**,
                                                         const char*);
 template void js::TraceWeakMapKeyEdgeInternal<BaseScript>(JSTracer*, Zone*,
                                                           BaseScript**,
                                                           const char*);
+template void js::TraceWeakMapKeyEdgeInternal<JS::Value>(JSTracer*, Zone*,
+                                                         JS::Value*,
+                                                         const char*);
 
 static Cell* TraceGenericPointerRootAndType(JSTracer* trc, Cell* thing,
                                             JS::TraceKind kind,
@@ -1272,6 +1296,24 @@ void GCMarker::moveWork(GCMarker* dst, GCMarker* src) {
   MarkStack::moveWork(dst->stack, src->stack);
 }
 
+bool GCMarker::initStack() {
+  MOZ_ASSERT(!isActive());
+  MOZ_ASSERT(markColor_ == gc::MarkColor::Black);
+  return stack.init();
+}
+
+void GCMarker::resetStackCapacity() {
+  MOZ_ASSERT(!isActive());
+  MOZ_ASSERT(markColor_ == gc::MarkColor::Black);
+  (void)stack.resetStackCapacity();
+}
+
+void GCMarker::freeStack() {
+  MOZ_ASSERT(!isActive());
+  MOZ_ASSERT(markColor_ == gc::MarkColor::Black);
+  stack.clearAndFreeStack();
+}
+
 bool GCMarker::markUntilBudgetExhausted(SliceBudget& budget,
                                         ShouldReportMarkTime reportTime) {
 #ifdef DEBUG
@@ -1527,7 +1569,7 @@ scan_value_range:
 
   return true;
 
-scan_obj : {
+scan_obj: {
   AssertShouldMarkInZone(this, obj);
 
   if constexpr (bool(opts & MarkingOptions::MarkImplicitEdges)) {
@@ -2005,13 +2047,14 @@ void GCMarker::stop() {
   }
   state = NotActive;
 
-  (void)stack.resetStackCapacity();
   otherStack.clearAndFreeStack();
   ClearEphemeronEdges(runtime());
   unmarkGrayStack.clearAndFree();
 }
 
 void GCMarker::reset() {
+  state = NotActive;
+
   stack.clearAndResetCapacity();
   otherStack.clearAndFreeStack();
   ClearEphemeronEdges(runtime());
@@ -2744,12 +2787,21 @@ Cell* js::gc::UninlinedForwarded(const Cell* cell) { return Forwarded(cell); }
 
 namespace js::debug {
 
-MarkInfo GetMarkInfo(Cell* rawCell) {
-  if (!rawCell->isTenured()) {
+MarkInfo GetMarkInfo(void* vp) {
+  GCRuntime& gc = TlsGCContext.get()->runtime()->gc;
+  if (gc.nursery().isInside(vp)) {
     return MarkInfo::NURSERY;
   }
 
-  TenuredCell* cell = &rawCell->asTenured();
+  if (!gc.isPointerWithinTenuredCell(vp)) {
+    return MarkInfo::UNKNOWN;
+  }
+
+  if (!IsCellPointerValid(vp)) {
+    return MarkInfo::UNKNOWN;
+  }
+
+  TenuredCell* cell = reinterpret_cast<TenuredCell*>(vp);
   if (cell->isMarkedGray()) {
     return MarkInfo::GRAY;
   }

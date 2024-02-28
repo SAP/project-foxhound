@@ -11,6 +11,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/Compiler.h"
 #include "mozilla/FloatingPoint.h"
 #if JS_HAS_INTL_API
 #  include "mozilla/intl/String.h"
@@ -880,9 +881,73 @@ bool js::str_toString(JSContext* cx, unsigned argc, Value* vp) {
   return CallNonGenericMethod<IsString, str_toString_impl>(cx, args);
 }
 
-/*
- * Java-like string native methods.
- */
+template <typename DestChar, typename SrcChar>
+static inline void CopyChars(DestChar* destChars, const SrcChar* srcChars,
+                             size_t length) {
+  if constexpr (std::is_same_v<DestChar, SrcChar>) {
+#if MOZ_IS_GCC
+    // Directly call memcpy to work around bug 1863131.
+    memcpy(destChars, srcChars, length * sizeof(DestChar));
+#else
+    PodCopy(destChars, srcChars, length);
+#endif
+  } else {
+    for (size_t i = 0; i < length; i++) {
+      destChars[i] = srcChars[i];
+    }
+  }
+}
+
+template <typename CharT>
+static inline void CopyChars(CharT* to, const JSLinearString* from,
+                             size_t begin, size_t length) {
+  MOZ_ASSERT(begin + length <= from->length());
+
+  JS::AutoCheckCannotGC nogc;
+  if constexpr (std::is_same_v<CharT, Latin1Char>) {
+    MOZ_ASSERT(from->hasLatin1Chars());
+    CopyChars(to, from->latin1Chars(nogc) + begin, length);
+  } else {
+    if (from->hasLatin1Chars()) {
+      CopyChars(to, from->latin1Chars(nogc) + begin, length);
+    } else {
+      CopyChars(to, from->twoByteChars(nogc) + begin, length);
+    }
+  }
+}
+
+template <typename CharT>
+static JSLinearString* SubstringInlineString(JSContext* cx,
+                                             Handle<JSLinearString*> left,
+                                             Handle<JSLinearString*> right,
+                                             size_t begin, size_t lhsLength,
+                                             size_t rhsLength,
+                                             const StringTaint& taint) {
+  constexpr size_t MaxLength = std::is_same_v<CharT, Latin1Char>
+                                   ? JSFatInlineString::MAX_LENGTH_LATIN1
+                                   : JSFatInlineString::MAX_LENGTH_TWO_BYTE;
+
+  size_t length = lhsLength + rhsLength;
+  MOZ_ASSERT(length <= MaxLength, "total length fits in stack chars");
+  MOZ_ASSERT(JSInlineString::lengthFits<CharT>(length));
+
+  CharT chars[MaxLength] = {};
+
+  CopyChars(chars, left, begin, lhsLength);
+  CopyChars(chars + lhsLength, right, 0, rhsLength);
+
+  if (!taint) {
+    if (auto* str = cx->staticStrings().lookup(chars, length)) {
+      return str;
+    }
+  }
+
+  JSLinearString* ret =  NewInlineString<CanGC>(cx, chars, length);
+  if (ret && taint) {
+    ret->setTaint(taint);
+  }
+  return ret;
+}
 
 JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
                               int32_t lengthInt) {
@@ -902,7 +967,7 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
    *
    * while() {
    *   text = text.substr(0, x) + "bla" + text.substr(x)
-   *   test.charCodeAt(x + 1)
+   *   text.charCodeAt(x + 1)
    * }
    */
   if (str->isRope()) {
@@ -929,20 +994,49 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
     size_t lhsLength = rope->leftChild()->length() - begin;
     size_t rhsLength = begin + len - rope->leftChild()->length();
 
-    Rooted<JSRope*> ropeRoot(cx, rope);
-    RootedString lhs(
-        cx, NewDependentString(cx, ropeRoot->leftChild(), begin, lhsLength));
-    if (!lhs) {
+    Rooted<JSLinearString*> left(cx, rope->leftChild()->ensureLinear(cx));
+    if (!left) {
       return nullptr;
     }
 
-    RootedString rhs(
-        cx, NewDependentString(cx, ropeRoot->rightChild(), 0, rhsLength));
-    if (!rhs) {
+    Rooted<JSLinearString*> right(cx, rope->rightChild()->ensureLinear(cx));
+    if (!right) {
       return nullptr;
     }
 
-    JSString* res = JSRope::new_<CanGC>(cx, lhs, rhs, len);
+    if (rope->hasLatin1Chars()) {
+      if (JSInlineString::lengthFits<Latin1Char>(len)) {
+        return SubstringInlineString<Latin1Char>(cx, left, right, begin,
+                                                 lhsLength, rhsLength, newTaint);
+      }
+    } else {
+      if (JSInlineString::lengthFits<char16_t>(len)) {
+        return SubstringInlineString<char16_t>(cx, left, right, begin,
+                                               lhsLength, rhsLength, newTaint);
+      }
+    }
+
+    left = NewDependentString(cx, left, begin, lhsLength);
+    if (!left) {
+      return nullptr;
+    }
+
+    right = NewDependentString(cx, right, 0, rhsLength);
+    if (!right) {
+      return nullptr;
+    }
+
+    // The dependent string of a two-byte string can be a Latin-1 string, so
+    // check again if the result fits into an inline string.
+    if (left->hasLatin1Chars() && right->hasLatin1Chars()) {
+      if (JSInlineString::lengthFits<Latin1Char>(len)) {
+        MOZ_ASSERT(str->hasTwoByteChars(), "Latin-1 ropes are handled above");
+        return SubstringInlineString<Latin1Char>(cx, left, right, 0, lhsLength,
+                                                 rhsLength, newTaint);
+      }
+    }
+
+    JSString* res = JSRope::new_<CanGC>(cx, left, right, len);
     res->setTaint(cx, newTaint);
     return res;
   }
@@ -1489,22 +1583,6 @@ static size_t ToUpperCaseLength(const CharT* chars, size_t startIndex,
 }
 
 template <typename DestChar, typename SrcChar>
-static inline void CopyChars(DestChar* destChars, const SrcChar* srcChars,
-                             size_t length) {
-  static_assert(!std::is_same_v<DestChar, SrcChar>,
-                "PodCopy is used for the same type case");
-  for (size_t i = 0; i < length; i++) {
-    destChars[i] = srcChars[i];
-  }
-}
-
-template <typename CharT>
-static inline void CopyChars(CharT* destChars, const CharT* srcChars,
-                             size_t length) {
-  PodCopy(destChars, srcChars, length);
-}
-
-template <typename DestChar, typename SrcChar>
 static inline bool ToUpperCase(JSContext* cx,
                                InlineCharBuffer<DestChar>& newChars,
                                const SrcChar* chars, size_t startIndex,
@@ -1618,18 +1696,14 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
     // so rarely Latin-1 that we don't even consider creating a new
     // Latin-1 string.
     if constexpr (std::is_same_v<CharT, Latin1Char>) {
-      bool resultIsLatin1 = true;
-      for (size_t j = i; j < length; j++) {
-        Latin1Char c = chars[j];
-        if (c == unicode::MICRO_SIGN ||
-            c == unicode::LATIN_SMALL_LETTER_Y_WITH_DIAERESIS) {
-          MOZ_ASSERT(unicode::ToUpperCase(c) > JSString::MAX_LATIN1_CHAR);
-          resultIsLatin1 = false;
-          break;
-        } else {
-          MOZ_ASSERT(unicode::ToUpperCase(c) <= JSString::MAX_LATIN1_CHAR);
-        }
-      }
+      bool resultIsLatin1 = std::none_of(chars + i, chars + length, [](auto c) {
+        bool upperCaseIsTwoByte =
+            c == unicode::MICRO_SIGN ||
+            c == unicode::LATIN_SMALL_LETTER_Y_WITH_DIAERESIS;
+        MOZ_ASSERT(upperCaseIsTwoByte ==
+                   (unicode::ToUpperCase(c) > JSString::MAX_LATIN1_CHAR));
+        return upperCaseIsTwoByte;
+      });
 
       if (resultIsLatin1) {
         newChars.construct<Latin1Buffer>();
@@ -4317,7 +4391,7 @@ static inline bool CodeUnitToString(JSContext* cx, uint16_t ucode,
   // }
 
   char16_t c = char16_t(ucode);
-  JSString* str = NewStringCopyNDontDeflate<CanGC>(cx, &c, 1);
+  JSString* str = NewInlineString<CanGC>(cx, {c}, 1);
   if (!str) {
     return false;
   }
@@ -4387,7 +4461,7 @@ bool js::str_fromCodePoint_one_arg(JSContext* cx, HandleValue code,
 
   char16_t chars[] = {unicode::LeadSurrogate(codePoint),
                       unicode::TrailSurrogate(codePoint)};
-  JSString* str = NewStringCopyNDontDeflate<CanGC>(cx, chars, 2);
+  JSString* str = NewInlineString<CanGC>(cx, chars, 2);
   if (!str) {
     return false;
   }

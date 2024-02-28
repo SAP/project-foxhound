@@ -277,6 +277,9 @@ class GraphDriver {
   virtual void Start() = 0;
   /* Shutdown GraphDriver */
   MOZ_CAN_RUN_SCRIPT virtual void Shutdown() = 0;
+  /* Set the UTF-8 name for system audio streams.
+   * Graph thread, or main thread if the graph is not running. */
+  virtual void SetStreamName(const nsACString& aStreamName);
   /* Rate at which the GraphDriver runs, in ms. This can either be user
    * controlled (because we are using a {System,Offline}ClockDriver, and decide
    * how often we want to wakeup/how much we want to process per iteration), or
@@ -290,9 +293,6 @@ class GraphDriver {
    * ThreadedDriver). Can be called on any thread.
    */
   virtual void EnsureNextIteration() = 0;
-
-  /* Implement the switching of the driver and the necessary updates */
-  void SwitchToDriver(GraphDriver* aDriver);
 
   // Those are simply for accessing the associated pointer. Graph thread only,
   // or if one is not running, main thread.
@@ -318,7 +318,7 @@ class GraphDriver {
    * Set the state of the driver so it can start at the right point in time,
    * after switching from another driver.
    */
-  void SetState(GraphTime aIterationStart, GraphTime aIterationEnd,
+  void SetState(const nsACString& aStreamName, GraphTime aIterationEnd,
                 GraphTime aStateComputedTime);
 
   GraphInterface* Graph() const { return mGraphInterface; }
@@ -349,8 +349,8 @@ class GraphDriver {
   }
 
  protected:
-  // Time of the start of this graph iteration.
-  GraphTime mIterationStart = 0;
+  // The UTF-8 name for system audio streams.  Graph thread.
+  nsCString mStreamName;
   // Time of the end of this graph iteration.
   GraphTime mIterationEnd = 0;
   // Time until which the graph has processed data.
@@ -538,7 +538,6 @@ struct TrackAndPromiseForOperation {
   MozPromiseHolder<MediaTrackGraph::AudioContextOperationPromise> mHolder;
 };
 
-enum class AsyncCubebOperation { INIT, SHUTDOWN };
 enum class AudioInputType { Unknown, Voice };
 
 /**
@@ -579,6 +578,7 @@ class AudioCallbackDriver : public GraphDriver, public MixerCallbackReceiver {
 
   void Start() override;
   MOZ_CAN_RUN_SCRIPT void Shutdown() override;
+  void SetStreamName(const nsACString& aStreamName) override;
 
   /* Static wrapper function cubeb calls back. */
   static long DataCallback_s(cubeb_stream* aStream, void* aUser,
@@ -641,10 +641,11 @@ class AudioCallbackDriver : public GraphDriver, public MixerCallbackReceiver {
     return mAudioThreadIdInCb.load() == std::this_thread::get_id();
   }
 
-  /* Returns true if this audio callback driver has successfully started and not
-   * yet stopped. If the fallback driver is active, this returns false. */
+  /* Returns true if this driver has started (perhaps with a fallback driver)
+   * and not yet stopped. */
   bool ThreadRunning() const override {
-    return mAudioStreamState == AudioStreamState::Running;
+    return mAudioStreamState == AudioStreamState::Running ||
+           mFallbackDriverState == FallbackDriverState::Running;
   }
 
   /* Whether the underlying cubeb stream has been started and has not stopped
@@ -668,8 +669,9 @@ class AudioCallbackDriver : public GraphDriver, public MixerCallbackReceiver {
   void DeviceChangedCallback();
   /* Start the cubeb stream */
   bool StartStream();
-  friend class AsyncCubebTask;
-  void Init();
+  friend class MediaTrackGraphInitThreadRunnable;
+  void Init(const nsCString& aStreamName);
+  void SetCubebStreamName(const nsCString& aStreamName);
   void Stop();
   /**
    *  Fall back to a SystemClockDriver using a normal thread. If needed,
@@ -680,7 +682,7 @@ class AudioCallbackDriver : public GraphDriver, public MixerCallbackReceiver {
    * will be None. If it stopped after the graph told it to stop, or switch,
    * aState will be Stopped. Hands over state to the audio driver that may
    * iterate the graph after this has been called. */
-  void FallbackDriverStopped(GraphTime aIterationStart, GraphTime aIterationEnd,
+  void FallbackDriverStopped(GraphTime aIterationEnd,
                              GraphTime aStateComputedTime,
                              FallbackDriverState aState);
 
@@ -690,7 +692,7 @@ class AudioCallbackDriver : public GraphDriver, public MixerCallbackReceiver {
 
   /* This is true when the method is executed on CubebOperation thread pool. */
   bool OnCubebOperationThread() {
-    return mInitShutdownThread->IsOnCurrentThreadInfallible();
+    return mCubebOperationThread->IsOnCurrentThreadInfallible();
   }
 
   /* MediaTrackGraphs are always down/up mixed to output channels. */
@@ -728,8 +730,9 @@ class AudioCallbackDriver : public GraphDriver, public MixerCallbackReceiver {
   };
 
   /* Shared thread pool with up to one thread for off-main-thread
-   * initialization and shutdown of the audio stream via AsyncCubebTask. */
-  const RefPtr<SharedThreadPool> mInitShutdownThread;
+   * initialization and shutdown of the audio stream and for other tasks that
+   * must run serially for access to mAudioStream. */
+  const RefPtr<SharedThreadPool> mCubebOperationThread;
   cubeb_device_pref mInputDevicePreference;
   /* The mixer that the graph mixes into during an iteration. Audio thread only.
    */
@@ -743,10 +746,10 @@ class AudioCallbackDriver : public GraphDriver, public MixerCallbackReceiver {
   /* State of the audio stream, see inline comments. */
   enum class AudioStreamState {
     /* There is no cubeb_stream or mAudioStream is in CUBEB_STATE_ERROR or
-     * CUBEB_STATE_STOPPED and no pending AsyncCubebTask exists to INIT a new
+     * CUBEB_STATE_STOPPED and no pending task exists to Init() a new
      * cubeb_stream. */
     None,
-    /* An AsyncCubebTask to INIT a new cubeb_stream is pending. */
+    /* A task to Init() a new cubeb_stream is pending. */
     Pending,
     /* cubeb_start_stream() is about to be or has been called on mAudioStream.
      * Any previous cubeb_streams have been destroyed. */
@@ -789,31 +792,6 @@ class AudioCallbackDriver : public GraphDriver, public MixerCallbackReceiver {
 
   virtual ~AudioCallbackDriver();
   const bool mSandboxed = false;
-};
-
-class AsyncCubebTask : public Runnable {
- public:
-  AsyncCubebTask(AudioCallbackDriver* aDriver, AsyncCubebOperation aOperation);
-
-  nsresult Dispatch(uint32_t aFlags = NS_DISPATCH_NORMAL) {
-    return mDriver->mInitShutdownThread->Dispatch(this, aFlags);
-  }
-
-  nsresult DispatchAndSpinEventLoopUntilComplete(
-      const nsACString& aVeryGoodReasonToDoThis) {
-    return NS_DispatchAndSpinEventLoopUntilComplete(
-        aVeryGoodReasonToDoThis, mDriver->mInitShutdownThread, do_AddRef(this));
-  }
-
- protected:
-  virtual ~AsyncCubebTask();
-
- private:
-  NS_IMETHOD Run() final;
-
-  RefPtr<AudioCallbackDriver> mDriver;
-  AsyncCubebOperation mOperation;
-  RefPtr<GraphInterface> mShutdownGrip;
 };
 
 }  // namespace mozilla

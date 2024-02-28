@@ -10,7 +10,7 @@
 // Microsoft's API Name hackery sucks
 #undef CreateEvent
 
-#include "js/ColumnNumber.h"  // JS::ColumnNumberZeroOrigin
+#include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
 #include "js/loader/LoadedScript.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/BinarySearch.h"
@@ -137,10 +137,11 @@ EventListenerManagerBase::EventListenerManagerBase()
 }
 
 EventListenerManager::EventListenerManager(EventTarget* aTarget)
-    : EventListenerManagerBase(), mTarget(aTarget) {
+    : mTarget(aTarget) {
   NS_ASSERTION(aTarget, "unexpected null pointer");
 
   if (mIsMainThreadELM) {
+    mRefCnt.SetIsOnMainThread();
     ++sMainThreadCreatedCount;
   }
 }
@@ -1032,7 +1033,7 @@ nsresult EventListenerManager::SetEventHandler(nsAtom* aName,
     // Perform CSP check
     nsCOMPtr<nsIContentSecurityPolicy> csp = doc->GetCsp();
     uint32_t lineNum = 0;
-    JS::ColumnNumberZeroOrigin columnNum;
+    JS::ColumnNumberOneOrigin columnNum;
 
     JSContext* cx = nsContentUtils::GetCurrentJSContext();
     if (cx && !JS::DescribeScriptedCaller(cx, nullptr, &lineNum, &columnNum)) {

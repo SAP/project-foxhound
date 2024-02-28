@@ -7,6 +7,7 @@ package org.mozilla.geckoview.test
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
 import org.hamcrest.MatcherAssert.assertThat
+import org.hamcrest.Matchers.greaterThan
 import org.hamcrest.core.IsEqual.equalTo
 import org.hamcrest.core.StringEndsWith.endsWith
 import org.json.JSONObject
@@ -119,8 +120,10 @@ class WebExtensionTest : BaseSessionTest() {
         userDisabled: Boolean = false,
         appDisabled: Boolean = false,
         blocklistDisabled: Boolean = false,
+        signatureDisabled: Boolean = false,
+        appVersionDisabled: Boolean = false,
     ) {
-        val enabled = !userDisabled && !appDisabled && !blocklistDisabled
+        val enabled = !userDisabled && !appDisabled && !blocklistDisabled && !signatureDisabled && !appVersionDisabled
 
         mainSession.reload()
         sessionRule.waitForPageStop()
@@ -151,6 +154,16 @@ class WebExtensionTest : BaseSessionTest() {
             "blocklistDisabled should match",
             extension.metaData.disabledFlags and DisabledFlags.BLOCKLIST > 0,
             equalTo(blocklistDisabled),
+        )
+        assertThat(
+            "signatureDisabled should match",
+            extension.metaData.disabledFlags and DisabledFlags.SIGNATURE > 0,
+            equalTo(signatureDisabled),
+        )
+        assertThat(
+            "appVersionDisabled should match",
+            extension.metaData.disabledFlags and DisabledFlags.APP_VERSION > 0,
+            equalTo(appVersionDisabled),
         )
     }
 
@@ -412,6 +425,26 @@ class WebExtensionTest : BaseSessionTest() {
             ),
         )
 
+        // Wait for the onReady AddonManagerDelegate method to be called, and assert
+        // that the baseUrl and optionsPageUrl are both available as expected.
+        val onReadyResult = GeckoResult<Void>()
+        sessionRule.addExternalDelegateUntilTestEnd(
+            WebExtensionController.AddonManagerDelegate::class,
+            { delegate -> controller.setAddonManagerDelegate(delegate) },
+            { controller.setAddonManagerDelegate(null) },
+            object : WebExtensionController.AddonManagerDelegate {
+                @AssertCalled(count = 1)
+                override fun onReady(extension: WebExtension) {
+                    assertNotNull(extension.metaData.baseUrl)
+                    assertTrue(extension.metaData.baseUrl.matches("^moz-extension://[0-9a-f\\-]*/$".toRegex()))
+                    assertNotNull(extension.metaData.optionsPageUrl)
+                    assertTrue((extension.metaData.optionsPageUrl ?: "").matches("^moz-extension://[0-9a-f\\-]*/options.html$".toRegex()))
+                    onReadyResult.complete(null)
+                    super.onReady(extension)
+                }
+            },
+        )
+
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled(count = 1)
             override fun onInstallPrompt(extension: WebExtension): GeckoResult<AllowOrDeny> {
@@ -423,11 +456,11 @@ class WebExtensionTest : BaseSessionTest() {
             controller.install("resource://android/assets/web_extensions/dummy.xpi"),
         )
 
-        val metadata = dummy.metaData
-        assertTrue((metadata.optionsPageUrl ?: "").matches("^moz-extension://[0-9a-f\\-]*/options.html$".toRegex()))
-        assertEquals(metadata.openOptionsPageInTab, true)
-        assertTrue(metadata.baseUrl.matches("^moz-extension://[0-9a-f\\-]*/$".toRegex()))
+        // In the onReady AddonManagerDelegate optionsPageUrl metadata is asserted again
+        // and expected to not be empty anymore.
+        assertNull(dummy.metaData.optionsPageUrl)
 
+        sessionRule.waitForResult(onReadyResult)
         sessionRule.waitForResult(controller.uninstall(dummy))
     }
 
@@ -2246,6 +2279,8 @@ class WebExtensionTest : BaseSessionTest() {
                 "xpinstall.signatures.required" to false,
                 "extensions.install.requireBuiltInCerts" to false,
                 "extensions.update.requireBuiltInCerts" to false,
+                "extensions.getAddons.cache.enabled" to true,
+                "extensions.getAddons.cache.lastUpdate" to 0,
             ),
         )
         mainSession.loadUri("https://example.com")
@@ -2291,6 +2326,52 @@ class WebExtensionTest : BaseSessionTest() {
 
         // Check that the WebExtension was not applied after being uninstalled
         assertBodyBorderEqualTo("")
+
+        // This pref should have been updated because we expect the cached
+        // metadata to have been refreshed.
+        val geckoPrefs = sessionRule.getPrefs(
+            "extensions.getAddons.cache.lastUpdate",
+        )
+        assumeThat(geckoPrefs[0] as Int, greaterThan(0))
+    }
+
+    @Test
+    fun updateWithMetadataNotStale() {
+        val now = (System.currentTimeMillis() / 1000).toInt()
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "xpinstall.signatures.required" to false,
+                "extensions.install.requireBuiltInCerts" to false,
+                "extensions.update.requireBuiltInCerts" to false,
+                "extensions.getAddons.cache.enabled" to true,
+                "extensions.getAddons.cache.lastUpdate" to now,
+            ),
+        )
+
+        sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
+            @AssertCalled
+            override fun onInstallPrompt(extension: WebExtension): GeckoResult<AllowOrDeny> {
+                assertEquals(extension.metaData.version, "1.0")
+
+                return GeckoResult.allow()
+            }
+        })
+
+        // 1. Install
+        val update1 = sessionRule.waitForResult(
+            controller.install("https://example.org/tests/junit/update-1.xpi"),
+        )
+        // 2. Update
+        val update2 = sessionRule.waitForResult(controller.update(update1))
+        // 3. Uninstall
+        sessionRule.waitForResult(controller.uninstall(update2))
+
+        // This pref should not have been updated because the cache isn't stale
+        // (we set the pref to the current time at the top of this test case).
+        val geckoPrefs = sessionRule.getPrefs(
+            "extensions.getAddons.cache.lastUpdate",
+        )
+        assumeThat(geckoPrefs[0] as Int, equalTo(now))
     }
 
     // Test extension updating when the new extension has different permissions.
@@ -3188,7 +3269,49 @@ class WebExtensionTest : BaseSessionTest() {
         )
     }
 
-    fun extensionProcessCrash() {
+    @Test
+    fun testExtensionProcessCrashThresholdsControlledFromSettings() {
+        var crashThreshold = 1
+        var timeframe = 60000L
+
+        val settings = GeckoRuntimeSettings.Builder()
+            .extensionsProcessCrashThreshold(crashThreshold)
+            .extensionsProcessCrashTimeframe(timeframe)
+            .build()
+
+        assertThat(
+            "extensionProcessCrashThresholdMaxCount should be set to $crashThreshold",
+            settings.extensionsProcessCrashThreshold,
+            equalTo(crashThreshold),
+        )
+
+        assertThat(
+            "extensionsProcessCrashThresholdTimeframeSeconds should be set to $timeframe",
+            settings.extensionsProcessCrashTimeframe,
+            equalTo(timeframe),
+        )
+
+        // Update with setters and check that settings have updated
+        crashThreshold = 5
+        timeframe = 120000L
+        settings.setExtensionsProcessCrashThreshold(crashThreshold)
+        settings.setExtensionsProcessCrashTimeframe(timeframe)
+
+        assertThat(
+            "extensionProcessCrashThresholdMaxCount should be updated to $crashThreshold",
+            settings.extensionsProcessCrashThreshold,
+            equalTo(crashThreshold),
+        )
+
+        assertThat(
+            "extensionsProcessCrashThresholdTimeframeSeconds should be updated to $timeframe",
+            settings.extensionsProcessCrashTimeframe,
+            equalTo(timeframe),
+        )
+    }
+
+    @Test
+    fun testExtensionProcessCrash() {
         sessionRule.setPrefsUntilTestEnd(
             mapOf(
                 "extensions.webextensions.remote" to true,

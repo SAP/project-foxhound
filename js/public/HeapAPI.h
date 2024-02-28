@@ -34,6 +34,10 @@ class NurseryDecommitTask;
 
 JS_PUBLIC_API bool CurrentThreadCanAccessZone(JS::Zone* zone);
 
+// To prevent false sharing, some data structures are aligned to a typical cache
+// line size.
+static constexpr size_t TypicalCacheLineSize = 64;
+
 namespace gc {
 
 class Arena;
@@ -188,7 +192,7 @@ enum class ColorBit : uint32_t { BlackBit = 0, GrayOrBlackBit = 1 };
 enum class MarkColor : uint8_t { Gray = 1, Black = 2 };
 
 // Mark bitmap for a tenured heap chunk.
-struct MarkBitmap {
+struct alignas(TypicalCacheLineSize) MarkBitmap {
   static constexpr size_t WordCount = ArenaBitmapWords * ArenasPerChunk;
   MarkBitmapWord bitmap[WordCount];
 

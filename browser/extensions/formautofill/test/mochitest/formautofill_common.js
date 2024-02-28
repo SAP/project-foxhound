@@ -139,7 +139,8 @@ async function checkFormFieldsStyle(profile, isPreviewing = true) {
       previewValue = "";
     } else {
       fillableValue = profile && profile[elem.id];
-      previewValue = (isPreviewing && fillableValue) || "";
+      previewValue =
+        (isPreviewing && fillableValue?.toString().replaceAll("*", "•")) || "";
     }
     await checkFieldHighlighted(elem, !!fillableValue);
     await checkFieldPreview(elem, previewValue);
@@ -371,13 +372,12 @@ async function waitForOSKeyStoreLogin(login = false) {
 }
 
 function patchRecordCCNumber(record) {
-  const number = record["cc-number"];
-  const ccNumberFmt = {
-    affix: "****",
-    label: number.substr(-4),
-  };
+  const ccNumberFmt = "****" + record.cc["cc-number"].substr(-4);
 
-  return Object.assign({}, record, { ccNumberFmt });
+  return {
+    cc: Object.assign({}, record.cc, { ccNumberFmt }),
+    expected: record.expected,
+  };
 }
 
 // Utils for registerPopupShownListener(in satchel_common.js) that handles dropdown popup

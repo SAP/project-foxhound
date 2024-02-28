@@ -8,6 +8,7 @@
 
 #include "CompositableHost.h"  // for CompositableHost
 #include "mozilla/gfx/2D.h"    // for DataSourceSurface, Factory
+#include "mozilla/gfx/CanvasManagerParent.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/Shmem.h"  // for Shmem
 #include "mozilla/layers/AsyncImagePipelineManager.h"
@@ -71,7 +72,8 @@ namespace layers {
  */
 class TextureParent : public ParentActor<PTextureParent> {
  public:
-  TextureParent(HostIPCAllocator* aAllocator, uint64_t aSerial,
+  TextureParent(HostIPCAllocator* aAllocator,
+                const dom::ContentParentId& aContentId, uint64_t aSerial,
                 const wr::MaybeExternalImageId& aExternalImageId);
 
   virtual ~TextureParent();
@@ -89,10 +91,13 @@ class TextureParent : public ParentActor<PTextureParent> {
 
   void Destroy() override;
 
+  const dom::ContentParentId& GetContentId() const { return mContentId; }
+
   uint64_t GetSerial() const { return mSerial; }
 
   HostIPCAllocator* mSurfaceAllocator;
   RefPtr<TextureHost> mTextureHost;
+  dom::ContentParentId mContentId;
   // mSerial is unique in TextureClient's process.
   const uint64_t mSerial;
   wr::MaybeExternalImageId mExternalImageId;
@@ -116,10 +121,10 @@ static bool WrapWithWebRenderTextureHost(ISurfaceAllocator* aDeallocator,
 PTextureParent* TextureHost::CreateIPDLActor(
     HostIPCAllocator* aAllocator, const SurfaceDescriptor& aSharedData,
     ReadLockDescriptor&& aReadLock, LayersBackend aLayersBackend,
-    TextureFlags aFlags, uint64_t aSerial,
-    const wr::MaybeExternalImageId& aExternalImageId) {
+    TextureFlags aFlags, const dom::ContentParentId& aContentId,
+    uint64_t aSerial, const wr::MaybeExternalImageId& aExternalImageId) {
   TextureParent* actor =
-      new TextureParent(aAllocator, aSerial, aExternalImageId);
+      new TextureParent(aAllocator, aContentId, aSerial, aExternalImageId);
   if (!actor->Init(aSharedData, std::move(aReadLock), aLayersBackend, aFlags)) {
     actor->ActorDestroy(ipc::IProtocol::ActorDestroyReason::FailedConstructor);
     delete actor;
@@ -155,6 +160,14 @@ uint64_t TextureHost::GetTextureSerial(PTextureParent* actor) {
   return static_cast<TextureParent*>(actor)->mSerial;
 }
 
+// static
+dom::ContentParentId TextureHost::GetTextureContentId(PTextureParent* actor) {
+  if (!actor) {
+    return dom::ContentParentId();
+  }
+  return static_cast<TextureParent*>(actor)->mContentId;
+}
+
 PTextureParent* TextureHost::GetIPDLActor() { return mActor; }
 
 void TextureHost::SetLastFwdTransactionId(uint64_t aTransactionId) {
@@ -184,8 +197,8 @@ already_AddRefed<TextureHost> CreateDummyBufferTextureHost(
 
 already_AddRefed<TextureHost> TextureHost::Create(
     const SurfaceDescriptor& aDesc, ReadLockDescriptor&& aReadLock,
-    ISurfaceAllocator* aDeallocator, LayersBackend aBackend,
-    TextureFlags aFlags, wr::MaybeExternalImageId& aExternalImageId) {
+    HostIPCAllocator* aDeallocator, LayersBackend aBackend, TextureFlags aFlags,
+    wr::MaybeExternalImageId& aExternalImageId) {
   RefPtr<TextureHost> result;
 
   switch (aDesc.type()) {
@@ -222,12 +235,17 @@ already_AddRefed<TextureHost> TextureHost::Create(
     case SurfaceDescriptor::TSurfaceDescriptorRecorded: {
       const SurfaceDescriptorRecorded& desc =
           aDesc.get_SurfaceDescriptorRecorded();
-      CompositorBridgeParentBase* actor =
-          aDeallocator ? aDeallocator->AsCompositorBridgeParentBase() : nullptr;
+      if (NS_WARN_IF(!aDeallocator)) {
+        gfxCriticalNote
+            << "Missing allocator to get descriptor for recorded texture.";
+        // Create a dummy to prevent any crashes due to missing IPDL actors.
+        result = CreateDummyBufferTextureHost(aBackend, aFlags);
+        break;
+      }
+
       UniquePtr<SurfaceDescriptor> realDesc =
-          actor
-              ? actor->LookupSurfaceDescriptorForClientTexture(desc.textureId())
-              : nullptr;
+          gfx::CanvasManagerParent::WaitForReplayTexture(
+              aDeallocator->GetChildProcessId(), desc.textureId());
       if (!realDesc) {
         gfxCriticalNote << "Failed to get descriptor for recorded texture.";
         // Create a dummy to prevent any crashes due to missing IPDL actors.
@@ -338,7 +356,8 @@ already_AddRefed<TextureHost> CreateBackendIndependentTextureHost(
       MOZ_ASSERT(aDesc.get_SurfaceDescriptorGPUVideo().type() ==
                  SurfaceDescriptorGPUVideo::TSurfaceDescriptorRemoteDecoder);
       result = GPUVideoTextureHost::CreateFromDescriptor(
-          aFlags, aDesc.get_SurfaceDescriptorGPUVideo());
+          aDeallocator->GetContentId(), aFlags,
+          aDesc.get_SurfaceDescriptorGPUVideo());
       break;
     }
     default: {
@@ -358,6 +377,8 @@ TextureHost::TextureHost(TextureHostType aType, TextureFlags aFlags)
       mReadLocked(false) {}
 
 TextureHost::~TextureHost() {
+  MOZ_ASSERT(mExternalImageId.isNothing());
+
   if (mReadLocked) {
     // If we still have a ReadLock, unlock it. At this point we don't care about
     // the texture client being written into on the other side since it should
@@ -500,6 +521,8 @@ void BufferTextureHost::DeallocateDeviceData() {}
 
 void BufferTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
+  MOZ_ASSERT(mExternalImageId.isSome());
+
   RefPtr<wr::RenderTextureHost> texture;
 
   if (UseExternalTextures()) {
@@ -657,6 +680,54 @@ gfx::ColorRange BufferTextureHost::GetColorRange() const {
   return TextureHost::GetColorRange();
 }
 
+gfx::ChromaSubsampling BufferTextureHost::GetChromaSubsampling() const {
+  if (mFormat == gfx::SurfaceFormat::YUV) {
+    const YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+    return desc.chromaSubsampling();
+  }
+  return gfx::ChromaSubsampling::FULL;
+}
+
+uint8_t* BufferTextureHost::GetYChannel() {
+  if (mFormat == gfx::SurfaceFormat::YUV) {
+    const YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+    return ImageDataSerializer::GetYChannel(GetBuffer(), desc);
+  }
+  return nullptr;
+}
+
+uint8_t* BufferTextureHost::GetCbChannel() {
+  if (mFormat == gfx::SurfaceFormat::YUV) {
+    const YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+    return ImageDataSerializer::GetCbChannel(GetBuffer(), desc);
+  }
+  return nullptr;
+}
+
+uint8_t* BufferTextureHost::GetCrChannel() {
+  if (mFormat == gfx::SurfaceFormat::YUV) {
+    const YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+    return ImageDataSerializer::GetCrChannel(GetBuffer(), desc);
+  }
+  return nullptr;
+}
+
+int32_t BufferTextureHost::GetYStride() const {
+  if (mFormat == gfx::SurfaceFormat::YUV) {
+    const YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+    return desc.yStride();
+  }
+  return 0;
+}
+
+int32_t BufferTextureHost::GetCbCrStride() const {
+  if (mFormat == gfx::SurfaceFormat::YUV) {
+    const YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+    return desc.cbCrStride();
+  }
+  return 0;
+}
+
 already_AddRefed<gfx::DataSourceSurface> BufferTextureHost::GetAsSurface() {
   RefPtr<gfx::DataSourceSurface> result;
   if (mFormat == gfx::SurfaceFormat::UNKNOWN) {
@@ -764,9 +835,11 @@ size_t MemoryTextureHost::GetBufferSize() {
 }
 
 TextureParent::TextureParent(HostIPCAllocator* aSurfaceAllocator,
+                             const dom::ContentParentId& aContentId,
                              uint64_t aSerial,
                              const wr::MaybeExternalImageId& aExternalImageId)
     : mSurfaceAllocator(aSurfaceAllocator),
+      mContentId(aContentId),
       mSerial(aSerial),
       mExternalImageId(aExternalImageId) {
   MOZ_COUNT_CTOR(TextureParent);

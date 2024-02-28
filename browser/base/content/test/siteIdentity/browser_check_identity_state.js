@@ -71,7 +71,6 @@ add_task(async function chromeUITest() {
     "logins",
     "loginsimportreport",
     "performance",
-    "plugins",
     "policies",
     "preferences",
     "processes",
@@ -705,4 +704,13 @@ add_task(async function test_pb_mode() {
   await BrowserTestUtils.closeWindow(privateWin);
 
   await SpecialPowers.popPrefEnv();
+});
+
+add_setup(() => {
+  SpecialPowers.pushPrefEnv({
+    set: [
+      ["security.insecure_connection_text.enabled", false],
+      ["security.insecure_connection_text.pbmode.enabled", false],
+    ],
+  });
 });

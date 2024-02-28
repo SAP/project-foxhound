@@ -226,31 +226,11 @@ var pktUI = (function () {
   function onShowSignup() {
     // Ensure opening the signup panel clears the icon state from any previous sessions.
     SaveToPocket.itemDeleted();
-    // A successful button click, for logged out users.
-    pktTelemetry.sendStructuredIngestionEvent(
-      pktTelemetry.createPingPayload({
-        events: [
-          {
-            action: "click",
-            source: "save_button",
-          },
-        ],
-      })
-    );
+    pktTelemetry.submitPocketButtonPing("click", "save_button");
   }
 
   async function onShowHome() {
-    // A successful home button click.
-    pktTelemetry.sendStructuredIngestionEvent(
-      pktTelemetry.createPingPayload({
-        events: [
-          {
-            action: "click",
-            source: "home_button",
-          },
-        ],
-      })
-    );
+    pktTelemetry.submitPocketButtonPing("click", "home_button");
 
     if (!NimbusFeatures.saveToPocket.getVariable("hideRecentSaves")) {
       let recentSaves = await pktApi.getRecentSavesCache();
@@ -300,17 +280,7 @@ var pktUI = (function () {
       return;
     }
 
-    // A successful button click, for logged in users.
-    pktTelemetry.sendStructuredIngestionEvent(
-      pktTelemetry.createPingPayload({
-        events: [
-          {
-            action: "click",
-            source: "save_button",
-          },
-        ],
-      })
-    );
+    pktTelemetry.submitPocketButtonPing("click", "save_button");
 
     // Add url
     var options = {
@@ -451,19 +421,7 @@ var pktUI = (function () {
     // We don't track every click, only clicks with a known source.
     if (data.source) {
       const { position, source, model } = data;
-      const payload = pktTelemetry.createPingPayload({
-        ...(model ? { model } : {}),
-        events: [
-          {
-            action: "click",
-            source,
-            // Add in position if needed, for example, topic links have a position.
-            ...(position || position === 0 ? { position } : {}),
-          },
-        ],
-      });
-      // Send click event ping.
-      pktTelemetry.sendStructuredIngestionEvent(payload);
+      pktTelemetry.submitPocketButtonPing("click", source, position, model);
     }
 
     var url = data.url;
@@ -485,18 +443,12 @@ var pktUI = (function () {
     const { url, position, model } = data;
     // Check to see if we need to and can fire valid telemetry.
     if (model && (position || position === 0)) {
-      const payload = pktTelemetry.createPingPayload({
-        model,
-        events: [
-          {
-            action: "click",
-            position,
-            source: "on_save_recs",
-          },
-        ],
-      });
-      // Send click event ping.
-      pktTelemetry.sendStructuredIngestionEvent(payload);
+      pktTelemetry.submitPocketButtonPing(
+        "click",
+        "on_save_recs",
+        position,
+        model
+      );
     }
 
     openTabWithUrl(url, contentPrincipal, csp);

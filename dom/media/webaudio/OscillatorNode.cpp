@@ -56,12 +56,12 @@ class OscillatorNodeEngine final : public AudioNodeEngine {
     START,
     STOP,
   };
-  void RecvTimelineEvent(uint32_t aIndex, AudioTimelineEvent& aEvent) override {
+  void RecvTimelineEvent(uint32_t aIndex, AudioParamEvent& aEvent) override {
     mRecomputeParameters = true;
 
     MOZ_ASSERT(mDestination);
 
-    WebAudioUtils::ConvertAudioTimelineEventToTicks(aEvent, mDestination);
+    aEvent.ConvertToTicks(mDestination);
 
     switch (aIndex) {
       case FREQUENCY:

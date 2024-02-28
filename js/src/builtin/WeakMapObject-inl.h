@@ -27,11 +27,11 @@ static bool TryPreserveReflector(JSContext* cx, HandleObject obj) {
 }
 
 static MOZ_ALWAYS_INLINE bool WeakCollectionPutEntryInternal(
-    JSContext* cx, Handle<WeakCollectionObject*> obj, HandleObject key,
+    JSContext* cx, Handle<WeakCollectionObject*> obj, HandleValue key,
     HandleValue value) {
-  ObjectValueWeakMap* map = obj->getMap();
+  ValueValueWeakMap* map = obj->getMap();
   if (!map) {
-    auto newMap = cx->make_unique<ObjectValueWeakMap>(cx, obj.get());
+    auto newMap = cx->make_unique<ValueValueWeakMap>(cx, obj.get());
     if (!newMap) {
       return false;
     }
@@ -40,17 +40,25 @@ static MOZ_ALWAYS_INLINE bool WeakCollectionPutEntryInternal(
                      MemoryUse::WeakMapObject);
   }
 
-  // Preserve wrapped native keys to prevent wrapper optimization.
-  if (!TryPreserveReflector(cx, key)) {
-    return false;
+  if (key.isObject()) {
+    RootedObject keyObj(cx, &key.toObject());
+
+    // Preserve wrapped native keys to prevent wrapper optimization.
+    if (!TryPreserveReflector(cx, keyObj)) {
+      return false;
+    }
+
+    RootedObject delegate(cx, UncheckedUnwrapWithoutExpose(keyObj));
+    if (delegate && !TryPreserveReflector(cx, delegate)) {
+      return false;
+    }
   }
 
-  RootedObject delegate(cx, UncheckedUnwrapWithoutExpose(key));
-  if (delegate && !TryPreserveReflector(cx, delegate)) {
-    return false;
-  }
-
-  MOZ_ASSERT(key->compartment() == obj->compartment());
+  MOZ_ASSERT_IF(key.isObject(),
+                key.toObject().compartment() == obj->compartment());
+  MOZ_ASSERT_IF(value.isGCThing(),
+                gc::ToMarkable(value)->zoneFromAnyThread() == obj->zone() ||
+                    gc::ToMarkable(value)->zoneFromAnyThread()->isAtomsZone());
   MOZ_ASSERT_IF(value.isObject(),
                 value.toObject().compartment() == obj->compartment());
   if (!map->put(key, value)) {
@@ -58,6 +66,29 @@ static MOZ_ALWAYS_INLINE bool WeakCollectionPutEntryInternal(
     return false;
   }
   return true;
+}
+
+// https://tc39.es/ecma262/#sec-canbeheldweakly
+static MOZ_ALWAYS_INLINE bool CanBeHeldWeakly(JSContext* cx,
+                                              HandleValue value) {
+  // 1. If v is an Object, return true.
+  if (value.isObject()) {
+    return true;
+  }
+
+#ifdef NIGHTLY_BUILD
+  bool symbolsAsWeakMapKeysEnabled =
+      cx->realm()->creationOptions().getSymbolsAsWeakMapKeysEnabled();
+
+  // 2. If v is a Symbol and KeyForSymbol(v) is undefined, return true.
+  if (symbolsAsWeakMapKeysEnabled && value.isSymbol() &&
+      value.toSymbol()->code() != JS::SymbolCode::InSymbolRegistry) {
+    return true;
+  }
+#endif
+
+  // 3. Return false.
+  return false;
 }
 
 }  // namespace js

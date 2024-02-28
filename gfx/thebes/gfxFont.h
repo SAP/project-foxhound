@@ -147,10 +147,6 @@ struct gfxFontStyle {
   // in order to get correct glyph shapes.)
   uint32_t languageOverride;
 
-  // The estimated background color behind the text. Enables a special
-  // rendering mode when NS_GET_A(.) > 0. Only used for text in the chrome.
-  nscolor fontSmoothingBackgroundColor;
-
   // The Font{Weight,Stretch,SlantStyle} fields are each a 16-bit type.
 
   // The weight of the font: 100, 200, ... 900.
@@ -253,8 +249,7 @@ struct gfxFontStyle {
            (variationSettings == other.variationSettings) &&
            (languageOverride == other.languageOverride) &&
            mozilla::NumbersAreBitwiseIdentical(autoOpticalSize,
-                                               other.autoOpticalSize) &&
-           (fontSmoothingBackgroundColor == other.fontSmoothingBackgroundColor);
+                                               other.autoOpticalSize);
   }
 };
 
@@ -1041,8 +1036,8 @@ class gfxShapedText {
     return mDetailedGlyphs->Get(aCharIndex);
   }
 
-  void AdjustAdvancesForSyntheticBold(float aSynBoldOffset, uint32_t aOffset,
-                                      uint32_t aLength);
+  void ApplyTrackingToClusters(gfxFloat aTrackingAdjustment, uint32_t aOffset,
+                               uint32_t aLength);
 
   // Mark clusters in the CompressedGlyph records, starting at aOffset,
   // based on the Unicode properties of the text in aString.
@@ -2216,6 +2211,10 @@ class gfxFont {
 
   gfxFontStyle mStyle;
   mutable gfxFloat mAdjustedSize;
+
+  // Tracking adjustment to be applied for CSS px size mCachedTrackingSize.
+  gfxFloat mTracking = 0.0;
+  gfxFloat mCachedTrackingSize = -1.0;
 
   // Conversion factor from font units to dev units; note that this may be
   // zero (in the degenerate case where mAdjustedSize has become zero).

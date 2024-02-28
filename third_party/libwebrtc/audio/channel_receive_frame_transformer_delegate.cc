@@ -33,6 +33,10 @@ class TransformableIncomingAudioFrame
     payload_.SetData(data.data(), data.size());
   }
 
+  void SetRTPTimestamp(uint32_t timestamp) override {
+    header_.timestamp = timestamp;
+  }
+
   uint8_t GetPayloadType() const override { return header_.payloadType; }
   uint32_t GetSsrc() const override { return ssrc_; }
   uint32_t GetTimestamp() const override { return header_.timestamp; }
@@ -41,6 +45,22 @@ class TransformableIncomingAudioFrame
     return rtc::ArrayView<const uint32_t>(header_.arrOfCSRCs, header_.numCSRCs);
   }
   Direction GetDirection() const override { return Direction::kReceiver; }
+
+  const absl::optional<uint16_t> SequenceNumber() const override {
+    return header_.sequenceNumber;
+  }
+
+  absl::optional<uint64_t> AbsoluteCaptureTimestamp() const override {
+    // This could be extracted from received header extensions + extrapolation,
+    // if required in future, eg for being able to re-send received frames.
+    return absl::nullopt;
+  }
+  const RTPHeader& Header() const { return header_; }
+
+  FrameType Type() const override {
+    return header_.extension.voiceActivity ? FrameType::kAudioFrameSpeech
+                                           : FrameType::kAudioFrameCN;
+  }
 
  private:
   rtc::Buffer payload_;
@@ -98,6 +118,6 @@ void ChannelReceiveFrameTransformerDelegate::ReceiveFrame(
   auto* transformed_frame =
       static_cast<TransformableIncomingAudioFrame*>(frame.get());
   receive_frame_callback_(transformed_frame->GetData(),
-                          transformed_frame->GetHeader());
+                          transformed_frame->Header());
 }
 }  // namespace webrtc

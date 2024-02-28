@@ -88,10 +88,15 @@ void HTMLDialogElement::RemoveFromTopLayerIfNeeded() {
 }
 
 void HTMLDialogElement::StorePreviouslyFocusedElement() {
-  if (Document* doc = GetComposedDoc()) {
+  if (Element* element = nsFocusManager::GetFocusedElementStatic()) {
+    if (NS_SUCCEEDED(nsContentUtils::CheckSameOrigin(this, element))) {
+      mPreviouslyFocusedElement = do_GetWeakReference(element);
+    }
+  } else if (Document* doc = GetComposedDoc()) {
+    // Looks like there's a discrepancy sometimes when focus is moved
+    // to a different in-process window.
     if (nsIContent* unretargetedFocus = doc->GetUnretargetedFocusedContent()) {
-      mPreviouslyFocusedElement =
-          do_GetWeakReference(unretargetedFocus->AsElement());
+      mPreviouslyFocusedElement = do_GetWeakReference(unretargetedFocus);
     }
   }
 }
@@ -149,18 +154,16 @@ void HTMLDialogElement::FocusDialog() {
     control = this;
   }
 
-  FocusCandidate(*control, IsInTopLayer());
+  FocusCandidate(control, IsInTopLayer());
 }
 
 int32_t HTMLDialogElement::TabIndexDefault() { return 0; }
 
 void HTMLDialogElement::QueueCancelDialog() {
   // queues an element task on the user interaction task source
-  OwnerDoc()
-      ->EventTargetFor(TaskCategory::UI)
-      ->Dispatch(NewRunnableMethod("HTMLDialogElement::RunCancelDialogSteps",
-                                   this,
-                                   &HTMLDialogElement::RunCancelDialogSteps));
+  OwnerDoc()->Dispatch(
+      NewRunnableMethod("HTMLDialogElement::RunCancelDialogSteps", this,
+                        &HTMLDialogElement::RunCancelDialogSteps));
 }
 
 void HTMLDialogElement::RunCancelDialogSteps() {

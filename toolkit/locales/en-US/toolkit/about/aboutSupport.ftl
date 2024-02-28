@@ -58,7 +58,6 @@ app-basics-profile-dir =
         [linux] Profile Directory
        *[other] Profile Folder
     }
-app-basics-enabled-plugins = Enabled Plugins
 app-basics-build-config = Build Configuration
 app-basics-user-agent = User Agent
 app-basics-os = OS
@@ -191,6 +190,7 @@ media-codec-support-codec-name = Codec Name
 media-codec-support-supported = Supported
 media-codec-support-unsupported = Unsupported
 media-codec-support-error = Codec support information unavailable. Try again after playing back a media file.
+media-codec-support-lack-of-extension = Install extension
 
 ##
 

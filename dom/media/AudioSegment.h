@@ -117,7 +117,7 @@ class SilentChannel {
  * interleaved samples will be copied to a channel buffer in aOutput.
  */
 template <typename SrcT, typename DestT>
-void DownmixAndInterleave(const nsTArray<const SrcT*>& aChannelData,
+void DownmixAndInterleave(Span<const SrcT* const> aChannelData,
                           int32_t aDuration, float aVolume,
                           uint32_t aOutputChannels, DestT* aOutput) {
   if (aChannelData.Length() == aOutputChannels) {
@@ -133,8 +133,8 @@ void DownmixAndInterleave(const nsTArray<const SrcT*>& aChannelData,
     for (uint32_t i = 0; i < aOutputChannels; i++) {
       outputChannelData[i] = outputBuffers.Elements() + aDuration * i;
     }
-    AudioChannelsDownMix(aChannelData, outputChannelData.Elements(),
-                         aOutputChannels, aDuration);
+    AudioChannelsDownMix<SrcT, SrcT>(aChannelData, outputChannelData,
+                                     aDuration);
     InterleaveAndConvertBuffer(outputChannelData.Elements(), aDuration, aVolume,
                                aOutputChannels, aOutput);
   }
@@ -247,10 +247,10 @@ struct AudioChunk {
   }
 
   template <typename T>
-  const nsTArray<const T*>& ChannelData() const {
+  Span<const T* const> ChannelData() const {
     MOZ_ASSERT(AudioSampleTypeToFormat<T>::Format == mBufferFormat);
-    return *reinterpret_cast<const AutoTArray<const T*, GUESS_AUDIO_CHANNELS>*>(
-        &mChannelData);
+    return Span(reinterpret_cast<const T* const*>(mChannelData.Elements()),
+                mChannelData.Length());
   }
 
   /**
@@ -514,9 +514,8 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
 template <typename SrcT>
 void WriteChunk(const AudioChunk& aChunk, uint32_t aOutputChannels,
                 float aVolume, AudioDataValue* aOutputBuffer) {
-  AutoTArray<const SrcT*, GUESS_AUDIO_CHANNELS> channelData;
-
-  channelData = aChunk.ChannelData<SrcT>().Clone();
+  CopyableAutoTArray<const SrcT*, GUESS_AUDIO_CHANNELS> channelData;
+  channelData.AppendElements(aChunk.ChannelData<SrcT>());
 
   if (channelData.Length() < aOutputChannels) {
     // Up-mix. Note that this might actually make channelData have more
@@ -526,8 +525,8 @@ void WriteChunk(const AudioChunk& aChunk, uint32_t aOutputChannels,
   }
   if (channelData.Length() > aOutputChannels) {
     // Down-mix.
-    DownmixAndInterleave(channelData, aChunk.mDuration, aVolume,
-                         aOutputChannels, aOutputBuffer);
+    DownmixAndInterleave<SrcT>(channelData, aChunk.mDuration, aVolume,
+                               aOutputChannels, aOutputBuffer);
   } else {
     InterleaveAndConvertBuffer(channelData.Elements(), aChunk.mDuration,
                                aVolume, aOutputChannels, aOutputBuffer);

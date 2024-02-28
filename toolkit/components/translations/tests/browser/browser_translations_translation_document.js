@@ -9,11 +9,10 @@
 const { TranslationsDocument } = ChromeUtils.importESModule(
   "chrome://global/content/translations/translations-document.sys.mjs"
 );
-
 /**
  * @param {string} html
  * @param {{
- *  fakeTranslator?: (message: string) => Promise<string>
+ *  mockedTranslatorPort?: (message: string) => Promise<string>
  * }} [options]
  */
 async function createDoc(html, options) {
@@ -27,33 +26,18 @@ async function createDoc(html, options) {
   const parser = new DOMParser();
   const document = parser.parseFromString(html, "text/html");
 
-  /**
-   * Fake translations by converting them to uppercase.
-   * @param {string} message
-   */
-  async function fakeTranslator(message) {
-    /**
-     * @param {Node} node
-     */
-    function upperCaseNode(node) {
-      if (typeof node.nodeValue === "string") {
-        node.nodeValue = node.nodeValue.toUpperCase();
-      }
-      for (const childNode of node.childNodes) {
-        upperCaseNode(childNode);
-      }
-    }
-    const translatedDoc = parser.parseFromString(message, "text/html");
-    upperCaseNode(translatedDoc.body);
-    return [translatedDoc.body.innerHTML];
-  }
+  let translationsDocument;
 
-  const translationsDocument = new TranslationsDocument(
+  translationsDocument = new TranslationsDocument(
     document,
     "en",
     0, // This is a fake innerWindowID
-    options?.fakeTranslator ?? fakeTranslator,
-    options?.fakeTranslator ?? fakeTranslator
+    options?.mockedTranslatorPort ?? createMockedTranslatorPort(),
+    () => {
+      throw new Error("Cannot request a new port");
+    },
+    performance.now(),
+    () => performance.now()
   );
 
   /**
@@ -99,15 +83,6 @@ add_task(async function test_translated_div_element() {
       This is a simple translation.
     </div>
   `);
-
-  await htmlMatches(
-    "The document starts out as expected.",
-    /* html */ `
-      <div>
-        This is a simple translation.
-      </div>
-    `
-  );
 
   translate();
 
@@ -440,7 +415,7 @@ add_task(async function test_translation_batching() {
         <span>This entire</span> section continues in a <b>batch</b>.
       </div>
     `,
-    { fakeTranslator: createBatchFakeTranslator() }
+    { mockedTranslatorPort: createBatchedMockedTranslatorPort() }
   );
 
   translate();
@@ -494,7 +469,7 @@ add_task(async function test_many_inlines() {
         </span>
       </div>
     `,
-    { fakeTranslator: createBatchFakeTranslator() }
+    { mockedTranslatorPort: createBatchedMockedTranslatorPort() }
   );
 
   translate();
@@ -555,7 +530,7 @@ add_task(async function test_many_inlines() {
         </div>
       </div>
     `,
-    { fakeTranslator: createBatchFakeTranslator() }
+    { mockedTranslatorPort: createBatchedMockedTranslatorPort() }
   );
 
   translate();
@@ -600,7 +575,7 @@ add_task(async function test_presumed_inlines1() {
         <div>Block element</div>
       </div>
     `,
-    { fakeTranslator: createBatchFakeTranslator() }
+    { mockedTranslatorPort: createBatchedMockedTranslatorPort() }
   );
 
   translate();
@@ -632,7 +607,7 @@ add_task(async function test_presumed_inlines2() {
         <div>Block Element</div>
       </div>
     `,
-    { fakeTranslator: createBatchFakeTranslator() }
+    { mockedTranslatorPort: createBatchedMockedTranslatorPort() }
   );
 
   translate();
@@ -666,7 +641,7 @@ add_task(async function test_presumed_inlines3() {
         <div>Block Element</div>
       </span>
     `,
-    { fakeTranslator: createBatchFakeTranslator() }
+    { mockedTranslatorPort: createBatchedMockedTranslatorPort() }
   );
 
   translate();
@@ -710,7 +685,7 @@ add_task(async function test_chunking_large_text() {
         In hac habitasse platea dictumst. Duis vulputate tellus arcu, at posuere ligula viverra luctus. Fusce ultrices malesuada neque vitae vehicula. Aliquam blandit nisi sed nibh facilisis, non varius turpis venenatis. Vestibulum ut velit laoreet, sagittis leo ac, pharetra ex. Aenean mollis risus sed nibh auctor, et feugiat neque iaculis. Fusce fermentum libero metus, at consectetur massa euismod sed. Mauris ut metus sit amet leo porttitor mollis. Vivamus tincidunt lorem non purus suscipit sollicitudin. Maecenas ut tristique elit. Ut eu volutpat turpis. Suspendisse nec tristique augue. Nullam faucibus egestas volutpat. Sed tempor eros et mi ultrices, nec feugiat eros egestas.
       </pre>
     `,
-    { fakeTranslator: createBatchFakeTranslator() }
+    { mockedTranslatorPort: createBatchedMockedTranslatorPort() }
   );
 
   translate();
@@ -749,7 +724,7 @@ add_task(async function test_reordering() {
         C - This was third.
       </span>
     `,
-    { fakeTranslator: reorderingTranslator }
+    { mockedTranslatorPort: createdReorderingMockedTranslatorPort() }
   );
 
   translate();
@@ -781,7 +756,7 @@ add_task(async function test_reordering2() {
       </span>
       C - This was third.
     `,
-    { fakeTranslator: reorderingTranslator }
+    { mockedTranslatorPort: createdReorderingMockedTranslatorPort() }
   );
 
   translate();
@@ -855,6 +830,82 @@ add_task(async function test_mutations() {
     `
   );
   cleanup();
+});
+
+add_task(async function test_svgs() {
+  const { translate, htmlMatches, cleanup } = await createDoc(/* html */ `
+    <div>
+      <div>Text before is translated</div>
+      <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+        <style>.myText { font-family: sans-serif; }</style>
+        <rect x="10" y="10" width="80" height="60" class="myRect" />
+        <circle cx="150" cy="50" r="30" class="myCircle" />
+        <text x="50%" y="50%" text-anchor="middle" alignment-baseline="middle" class="myText">
+          Text inside of the SVG is untranslated.
+        </text>
+      </svg>
+      <div>Text after is translated</div>
+    </div>
+  `);
+
+  translate();
+
+  await htmlMatches(
+    "SVG text gets translated, and style elements are left alone.",
+    /* html */ `
+    <div>
+      <div>
+        TEXT BEFORE IS TRANSLATED
+      </div>
+      <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+        <style>
+          .myText { font-family: sans-serif; }
+        </style>
+        <rect x="10" y="10" width="80" height="60" class="myRect">
+        </rect>
+        <circle cx="150" cy="50" r="30" class="myCircle">
+        </circle>
+        <text x="50%" y="50%" text-anchor="middle" alignment-baseline="middle" class="myText">
+          TEXT INSIDE OF THE SVG IS UNTRANSLATED.
+        </text>
+      </svg>
+      <div>
+        TEXT AFTER IS TRANSLATED
+      </div>
+    </div>
+    `
+  );
+
+  await cleanup();
+});
+
+add_task(async function test_svgs_more() {
+  const { translate, htmlMatches, cleanup } = await createDoc(/* html */ `
+    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+      <foreignObject x="20" y="20" width="160" height="160">
+        <div xmlns="http://www.w3.org/1999/xhtml">
+          This is a div inside of an SVG.
+        </div>
+      </foreignObject>
+    </svg>
+  `);
+
+  translate();
+
+  await htmlMatches(
+    "Foreign objects get translated",
+    /* html */ `
+    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+      <foreignObject x="20" y="20" width="160" height="160">
+        <div xmlns="http://www.w3.org/1999/xhtml">
+          THIS IS A DIV INSIDE OF AN SVG.
+        </div>
+      </foreignObject>
+    </svg>
+    `
+  );
+
+  await cleanup();
 });
 
 add_task(async function test_tables() {

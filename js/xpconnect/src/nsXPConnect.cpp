@@ -486,16 +486,20 @@ JSObject* CreateGlobalObject(JSContext* cx, const JSClass* clasp,
 }
 
 void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
-                             bool aIsSystemPrincipal, bool aForceUTC,
-                             bool aAlwaysUseFdlibm, bool aLocaleEnUS) {
-  bool shouldDiscardSystemSource = ShouldDiscardSystemSource();
-
+                             bool aIsSystemPrincipal, bool aSecureContext,
+                             bool aForceUTC, bool aAlwaysUseFdlibm,
+                             bool aLocaleEnUS) {
   if (aIsSystemPrincipal) {
     // Make toSource functions [ChromeOnly]
     aOptions.creationOptions().setToSourceEnabled(true);
     // Make sure [SecureContext] APIs are visible:
     aOptions.creationOptions().setSecureContext(true);
     aOptions.behaviors().setClampAndJitterTime(false);
+    aOptions.behaviors().setDiscardSource(ShouldDiscardSystemSource());
+    MOZ_ASSERT(aSecureContext,
+               "aIsSystemPrincipal should imply aSecureContext");
+  } else {
+    aOptions.creationOptions().setSecureContext(aSecureContext);
   }
 
   aOptions.creationOptions().setForceUTC(aForceUTC);
@@ -503,10 +507,6 @@ void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
   if (aLocaleEnUS) {
     nsCString locale = nsRFPService::GetSpoofedJSLocale();
     aOptions.creationOptions().setLocaleCopyZ(locale.get());
-  }
-
-  if (shouldDiscardSystemSource) {
-    aOptions.behaviors().setDiscardSource(aIsSystemPrincipal);
   }
 }
 
@@ -555,7 +555,12 @@ nsresult InitClassesWithNewWrappedGlobal(JSContext* aJSContext,
   // If this changes, ShouldRFP needs to be updated accordingly.
   MOZ_RELEASE_ASSERT(aPrincipal->IsSystemPrincipal());
 
+  // Similarly we can thus hardcode the RTPCallerType.
+  aOptions.behaviors().setReduceTimerPrecisionCallerType(
+      RTPCallerTypeToToken(RTPCallerType::SystemPrincipal));
+
   InitGlobalObjectOptions(aOptions, /* aSystemPrincipal */ true,
+                          /* aSecureContext */ true,
                           /* aForceUTC */ false, /* aAlwaysUseFdlibm */ false,
                           /* aLocaleEnUS */ false);
 
@@ -629,7 +634,7 @@ nsCString GetFunctionName(JSContext* cx, HandleObject obj) {
     return GetFunctionName(cx, vobj);
   }
 
-  RootedString funName(cx, JS_GetFunctionDisplayId(fun));
+  RootedString funName(cx, JS_GetMaybePartialFunctionDisplayId(fun));
   RootedScript script(cx, JS_GetFunctionScript(cx, fun));
   const char* filename = script ? JS_GetScriptFilename(script) : "anonymous";
   const char* filenameSuffix = strrchr(filename, '/');

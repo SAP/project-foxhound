@@ -41,7 +41,9 @@ Texture::Texture(Device* const aParent, RawId aId,
       mMipLevelCount(aDesc.mMipLevelCount),
       mSampleCount(aDesc.mSampleCount),
       mDimension(aDesc.mDimension),
-      mUsage(aDesc.mUsage) {}
+      mUsage(aDesc.mUsage) {
+  MOZ_RELEASE_ASSERT(aId);
+}
 
 Texture::~Texture() { Cleanup(); }
 
@@ -50,7 +52,7 @@ void Texture::Cleanup() {
     mValid = false;
     auto bridge = mParent->GetBridge();
     if (bridge && bridge->IsOpen()) {
-      bridge->SendTextureDestroy(mId);
+      bridge->SendTextureDrop(mId);
     }
   }
 }
@@ -70,6 +72,10 @@ already_AddRefed<TextureView> Texture::CreateView(
 void Texture::Destroy() {
   // TODO: we don't have to implement it right now, but it's used by the
   // examples
+
+  // XXX Bug 1860958.
 }
+
+void Texture::ForceDestroy() { Cleanup(); }
 
 }  // namespace mozilla::webgpu

@@ -5,6 +5,9 @@
 //! Specified color values.
 
 use super::AllowQuirks;
+use crate::color::parsing::{
+    self, AngleOrNumber, Color as CSSParserColor, FromParsedColor, NumberOrPercentage,
+};
 use crate::color::{mix::ColorInterpolationMethod, AbsoluteColor, ColorFlags, ColorSpace};
 use crate::media_queries::Device;
 use crate::parser::{Parse, ParserContext};
@@ -15,8 +18,7 @@ use crate::values::generics::color::{
 use crate::values::specified::calc::CalcNode;
 use crate::values::specified::Percentage;
 use crate::values::{normalize, CustomIdent};
-use crate::color::parsing::{AngleOrNumber, Color as CSSParserColor, NumberOrPercentage, FromParsedColor, self};
-use cssparser::{Parser, Token, BasicParseErrorKind, ParseErrorKind, color::PredefinedColorSpace};
+use cssparser::{color::PredefinedColorSpace, BasicParseErrorKind, ParseErrorKind, Parser, Token};
 use itoa;
 use std::fmt::{self, Write};
 use std::io::Write as IoWrite;
@@ -305,14 +307,9 @@ pub enum SystemColor {
     MozMacFocusring,
     /// Text color of disabled text on toolbars.
     MozMacDisabledtoolbartext,
-
-    MozMacMenupopup,
-    MozMacMenuitem,
-    MozMacActiveMenuitem,
-    MozMacSourceList,
-    MozMacSourceListSelection,
-    MozMacActiveSourceListSelection,
-    MozMacTooltip,
+    /// The background of a macOS sidebar.
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
+    MozMacSidebar,
 
     /// Theme accent color.
     /// https://drafts.csswg.org/css-color-4/#valdef-system-color-accentcolor
@@ -726,7 +723,7 @@ impl Color {
         match *self {
             Self::InheritFromBodyQuirk => false,
             Self::CurrentColor | Color::System(..) => true,
-            Self::Absolute(ref absolute) => allow_transparent && absolute.color.alpha() == 0.0,
+            Self::Absolute(ref absolute) => allow_transparent && absolute.color.is_transparent(),
             Self::LightDark(ref ld) => {
                 ld.light.honored_in_forced_colors_mode(allow_transparent) &&
                     ld.dark.honored_in_forced_colors_mode(allow_transparent)
@@ -748,7 +745,7 @@ impl Color {
     #[inline]
     pub fn transparent() -> Self {
         // We should probably set authored to "transparent", but maybe it doesn't matter.
-        Self::from_absolute_color(AbsoluteColor::TRANSPARENT)
+        Self::from_absolute_color(AbsoluteColor::TRANSPARENT_BLACK)
     }
 
     /// Create a color from an [`AbsoluteColor`].
@@ -775,8 +772,10 @@ impl Color {
         })
     }
 
-
-    fn parse_hash<'i>(bytes: &[u8], loc: &cssparser::SourceLocation) -> Result<Self, ParseError<'i>> {
+    fn parse_hash<'i>(
+        bytes: &[u8],
+        loc: &cssparser::SourceLocation,
+    ) -> Result<Self, ParseError<'i>> {
         match cssparser::color::parse_hash_color(bytes) {
             Ok((r, g, b, a)) => Ok(Self::from_rgba(r, g, b, a)),
             Err(()) => Err(loc.new_custom_error(StyleParseErrorKind::UnspecifiedError)),
@@ -802,7 +801,7 @@ impl Color {
                 if ident.len() != 3 && ident.len() != 6 {
                     return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
                 }
-                return Self::parse_hash(ident.as_bytes(), &location)
+                return Self::parse_hash(ident.as_bytes(), &location);
             },
             ref t => {
                 return Err(location.new_unexpected_token_error(t.clone()));
@@ -869,9 +868,7 @@ impl Color {
                 }
 
                 // Computed RGB and XYZ components can not be NaN.
-                if !color.is_legacy_syntax() &&
-                    (color.color_space.is_rgb_like() || color.color_space.is_xyz_like())
-                {
+                if !color.is_legacy_syntax() && color.color_space.is_rgb_or_xyz_like() {
                     color.components = color.components.map(normalize);
                 }
 
@@ -920,38 +917,6 @@ impl ToComputedValue for Color {
                 Color::ColorMix(Box::new(ToComputedValue::from_computed_value(&**mix)))
             },
         }
-    }
-}
-
-/// Specified color value for `-moz-font-smoothing-background-color`.
-///
-/// This property does not support `currentcolor`. We could drop it at
-/// parse-time, but it's not exposed to the web so it doesn't really matter.
-///
-/// We resolve it to `transparent` instead.
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
-pub struct MozFontSmoothingBackgroundColor(pub Color);
-
-impl Parse for MozFontSmoothingBackgroundColor {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        Color::parse(context, input).map(MozFontSmoothingBackgroundColor)
-    }
-}
-
-impl ToComputedValue for MozFontSmoothingBackgroundColor {
-    type ComputedValue = AbsoluteColor;
-
-    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
-        self.0
-            .to_computed_value(context)
-            .resolve_to_absolute(&AbsoluteColor::TRANSPARENT)
-    }
-
-    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
-        MozFontSmoothingBackgroundColor(Color::from_absolute_color(*computed))
     }
 }
 
@@ -1029,13 +994,26 @@ impl Parse for CaretColor {
     }
 }
 
+/// Various flags to represent the color-scheme property in an efficient
+/// way.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
+#[value_info(other_values = "light,dark,only")]
+pub struct ColorSchemeFlags(u8);
 bitflags! {
-    /// Various flags to represent the color-scheme property in an efficient
-    /// way.
-    #[derive(Default, MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
-    #[repr(C)]
-    #[value_info(other_values = "light,dark,only")]
-    pub struct ColorSchemeFlags: u8 {
+    impl ColorSchemeFlags: u8 {
         /// Whether the author specified `light`.
         const LIGHT = 1 << 0;
         /// Whether the author specified `dark`.

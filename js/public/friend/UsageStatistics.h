@@ -64,6 +64,7 @@ class JS_PUBLIC_API JSObject;
   _(DESERIALIZE_ITEMS, QuantityDistribution)    \
   _(DESERIALIZE_US, TimeDuration_US)            \
   _(GC_EFFECTIVENESS, MemoryDistribution)       \
+  _(GC_PARALLEL_MARK, Boolean)                  \
   _(GC_PARALLEL_MARK_SPEEDUP, Integer)          \
   _(GC_PARALLEL_MARK_UTILIZATION, Percentage)   \
   _(GC_PARALLEL_MARK_INTERRUPTIONS, Integer)    \
@@ -90,7 +91,7 @@ extern JS_PUBLIC_API void JS_SetAccumulateTelemetryCallback(
  * fixed member of the mozilla::UseCounter enum by the callback.
  */
 
-enum class JSUseCounter { ASMJS, WASM };
+enum class JSUseCounter { ASMJS, WASM, LATE_WEEKDAY };
 
 using JSSetUseCounterCallback = void (*)(JSObject*, JSUseCounter);
 

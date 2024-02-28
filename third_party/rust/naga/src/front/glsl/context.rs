@@ -8,10 +8,9 @@ use super::{
     Frontend, Result,
 };
 use crate::{
-    front::{Emitter, Typifier},
-    AddressSpace, Arena, BinaryOperator, Block, Expression, FastHashMap, FunctionArgument, Handle,
-    Literal, LocalVariable, RelationalFunction, ScalarKind, Span, Statement, Type, TypeInner,
-    VectorSize,
+    front::Typifier, proc::Emitter, AddressSpace, Arena, BinaryOperator, Block, Expression,
+    FastHashMap, FunctionArgument, Handle, Literal, LocalVariable, RelationalFunction, Scalar,
+    ScalarKind, Span, Statement, Type, TypeInner, VectorSize,
 };
 use std::ops::Index;
 
@@ -71,15 +70,19 @@ pub struct Context<'a> {
     pub symbol_table: crate::front::SymbolTable<String, VariableReference>,
     pub samplers: FastHashMap<Handle<Expression>, Handle<Expression>>,
 
+    pub const_typifier: Typifier,
     pub typifier: Typifier,
     emitter: Emitter,
     stmt_ctx: Option<StmtContext>,
     pub body: Block,
     pub module: &'a mut crate::Module,
+    pub is_const: bool,
+    /// Tracks the constness of `Expression`s residing in `self.expressions`
+    pub expression_constness: crate::proc::ExpressionConstnessTracker,
 }
 
 impl<'a> Context<'a> {
-    pub fn new(frontend: &Frontend, module: &'a mut crate::Module) -> Result<Self> {
+    pub fn new(frontend: &Frontend, module: &'a mut crate::Module, is_const: bool) -> Result<Self> {
         let mut this = Context {
             expressions: Arena::new(),
             locals: Arena::new(),
@@ -91,11 +94,14 @@ impl<'a> Context<'a> {
             symbol_table: crate::front::SymbolTable::default(),
             samplers: FastHashMap::default(),
 
+            const_typifier: Typifier::new(),
             typifier: Typifier::new(),
             emitter: Emitter::default(),
             stmt_ctx: Some(StmtContext::new()),
             body: Block::new(),
             module,
+            is_const: false,
+            expression_constness: crate::proc::ExpressionConstnessTracker::new(),
         };
 
         this.emit_start();
@@ -103,6 +109,7 @@ impl<'a> Context<'a> {
         for &(ref name, lookup) in frontend.global_variables.iter() {
             this.add_global(name, lookup)?
         }
+        this.is_const = is_const;
 
         Ok(this)
     }
@@ -241,15 +248,41 @@ impl<'a> Context<'a> {
     }
 
     pub fn add_expression(&mut self, expr: Expression, meta: Span) -> Result<Handle<Expression>> {
-        let needs_pre_emit = expr.needs_pre_emit();
-        if needs_pre_emit {
-            self.emit_end();
+        let mut eval = if self.is_const {
+            crate::proc::ConstantEvaluator::for_glsl_module(self.module)
+        } else {
+            crate::proc::ConstantEvaluator::for_glsl_function(
+                self.module,
+                &mut self.expressions,
+                &mut self.expression_constness,
+                &mut self.emitter,
+                &mut self.body,
+            )
+        };
+
+        let res = eval.try_eval_and_append(&expr, meta).map_err(|e| Error {
+            kind: e.into(),
+            meta,
+        });
+
+        match res {
+            Ok(expr) => Ok(expr),
+            Err(e) => {
+                if self.is_const {
+                    Err(e)
+                } else {
+                    let needs_pre_emit = expr.needs_pre_emit();
+                    if needs_pre_emit {
+                        self.body.extend(self.emitter.finish(&self.expressions));
+                    }
+                    let h = self.expressions.append(expr, meta);
+                    if needs_pre_emit {
+                        self.emitter.start(&self.expressions);
+                    }
+                    Ok(h)
+                }
+            }
         }
-        let handle = self.expressions.append(expr, meta);
-        if needs_pre_emit {
-            self.emit_start();
-        }
-        Ok(handle)
     }
 
     /// Add variable to current scope
@@ -363,20 +396,21 @@ impl<'a> Context<'a> {
         Ok(())
     }
 
-    /// Returns a [`StmtContext`](StmtContext) to be used in parsing and lowering
+    /// Returns a [`StmtContext`] to be used in parsing and lowering
     ///
     /// # Panics
-    /// - If more than one [`StmtContext`](StmtContext) are active at the same
-    /// time or if the previous call didn't use it in lowering.
+    ///
+    /// - If more than one [`StmtContext`] are active at the same time or if the
+    /// previous call didn't use it in lowering.
     #[must_use]
     pub fn stmt_ctx(&mut self) -> StmtContext {
         self.stmt_ctx.take().unwrap()
     }
 
-    /// Lowers a [`HirExpr`](HirExpr) which might produce a [`Expression`](Expression).
+    /// Lowers a [`HirExpr`] which might produce a [`Expression`].
     ///
-    /// consumes a [`StmtContext`](StmtContext) returning it to the context so
-    /// that it can be used again later.
+    /// consumes a [`StmtContext`] returning it to the context so that it can be
+    /// used again later.
     pub fn lower(
         &mut self,
         mut stmt: StmtContext,
@@ -393,10 +427,10 @@ impl<'a> Context<'a> {
     }
 
     /// Similar to [`lower`](Self::lower) but returns an error if the expression
-    /// returns void (ie. doesn't produce a [`Expression`](Expression)).
+    /// returns void (ie. doesn't produce a [`Expression`]).
     ///
-    /// consumes a [`StmtContext`](StmtContext) returning it to the context so
-    /// that it can be used again later.
+    /// consumes a [`StmtContext`] returning it to the context so that it can be
+    /// used again later.
     pub fn lower_expect(
         &mut self,
         mut stmt: StmtContext,
@@ -513,13 +547,16 @@ impl<'a> Context<'a> {
 
         let handle = match *kind {
             HirExprKind::Access { base, index } => {
-                let (index, index_meta) =
-                    self.lower_expect_inner(stmt, frontend, index, ExprPos::Rhs)?;
+                let (index, _) = self.lower_expect_inner(stmt, frontend, index, ExprPos::Rhs)?;
                 let maybe_constant_index = match pos {
                     // Don't try to generate `AccessIndex` if in a LHS position, since it
                     // wouldn't produce a pointer.
                     ExprPos::Lhs => None,
-                    _ => self.solve_constant(index, index_meta).ok(),
+                    _ => self
+                        .module
+                        .to_ctx()
+                        .eval_expr_to_u32_from(index, &self.expressions)
+                        .ok(),
                 };
 
                 let base = self
@@ -532,15 +569,7 @@ impl<'a> Context<'a> {
                     .0;
 
                 let pointer = maybe_constant_index
-                    .and_then(|const_expr| {
-                        Some(self.add_expression(
-                            Expression::AccessIndex {
-                                base,
-                                index: self.module.to_ctx().eval_expr_to_u32(const_expr).ok()?,
-                            },
-                            meta,
-                        ))
-                    })
+                    .map(|index| self.add_expression(Expression::AccessIndex { base, index }, meta))
                     .unwrap_or_else(|| {
                         self.add_expression(Expression::Access { base, index }, meta)
                     })?;
@@ -573,7 +602,7 @@ impl<'a> Context<'a> {
 
                 match op {
                     BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight => {
-                        self.implicit_conversion(&mut right, right_meta, ScalarKind::Uint, 4)?
+                        self.implicit_conversion(&mut right, right_meta, Scalar::U32)?
                     }
                     _ => self
                         .binary_implicit_conversion(&mut left, left_meta, &mut right, right_meta)?,
@@ -582,8 +611,8 @@ impl<'a> Context<'a> {
                 self.typifier_grow(left, left_meta)?;
                 self.typifier_grow(right, right_meta)?;
 
-                let left_inner = self.typifier.get(left, &self.module.types);
-                let right_inner = self.typifier.get(right, &self.module.types);
+                let left_inner = self.get_type(left);
+                let right_inner = self.get_type(right);
 
                 match (left_inner, right_inner) {
                     (
@@ -795,9 +824,9 @@ impl<'a> Context<'a> {
                         _ => self.add_expression(Expression::Binary { left, op, right }, meta)?,
                     },
                     (
-                        &TypeInner::Scalar {
+                        &TypeInner::Scalar(Scalar {
                             width: left_width, ..
-                        },
+                        }),
                         &TypeInner::Matrix {
                             rows,
                             columns,
@@ -882,9 +911,9 @@ impl<'a> Context<'a> {
                             columns,
                             width: left_width,
                         },
-                        &TypeInner::Scalar {
+                        &TypeInner::Scalar(Scalar {
                             width: right_width, ..
-                        },
+                        }),
                     ) => {
                         // Check that the two arguments have the same width
                         if left_width != right_width {
@@ -988,18 +1017,16 @@ impl<'a> Context<'a> {
                     // pointer type which is required for dynamic indexing
                     if !constant_index {
                         if let Some((constant, ty)) = var.constant {
-                            let local =
-                                self.locals.append(
-                                    LocalVariable {
-                                        name: None,
-                                        ty,
-                                        init: Some(self.module.const_expressions.append(
-                                            Expression::Constant(constant),
-                                            Span::default(),
-                                        )),
-                                    },
-                                    Span::default(),
-                                );
+                            let init = self
+                                .add_expression(Expression::Constant(constant), Span::default())?;
+                            let local = self.locals.append(
+                                LocalVariable {
+                                    name: None,
+                                    ty,
+                                    init: Some(init),
+                                },
+                                Span::default(),
+                            );
 
                             self.add_expression(Expression::LocalVariable(local), Span::default())?
                         } else {
@@ -1012,7 +1039,13 @@ impl<'a> Context<'a> {
                 _ if var.load => {
                     self.add_expression(Expression::Load { pointer: var.expr }, meta)?
                 }
-                ExprPos::Rhs => var.expr,
+                ExprPos::Rhs => {
+                    if let Some((constant, _)) = self.is_const.then_some(var.constant).flatten() {
+                        self.add_expression(Expression::Constant(constant), meta)?
+                    } else {
+                        var.expr
+                    }
+                }
             },
             HirExprKind::Call(ref call) if pos != ExprPos::Lhs => {
                 let maybe_expr = frontend.function_or_constructor_call(
@@ -1067,37 +1100,24 @@ impl<'a> Context<'a> {
 
                 // We need to do some custom implicit conversions since the two target expressions
                 // are in different bodies
-                if let (
-                    Some((accept_power, accept_width, accept_kind)),
-                    Some((reject_power, reject_width, reject_kind)),
-                ) = (
+                if let (Some((accept_power, accept_scalar)), Some((reject_power, reject_scalar))) = (
                     // Get the components of both branches and calculate the type power
                     self.expr_scalar_components(accept, accept_meta)?
-                        .and_then(|(kind, width)| Some((type_power(kind, width)?, width, kind))),
+                        .and_then(|scalar| Some((type_power(scalar)?, scalar))),
                     self.expr_scalar_components(reject, reject_meta)?
-                        .and_then(|(kind, width)| Some((type_power(kind, width)?, width, kind))),
+                        .and_then(|scalar| Some((type_power(scalar)?, scalar))),
                 ) {
                     match accept_power.cmp(&reject_power) {
                         std::cmp::Ordering::Less => {
                             accept_body = self.with_body(accept_body, |ctx| {
-                                ctx.conversion(
-                                    &mut accept,
-                                    accept_meta,
-                                    reject_kind,
-                                    reject_width,
-                                )?;
+                                ctx.conversion(&mut accept, accept_meta, reject_scalar)?;
                                 Ok(())
                             })?;
                         }
                         std::cmp::Ordering::Equal => {}
                         std::cmp::Ordering::Greater => {
                             reject_body = self.with_body(reject_body, |ctx| {
-                                ctx.conversion(
-                                    &mut reject,
-                                    reject_meta,
-                                    accept_kind,
-                                    accept_width,
-                                )?;
+                                ctx.conversion(&mut reject, reject_meta, accept_scalar)?;
                                 Ok(())
                             })?;
                         }
@@ -1168,8 +1188,8 @@ impl<'a> Context<'a> {
                     ref ty => ty,
                 };
 
-                if let Some((kind, width)) = scalar_components(ty) {
-                    self.implicit_conversion(&mut value, value_meta, kind, width)?;
+                if let Some(scalar) = scalar_components(ty) {
+                    self.implicit_conversion(&mut value, value_meta, scalar)?;
                 }
 
                 self.lower_store(pointer, value, meta)?;
@@ -1185,13 +1205,13 @@ impl<'a> Context<'a> {
                 };
 
                 let res = match *self.resolve_type(left, meta)? {
-                    TypeInner::Scalar { kind, width } => {
-                        let ty = TypeInner::Scalar { kind, width };
-                        Literal::one(kind, width).map(|i| (ty, i, None, None))
+                    TypeInner::Scalar(scalar) => {
+                        let ty = TypeInner::Scalar(scalar);
+                        Literal::one(scalar).map(|i| (ty, i, None, None))
                     }
-                    TypeInner::Vector { size, kind, width } => {
-                        let ty = TypeInner::Vector { size, kind, width };
-                        Literal::one(kind, width).map(|i| (ty, i, Some(size), None))
+                    TypeInner::Vector { size, scalar } => {
+                        let ty = TypeInner::Vector { size, scalar };
+                        Literal::one(scalar).map(|i| (ty, i, Some(size), None))
                     }
                     TypeInner::Matrix {
                         columns,
@@ -1203,8 +1223,11 @@ impl<'a> Context<'a> {
                             rows,
                             width,
                         };
-                        Literal::one(ScalarKind::Float, width)
-                            .map(|i| (ty, i, Some(rows), Some(columns)))
+                        Literal::one(Scalar {
+                            kind: ScalarKind::Float,
+                            width,
+                        })
+                        .map(|i| (ty, i, Some(rows), Some(columns)))
                     }
                     _ => None,
                 };
@@ -1290,19 +1313,14 @@ impl<'a> Context<'a> {
                                     Expression::Literal(Literal::U32(size.get())),
                                     meta,
                                 )?;
-                                self.forced_conversion(
-                                    &mut array_length,
-                                    meta,
-                                    ScalarKind::Sint,
-                                    4,
-                                )?;
+                                self.forced_conversion(&mut array_length, meta, Scalar::I32)?;
                                 array_length
                             }
                             // let the error be handled in type checking if it's not a dynamic array
                             _ => {
                                 let mut array_length = self
                                     .add_expression(Expression::ArrayLength(lowered_array), meta)?;
-                                self.conversion(&mut array_length, meta, ScalarKind::Sint, 4)?;
+                                self.conversion(&mut array_length, meta, Scalar::I32)?;
                                 array_length
                             }
                         }
@@ -1343,7 +1361,7 @@ impl<'a> Context<'a> {
         &mut self,
         expr: Handle<Expression>,
         meta: Span,
-    ) -> Result<Option<(ScalarKind, crate::Bytes)>> {
+    ) -> Result<Option<Scalar>> {
         let ty = self.resolve_type(expr, meta)?;
         Ok(scalar_components(ty))
     }
@@ -1351,21 +1369,20 @@ impl<'a> Context<'a> {
     pub fn expr_power(&mut self, expr: Handle<Expression>, meta: Span) -> Result<Option<u32>> {
         Ok(self
             .expr_scalar_components(expr, meta)?
-            .and_then(|(kind, width)| type_power(kind, width)))
+            .and_then(type_power))
     }
 
     pub fn conversion(
         &mut self,
         expr: &mut Handle<Expression>,
         meta: Span,
-        kind: ScalarKind,
-        width: crate::Bytes,
+        scalar: Scalar,
     ) -> Result<()> {
         *expr = self.add_expression(
             Expression::As {
                 expr: *expr,
-                kind,
-                convert: Some(width),
+                kind: scalar.kind,
+                convert: Some(scalar.width),
             },
             meta,
         )?;
@@ -1377,14 +1394,13 @@ impl<'a> Context<'a> {
         &mut self,
         expr: &mut Handle<Expression>,
         meta: Span,
-        kind: ScalarKind,
-        width: crate::Bytes,
+        scalar: Scalar,
     ) -> Result<()> {
         if let (Some(tgt_power), Some(expr_power)) =
-            (type_power(kind, width), self.expr_power(*expr, meta)?)
+            (type_power(scalar), self.expr_power(*expr, meta)?)
         {
             if tgt_power > expr_power {
-                self.conversion(expr, meta, kind, width)?;
+                self.conversion(expr, meta, scalar)?;
             }
         }
 
@@ -1395,12 +1411,11 @@ impl<'a> Context<'a> {
         &mut self,
         expr: &mut Handle<Expression>,
         meta: Span,
-        kind: ScalarKind,
-        width: crate::Bytes,
+        scalar: Scalar,
     ) -> Result<()> {
-        if let Some((expr_scalar_kind, expr_width)) = self.expr_scalar_components(*expr, meta)? {
-            if expr_scalar_kind != kind || expr_width != width {
-                self.conversion(expr, meta, kind, width)?;
+        if let Some(expr_scalar) = self.expr_scalar_components(*expr, meta)? {
+            if expr_scalar != scalar {
+                self.conversion(expr, meta, scalar)?;
             }
         }
 
@@ -1417,21 +1432,17 @@ impl<'a> Context<'a> {
         let left_components = self.expr_scalar_components(*left, left_meta)?;
         let right_components = self.expr_scalar_components(*right, right_meta)?;
 
-        if let (
-            Some((left_power, left_width, left_kind)),
-            Some((right_power, right_width, right_kind)),
-        ) = (
-            left_components.and_then(|(kind, width)| Some((type_power(kind, width)?, width, kind))),
-            right_components
-                .and_then(|(kind, width)| Some((type_power(kind, width)?, width, kind))),
+        if let (Some((left_power, left_scalar)), Some((right_power, right_scalar))) = (
+            left_components.and_then(|scalar| Some((type_power(scalar)?, scalar))),
+            right_components.and_then(|scalar| Some((type_power(scalar)?, scalar))),
         ) {
             match left_power.cmp(&right_power) {
                 std::cmp::Ordering::Less => {
-                    self.conversion(left, left_meta, right_kind, right_width)?;
+                    self.conversion(left, left_meta, right_scalar)?;
                 }
                 std::cmp::Ordering::Equal => {}
                 std::cmp::Ordering::Greater => {
-                    self.conversion(right, right_meta, left_kind, left_width)?;
+                    self.conversion(right, right_meta, left_scalar)?;
                 }
             }
         }
@@ -1486,7 +1497,7 @@ impl Index<Handle<Expression>> for Context<'_> {
 #[derive(Debug)]
 pub struct StmtContext {
     /// A arena of high level expressions which can be lowered through a
-    /// [`Context`](Context) to naga's [`Expression`](crate::Expression)s
+    /// [`Context`] to Naga's [`Expression`]s
     pub hir_exprs: Arena<HirExpr>,
 }
 

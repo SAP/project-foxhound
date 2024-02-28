@@ -61,6 +61,25 @@ function shouldLoadURI(aURI) {
 }
 
 function resolveURIInternal(aCmdLine, aArgument) {
+  // If using Firefox protocol handler remove it from URI
+  // at this stage. This is before we would otherwise
+  // record telemetry so do that here.
+  if (aArgument.startsWith("firefox:")) {
+    aArgument = aArgument.substring("firefox:".length);
+    Services.telemetry.keyedScalarAdd(
+      "os.environment.launched_to_handle",
+      "firefox",
+      1
+    );
+  }
+  if (aArgument.startsWith("firefox-private:")) {
+    aArgument = aArgument.substring("firefox-private:".length);
+    Services.telemetry.keyedScalarAdd(
+      "os.environment.launched_to_handle",
+      "firefox-private",
+      1
+    );
+  }
   var uri = aCmdLine.resolveURI(aArgument);
   var uriFixup = Services.uriFixup;
 
@@ -524,7 +543,13 @@ nsBrowserContentHandler.prototype = {
         "private-window",
         false
       );
-      if (privateWindowParam) {
+      // Check for Firefox private browsing protocol handler here.
+      let url = null;
+      let urlFlagIdx = cmdLine.findFlag("url", false);
+      if (urlFlagIdx > -1 && cmdLine.length > 1) {
+        url = cmdLine.getArgument(urlFlagIdx + 1);
+      }
+      if (privateWindowParam || url?.startsWith("firefox-private:")) {
         let forcePrivate = true;
         let resolvedURI;
         if (!lazy.PrivateBrowsingUtils.enabled) {
@@ -532,6 +557,10 @@ nsBrowserContentHandler.prototype = {
           // access to private browsing has been disabled.
           forcePrivate = false;
           resolvedURI = Services.io.newURI("about:privatebrowsing");
+        } else if (url?.startsWith("firefox-private:")) {
+          // We can safely remove the flag and parameter now.
+          cmdLine.removeArguments(urlFlagIdx, urlFlagIdx + 1);
+          resolvedURI = resolveURIInternal(cmdLine, url);
         } else {
           resolvedURI = resolveURIInternal(cmdLine, privateWindowParam);
         }
@@ -584,7 +613,7 @@ nsBrowserContentHandler.prototype = {
       }
     }
     if (cmdLine.handleFlag("setDefaultBrowser", false)) {
-      lazy.ShellService.setDefaultBrowser(true, true);
+      lazy.ShellService.setDefaultBrowser(true);
     }
 
     if (cmdLine.handleFlag("first-startup", false)) {
@@ -692,7 +721,7 @@ nsBrowserContentHandler.prototype = {
               "startup.homepage_welcome_url.additional"
             );
             // Turn on 'later run' pages for new profiles.
-            lazy.LaterRun.enabled = true;
+            lazy.LaterRun.enable(lazy.LaterRun.ENABLE_REASON_NEW_PROFILE);
             break;
           case OVERRIDE_NEW_MSTONE:
             // Check whether we will restore a session. If we will, we assume
@@ -714,6 +743,7 @@ nsBrowserContentHandler.prototype = {
               overridePage = getPostUpdateOverridePage(update, overridePage);
               // Send the update ping to signal that the update was successful.
               lazy.UpdatePing.handleUpdateSuccess(old_mstone, old_buildId);
+              lazy.LaterRun.enable(lazy.LaterRun.ENABLE_REASON_UPDATE_APPLIED);
             }
 
             overridePage = overridePage.replace("%OLD_VERSION%", old_mstone);
@@ -722,6 +752,7 @@ nsBrowserContentHandler.prototype = {
             if (lazy.UpdateManager.readyUpdate) {
               // Send the update ping to signal that the update was successful.
               lazy.UpdatePing.handleUpdateSuccess(old_mstone, old_buildId);
+              lazy.LaterRun.enable(lazy.LaterRun.ENABLE_REASON_UPDATE_APPLIED);
             }
             break;
         }
@@ -919,20 +950,6 @@ nsBrowserContentHandler.prototype = {
         cmdLine.length != urlFlagIdx + 2 ||
         /firefoxurl(-[a-f0-9]+)?:/i.test(urlParam)
       ) {
-        throw Components.Exception("", Cr.NS_ERROR_ABORT);
-      }
-      var isDefault = false;
-      try {
-        var url =
-          Services.urlFormatter.formatURLPref("app.support.baseURL") +
-          "win10-default-browser";
-        if (urlParam == url) {
-          isDefault = lazy.ShellService.isDefaultBrowser(false, false);
-        }
-      } catch (ex) {}
-      if (isDefault) {
-        // Firefox is already the default HTTP handler.
-        // We don't have to show the instruction page.
         throw Components.Exception("", Cr.NS_ERROR_ABORT);
       }
     }
@@ -1240,13 +1257,16 @@ nsDefaultCommandLineHandler.prototype = {
       return;
     }
 
-    if (AppConstants.platform == "win") {
-      // If we don't have a profile selected yet (e.g. the Profile Manager is
-      // displayed) we will crash if we open an url and then select a profile. To
-      // prevent this handle all url command line flags and set the command line's
-      // preventDefault to true to prevent the display of the ui. The initial
-      // command line will be retained when nsAppRunner calls LaunchChild though
-      // urls launched after the initial launch will be lost.
+    if (AppConstants.platform == "win" || AppConstants.platform == "macosx") {
+      // Handle the case where we don't have a profile selected yet (e.g. the
+      // Profile Manager is displayed).
+      // On Windows, we will crash if we open an url and then select a profile.
+      // On macOS, if we open an url we don't experience a crash but a broken
+      // window is opened.
+      // To prevent this handle all url command line flags and set the
+      // command line's preventDefault to true to prevent the display of the ui.
+      // The initial command line will be retained when nsAppRunner calls
+      // LaunchChild though urls launched after the initial launch will be lost.
       if (!this._haveProfile) {
         try {
           // This will throw when a profile has not been selected.

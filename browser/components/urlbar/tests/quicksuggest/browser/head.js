@@ -84,39 +84,20 @@ async function updateTopSites(condition, searchShortcuts = false) {
  *
  * @param {object} options
  *   Options
- * @param {Array} options.remoteSettingsResults
- *   Array of remote settings result objects. If not given, no suggestions
- *   will be present in remote settings.
+ * @param {Array} options.remoteSettingsRecords
+ *   See `QuickSuggestTestUtils.ensureQuickSuggestInit()`.
  * @param {Array} options.merinoSuggestions
- *   Array of Merino suggestion objects. If given, this function will start
- *   the mock Merino server and set `quicksuggest.dataCollection.enabled` to
- *   true so that `UrlbarProviderQuickSuggest` will fetch suggestions from it.
- *   Otherwise Merino will not serve suggestions, but you can still set up
- *   Merino without using this function by using `MerinoTestUtils` directly.
+ *   See `QuickSuggestTestUtils.ensureQuickSuggestInit()`.
  * @param {Array} options.config
- *   Quick suggest will be initialized with this config. Leave undefined to use
- *   the default config. See `QuickSuggestTestUtils` for details.
+ *   See `QuickSuggestTestUtils.ensureQuickSuggestInit()`.
  */
 async function setUpTelemetryTest({
-  remoteSettingsResults,
+  remoteSettingsRecords,
   merinoSuggestions = null,
   config = QuickSuggestTestUtils.DEFAULT_CONFIG,
 }) {
-  if (UrlbarPrefs.get("resultMenu")) {
-    todo(
-      false,
-      "telemetry for the result menu to be implemented in bug 1790020"
-    );
-    await SpecialPowers.pushPrefEnv({
-      set: [["browser.urlbar.resultMenu", false]],
-    });
-  }
   await SpecialPowers.pushPrefEnv({
     set: [
-      // Enable blocking on primary sponsored and nonsponsored suggestions so we
-      // can test the block button.
-      ["browser.urlbar.quicksuggest.blockingEnabled", true],
-      ["browser.urlbar.bestMatch.blockingEnabled", true],
       // Switch-to-tab results can sometimes appear after the test clicks a help
       // button and closes the new tab, which interferes with the expected
       // indexes of quick suggest results, so disable them.
@@ -130,14 +111,11 @@ async function setUpTelemetryTest({
   await PlacesUtils.bookmarks.eraseEverything();
   await UrlbarTestUtils.formHistory.clear();
 
-  Services.telemetry.clearScalars();
-  Services.telemetry.clearEvents();
-
   // Add a mock engine so we don't hit the network.
   await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
 
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
-    remoteSettingsResults,
+    remoteSettingsRecords,
     merinoSuggestions,
     config,
   });
@@ -165,14 +143,18 @@ async function setUpTelemetryTest({
  *     {object} ping
  *       The expected recorded custom telemetry ping. If no ping is expected,
  *       leave this undefined or pass null.
- * @param {object} options.selectables
- *   An object describing the telemetry that's expected to be recorded when each
- *   selectable element in the suggestion's row is picked. This object maps HTML
- *   class names to objects. Each property's name must be an HTML class name
- *   that uniquely identifies a selectable element within the row. The value
- *   must be an object that describes the telemetry that's expected to be
- *   recorded when that element is picked, and this inner object must have the
- *   following properties:
+ * @param {object} options.click
+ *   An object describing the expected click telemetry. It must have the same
+ *   properties as `impressionOnly` except `ping` must be `pings` (plural), an
+ *   array of expected pings.
+ * @param {Array} options.commands
+ *   Each element in this array is an object that describes the expected
+ *   telemetry for a result menu command. Each object must have the following
+ *   properties:
+ *     {string|Array} command
+ *       A command name or array; this is passed directly to
+ *       `UrlbarTestUtils.openResultMenuAndClickItem()` as the `commandOrArray`
+ *       arg, so see its documentation for details.
  *     {object} scalars
  *       An object that maps expected scalar names to values.
  *     {object} event
@@ -194,7 +176,8 @@ async function doTelemetryTest({
   index,
   suggestion,
   impressionOnly,
-  selectables,
+  click,
+  commands,
   providerName = UrlbarProviderQuickSuggest.name,
   teardown = null,
   showSuggestion = () =>
@@ -208,78 +191,33 @@ async function doTelemetryTest({
       fireInputEvent: true,
     }),
 }) {
-  // Do the impression-only test. It will return the `classList` values of all
-  // the selectable elements in the row so we can use them below.
-  let selectableClassLists = await doImpressionOnlyTest({
+  Services.telemetry.clearScalars();
+  Services.telemetry.clearEvents();
+
+  await doImpressionOnlyTest({
     index,
     suggestion,
     providerName,
     showSuggestion,
     expected: impressionOnly,
   });
-  if (!selectableClassLists) {
-    Assert.ok(
-      false,
-      "Impression test didn't complete successfully, stopping telemetry test"
-    );
-    return;
-  }
 
-  info(
-    "Got classLists of actual selectable elements in the row: " +
-      JSON.stringify(selectableClassLists)
-  );
+  await doClickTest({
+    suggestion,
+    providerName,
+    showSuggestion,
+    index,
+    expected: click,
+  });
 
-  let allMatchedExpectedClasses = new Set();
-
-  // For each actual selectable element in the row, do a selectable test by
-  // picking the element and checking telemetry.
-  for (let classList of selectableClassLists) {
-    info(
-      "Setting up selectable test for actual element with classList " +
-        JSON.stringify(classList)
-    );
-
-    // Each of the actual selectable elements should match exactly one of the
-    // test's expected selectable classes.
-    //
-    // * If an element doesn't match any expected class, then the test does not
-    //   account for that element, which is an error in the test.
-    // * If an element matches more than one expected class, then the expected
-    //   class is not specific enough, which is also an error in the test.
-
-    // Collect all the expected classes that match the actual element.
-    let matchingExpectedClasses = Object.keys(selectables).filter(className =>
-      classList.includes(className)
-    );
-
-    if (!matchingExpectedClasses.length) {
-      Assert.ok(
-        false,
-        "Actual selectable element doesn't match any expected classes. The element's classList is " +
-          JSON.stringify(classList)
-      );
-      continue;
-    }
-    if (matchingExpectedClasses.length > 1) {
-      Assert.ok(
-        false,
-        "Actual selectable element matches multiple expected classes. The element's classList is " +
-          JSON.stringify(classList)
-      );
-      continue;
-    }
-
-    let className = matchingExpectedClasses[0];
-    allMatchedExpectedClasses.add(className);
-
-    await doSelectableTest({
+  for (let command of commands) {
+    await doCommandTest({
       suggestion,
       providerName,
       showSuggestion,
       index,
-      className,
-      expected: selectables[className],
+      commandOrArray: command.command,
+      expected: command,
     });
 
     if (teardown) {
@@ -288,17 +226,6 @@ async function doTelemetryTest({
       info("Finished teardown");
     }
   }
-
-  // Finally, if an expected class doesn't match any actual element, then the
-  // test expects an element to be picked that either isn't present or isn't
-  // selectable, which is an error in the test.
-  Assert.deepEqual(
-    Object.keys(selectables).filter(
-      className => !allMatchedExpectedClasses.has(className)
-    ),
-    [],
-    "There should be no expected classes that didn't match actual selectable elements"
-  );
 }
 
 /**
@@ -325,10 +252,6 @@ async function doTelemetryTest({
  *       leave this undefined or pass null.
  * @param {Function} options.showSuggestion
  *   This function should open the view and show the suggestion.
- * @returns {Array}
- *   The `classList` values of all the selectable elements in the suggestion's
- *   row. Each item in this array is a selectable element's `classList` that has
- *   been converted to an array of strings.
  */
 async function doImpressionOnlyTest({
   index,
@@ -342,14 +265,8 @@ async function doImpressionOnlyTest({
   Services.telemetry.clearEvents();
   let { spy, spyCleanup } = QuickSuggestTestUtils.createTelemetryPingSpy();
 
-  let gleanPingSubmitted = false;
-  GleanPings.quickSuggest.testBeforeNextSubmit(() => {
-    gleanPingSubmitted = true;
-    if (!expected.ping || !("type" in expected.ping)) {
-      return;
-    }
-    _assertGleanPing(expected.ping);
-  });
+  let expectedPings = expected.ping ? [expected.ping] : [];
+  let gleanPingCount = watchGleanPings(expectedPings);
 
   info("Showing suggestion");
   await showSuggestion();
@@ -362,7 +279,7 @@ async function doImpressionOnlyTest({
       "Couldn't get suggestion row, stopping impression-only test"
     );
     await spyCleanup();
-    return null;
+    return;
   }
 
   // We need to get a different selectable row so we can pick it to trigger
@@ -396,14 +313,7 @@ async function doImpressionOnlyTest({
       "Couldn't get a different selectable row with a URL, stopping impression-only test"
     );
     await spyCleanup();
-    return null;
-  }
-
-  // Collect the `classList` values for all selectable elements in the row.
-  let selectableClassLists = [];
-  let selectables = row.querySelectorAll(":is([selectable], [role=button])");
-  for (let element of selectables) {
-    selectableClassLists.push([...element.classList]);
+    return;
   }
 
   // Pick the different row. Assumptions:
@@ -425,13 +335,13 @@ async function doImpressionOnlyTest({
   info("Checking events. Expected: " + JSON.stringify([expected.event]));
   QuickSuggestTestUtils.assertEvents([expected.event]);
 
-  let expectedPings = expected.ping ? [expected.ping] : [];
   info("Checking pings. Expected: " + JSON.stringify(expectedPings));
   QuickSuggestTestUtils.assertPings(spy, expectedPings);
 
-  Assert.ok(
-    !expected.ping || gleanPingSubmitted,
-    "No ping checked or Glean ping submitted ok."
+  Assert.equal(
+    expectedPings.length,
+    gleanPingCount.value,
+    "Submitted one Glean ping per expected ping"
   );
 
   // Clean up.
@@ -440,13 +350,11 @@ async function doImpressionOnlyTest({
   await spyCleanup();
 
   info("Finished impression-only test");
-
-  return selectableClassLists;
 }
 
 /**
- * Helper for `doTelemetryTest()` that picks a selectable element in a
- * suggestion's row and checks telemetry.
+ * Helper for `doTelemetryTest()` that clicks a suggestion's row and checks
+ * telemetry.
  *
  * @param {object} options
  *   Options
@@ -457,9 +365,6 @@ async function doImpressionOnlyTest({
  * @param {string} options.providerName
  *   The name of the provider that is expected to create the UrlbarResult for
  *   the suggestion.
- * @param {string} options.className
- *   An HTML class name that should uniquely identify the selectable element
- *   within its row.
  * @param {object} options.expected
  *   An object describing the telemetry that's expected to be recorded when the
  *   selectable element is picked. It must have the following properties:
@@ -473,69 +378,140 @@ async function doImpressionOnlyTest({
  * @param {Function} options.showSuggestion
  *   This function should open the view and show the suggestion.
  */
-async function doSelectableTest({
+async function doClickTest({
   index,
   suggestion,
   providerName,
-  className,
   expected,
   showSuggestion,
 }) {
-  info("Starting selectable test: " + JSON.stringify({ className }));
+  info("Starting click test");
 
   Services.telemetry.clearEvents();
   let { spy, spyCleanup } = QuickSuggestTestUtils.createTelemetryPingSpy();
 
-  let gleanPingsSubmitted = 0;
-  if (expected.pings) {
-    let checkPing = (ping, next) => {
-      gleanPingsSubmitted++;
-      _assertGleanPing(ping);
-      if (next) {
-        GleanPings.quickSuggest.testBeforeNextSubmit(next);
-      }
-    };
-    // Build the chain of `testBeforeNextSubmit`s backwards.
-    let next = undefined;
-    expected.pings
-      .slice()
-      .reverse()
-      .forEach(ping => {
-        next = checkPing.bind(null, ping, next);
-      });
-    GleanPings.quickSuggest.testBeforeNextSubmit(next);
-  }
+  let expectedPings = expected.pings ?? [];
+  let gleanPingCount = watchGleanPings(expectedPings);
 
   info("Showing suggestion");
   await showSuggestion();
 
   let row = await validateSuggestionRow(index, suggestion, providerName);
   if (!row) {
-    Assert.ok(false, "Couldn't get suggestion row, stopping selectable test");
+    Assert.ok(false, "Couldn't get suggestion row, stopping click test");
     await spyCleanup();
     return;
   }
 
-  let element = row.querySelector("." + className);
-  Assert.ok(element, "Sanity check: Target selectable element should exist");
+  // We assume clicking the row will load a page in the current browser.
+  let loadPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+
+  info("Clicking row");
+  EventUtils.synthesizeMouseAtCenter(row, {});
+
+  info("Waiting for load");
+  await loadPromise;
+  await TestUtils.waitForTick();
+
+  info("Checking scalars. Expected: " + JSON.stringify(expected.scalars));
+  QuickSuggestTestUtils.assertScalars(expected.scalars);
+
+  info("Checking events. Expected: " + JSON.stringify([expected.event]));
+  QuickSuggestTestUtils.assertEvents([expected.event]);
+
+  info("Checking pings. Expected: " + JSON.stringify(expectedPings));
+  QuickSuggestTestUtils.assertPings(spy, expectedPings);
+
+  Assert.equal(
+    expectedPings.length,
+    gleanPingCount.value,
+    "Submitted one Glean ping per expected ping"
+  );
+
+  await PlacesUtils.history.clear();
+  await spyCleanup();
+
+  info("Finished click test");
+}
+
+/**
+ * Helper for `doTelemetryTest()` that clicks a result menu command for a
+ * suggestion and checks telemetry.
+ *
+ * @param {object} options
+ *   Options
+ * @param {number} options.index
+ *   The expected index of the suggestion in the results list.
+ * @param {object} options.suggestion
+ *   The suggestion being tested.
+ * @param {string} options.providerName
+ *   The name of the provider that is expected to create the UrlbarResult for
+ *   the suggestion.
+ * @param {string|Array} options.commandOrArray
+ *   A command name or array; this is passed directly to
+ *  `UrlbarTestUtils.openResultMenuAndClickItem()` as the `commandOrArray` arg,
+ *   so see its documentation for details.
+ * @param {object} options.expected
+ *   An object describing the telemetry that's expected to be recorded when the
+ *   selectable element is picked. It must have the following properties:
+ *     {object} scalars
+ *       An object that maps expected scalar names to values.
+ *     {object} event
+ *       The expected recorded event.
+ *     {Array} pings
+ *       A list of expected recorded custom telemetry pings. If no pings are
+ *       expected, leave this undefined or pass an empty array.
+ * @param {Function} options.showSuggestion
+ *   This function should open the view and show the suggestion.
+ */
+async function doCommandTest({
+  index,
+  suggestion,
+  providerName,
+  commandOrArray,
+  expected,
+  showSuggestion,
+}) {
+  info("Starting command test: " + JSON.stringify({ commandOrArray }));
+
+  Services.telemetry.clearEvents();
+  let { spy, spyCleanup } = QuickSuggestTestUtils.createTelemetryPingSpy();
+
+  let expectedPings = expected.pings ?? [];
+  let gleanPingCount = watchGleanPings(expectedPings);
+
+  info("Showing suggestion");
+  await showSuggestion();
+
+  let row = await validateSuggestionRow(index, suggestion, providerName);
+  if (!row) {
+    Assert.ok(false, "Couldn't get suggestion row, stopping click test");
+    await spyCleanup();
+    return;
+  }
+
+  let command =
+    typeof commandOrArray == "string"
+      ? commandOrArray
+      : commandOrArray[commandOrArray.length - 1];
 
   let loadPromise;
-  if (className == "urlbarView-row-inner") {
-    // We assume clicking the row-inner will cause a page to load in the current
-    // browser.
-    loadPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  } else if (className == "urlbarView-button-help") {
+  if (command == "help") {
+    // We assume clicking "help" will load a page in a new tab.
     loadPromise = BrowserTestUtils.waitForNewTab(gBrowser);
   }
 
-  info("Clicking element: " + className);
-  EventUtils.synthesizeMouseAtCenter(element, {});
+  info("Clicking command");
+  await UrlbarTestUtils.openResultMenuAndClickItem(window, commandOrArray, {
+    resultIndex: index,
+    openByMouse: true,
+  });
 
   if (loadPromise) {
     info("Waiting for load");
     await loadPromise;
     await TestUtils.waitForTick();
-    if (className == "urlbarView-button-help") {
+    if (command == "help") {
       info("Closing help tab");
       BrowserTestUtils.removeTab(gBrowser.selectedTab);
     }
@@ -547,23 +523,22 @@ async function doSelectableTest({
   info("Checking events. Expected: " + JSON.stringify([expected.event]));
   QuickSuggestTestUtils.assertEvents([expected.event]);
 
-  let expectedPings = expected.pings ?? [];
   info("Checking pings. Expected: " + JSON.stringify(expectedPings));
   QuickSuggestTestUtils.assertPings(spy, expectedPings);
 
   Assert.equal(
     expectedPings.length,
-    gleanPingsSubmitted,
-    "Submitted one Glean ping per PC ping."
+    gleanPingCount.value,
+    "Submitted one Glean ping per expected ping"
   );
 
-  if (className == "urlbarView-button-block") {
+  if (command == "dismiss") {
     await QuickSuggest.blockedSuggestions.clear();
   }
   await PlacesUtils.history.clear();
   await spyCleanup();
 
-  info("Finished selectable test: " + JSON.stringify({ className }));
+  info("Finished command test: " + JSON.stringify({ commandOrArray }));
 }
 
 /**
@@ -614,9 +589,37 @@ async function validateSuggestionRow(index, suggestion, providerName) {
   return row;
 }
 
+function watchGleanPings(pings) {
+  let countObject = { value: 0 };
+
+  let checkPing = (ping, next) => {
+    countObject.value++;
+    _assertGleanPing(ping);
+    if (next) {
+      GleanPings.quickSuggest.testBeforeNextSubmit(next);
+    }
+  };
+
+  // Build the chain of `testBeforeNextSubmit`s backwards.
+  let next = undefined;
+  pings
+    .slice()
+    .reverse()
+    .forEach(ping => {
+      next = checkPing.bind(null, ping, next);
+    });
+  if (next) {
+    GleanPings.quickSuggest.testBeforeNextSubmit(next);
+  }
+
+  return countObject;
+}
+
 function _assertGleanPing(ping) {
   Assert.equal(Glean.quickSuggest.pingType.testGetValue(), ping.type);
   const keymap = {
+    // present in all pings
+    source: Glean.quickSuggest.source,
     match_type: Glean.quickSuggest.matchType,
     position: Glean.quickSuggest.position,
     suggested_index: Glean.quickSuggest.suggestedIndex,
@@ -624,13 +627,79 @@ function _assertGleanPing(ping) {
       Glean.quickSuggest.suggestedIndexRelativeToGroup,
     improve_suggest_experience_checked:
       Glean.quickSuggest.improveSuggestExperience,
-    is_clicked: Glean.quickSuggest.isClicked,
     block_id: Glean.quickSuggest.blockId,
     advertiser: Glean.quickSuggest.advertiser,
+    request_id: Glean.quickSuggest.requestId,
+    context_id: Glean.quickSuggest.contextId,
+    // impression and click pings
+    reporting_url: Glean.quickSuggest.reportingUrl,
+    // impression ping
+    is_clicked: Glean.quickSuggest.isClicked,
+    // block/dismiss ping
     iab_category: Glean.quickSuggest.iabCategory,
   };
   for (const [key, value] of Object.entries(ping.payload)) {
     Assert.ok(key in keymap, `A Glean metric exists for field ${key}`);
-    Assert.equal(value ?? null, keymap[key].testGetValue());
+    Assert.equal(
+      keymap[key].testGetValue(),
+      value ?? null,
+      `Glean metric field ${key} should be the expected value`
+    );
+  }
+}
+
+/**
+ * Adds two tasks: One with the Rust backend disabled and one with it enabled.
+ * The names of the task functions will be the name of the passed-in task
+ * function appended with "_rustDisabled" and "_rustEnabled" respectively. Call
+ * with the usual `add_task()` arguments.
+ *
+ * @param {...any} args
+ *   The usual `add_task()` arguments.
+ */
+function add_tasks_with_rust(...args) {
+  let taskFnIndex = args.findIndex(a => typeof a == "function");
+  let taskFn = args[taskFnIndex];
+
+  for (let rustEnabled of [false, true]) {
+    let newTaskFn = async (...taskFnArgs) => {
+      info("add_tasks_with_rust: Setting rustEnabled: " + rustEnabled);
+      UrlbarPrefs.set("quicksuggest.rustEnabled", rustEnabled);
+      info("add_tasks_with_rust: Done setting rustEnabled: " + rustEnabled);
+
+      // The current backend may now start syncing, so wait for it to finish.
+      info("add_tasks_with_rust: Forcing sync");
+      await QuickSuggestTestUtils.forceSync();
+      info("add_tasks_with_rust: Done forcing sync");
+
+      let rv;
+      try {
+        info(
+          "add_tasks_with_rust: Calling original task function: " + taskFn.name
+        );
+        rv = await taskFn(...taskFnArgs);
+      } finally {
+        info(
+          "add_tasks_with_rust: Done calling original task function: " +
+            taskFn.name
+        );
+        info("add_tasks_with_rust: Clearing rustEnabled");
+        UrlbarPrefs.clear("quicksuggest.rustEnabled");
+        info("add_tasks_with_rust: Done clearing rustEnabled");
+
+        // The current backend may now start syncing, so wait for it to finish.
+        info("add_tasks_with_rust: Forcing sync");
+        await QuickSuggestTestUtils.forceSync();
+        info("add_tasks_with_rust: Done forcing sync");
+      }
+      return rv;
+    };
+
+    Object.defineProperty(newTaskFn, "name", {
+      value: taskFn.name + (rustEnabled ? "_rustEnabled" : "_rustDisabled"),
+    });
+    let addTaskArgs = [...args];
+    addTaskArgs[taskFnIndex] = newTaskFn;
+    add_task(...addTaskArgs);
   }
 }

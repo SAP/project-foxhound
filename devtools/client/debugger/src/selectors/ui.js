@@ -76,10 +76,18 @@ export function getSearchOptions(state, searchKey) {
   return state.ui.mutableSearchOptions[searchKey];
 }
 
+export function getProjectSearchQuery(state) {
+  return state.ui.projectSearchQuery;
+}
+
 export function getHideIgnoredSources(state) {
   return state.ui.hideIgnoredSources;
 }
 
 export function isSourceMapIgnoreListEnabled(state) {
   return state.ui.sourceMapIgnoreListEnabled;
+}
+
+export function supportsDebuggerStatementIgnore(state) {
+  return state.ui.supportsDebuggerStatementIgnore;
 }

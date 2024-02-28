@@ -58,10 +58,9 @@ JSObject* AuthenticatorAssertionResponse::WrapObject(
 void AuthenticatorAssertionResponse::GetAuthenticatorData(
     JSContext* aCx, JS::MutableHandle<JSObject*> aValue, ErrorResult& aRv) {
   if (!mAuthenticatorDataCachedObj) {
-    mAuthenticatorDataCachedObj = ArrayBuffer::Create(
-        aCx, mAuthenticatorData.Length(), mAuthenticatorData.Elements());
-    if (!mAuthenticatorDataCachedObj) {
-      aRv.NoteJSContextException(aCx);
+    mAuthenticatorDataCachedObj =
+        ArrayBuffer::Create(aCx, mAuthenticatorData, aRv);
+    if (aRv.Failed()) {
       return;
     }
   }
@@ -76,10 +75,8 @@ void AuthenticatorAssertionResponse::SetAuthenticatorData(
 void AuthenticatorAssertionResponse::GetSignature(
     JSContext* aCx, JS::MutableHandle<JSObject*> aValue, ErrorResult& aRv) {
   if (!mSignatureCachedObj) {
-    mSignatureCachedObj =
-        ArrayBuffer::Create(aCx, mSignature.Length(), mSignature.Elements());
-    if (!mSignatureCachedObj) {
-      aRv.NoteJSContextException(aCx);
+    mSignatureCachedObj = ArrayBuffer::Create(aCx, mSignature, aRv);
+    if (aRv.Failed()) {
       return;
     }
   }
@@ -100,10 +97,8 @@ void AuthenticatorAssertionResponse::GetUserHandle(
     aValue.set(nullptr);
   } else {
     if (!mUserHandleCachedObj) {
-      mUserHandleCachedObj = ArrayBuffer::Create(aCx, mUserHandle.Length(),
-                                                 mUserHandle.Elements());
-      if (!mUserHandleCachedObj) {
-        aRv.NoteJSContextException(aCx);
+      mUserHandleCachedObj = ArrayBuffer::Create(aCx, mUserHandle, aRv);
+      if (aRv.Failed()) {
         return;
       }
     }

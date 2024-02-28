@@ -170,13 +170,6 @@ class BaseBootstrapper(object):
         to the user, if necessary.
         """
 
-    def suggest_install_distutils(self):
-        """Called if distutils.{sysconfig,spawn} can't be imported."""
-        print(
-            "Does your distro require installing another package for distutils?",
-            file=sys.stderr,
-        )
-
     def suggest_install_pip3(self):
         """Called if pip3 can't be found."""
         print(
@@ -494,7 +487,7 @@ class BaseBootstrapper(object):
             # path and move on.
             return None
 
-        match = re.search(name + " ([a-z0-9\.]+)", process.stdout)
+        match = re.search(name + r" ([a-z0-9\.]+)", process.stdout)
         if not match:
             print("ERROR! Unable to identify %s version." % name)
             return None

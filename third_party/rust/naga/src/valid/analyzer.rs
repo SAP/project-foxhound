@@ -16,6 +16,10 @@ use std::ops;
 
 pub type NonUniformResult = Option<Handle<crate::Expression>>;
 
+// Remove this once we update our uniformity analysis and
+// add support for the `derivative_uniformity` diagnostic
+const DISABLE_UNIFORMITY_REQ_FOR_FRAGMENT_STAGE: bool = true;
+
 bitflags::bitflags! {
     /// Kinds of expressions that require uniform control flow.
     #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
@@ -23,8 +27,8 @@ bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct UniformityRequirements: u8 {
         const WORK_GROUP_BARRIER = 0x1;
-        const DERIVATIVE = 0x2;
-        const IMPLICIT_LEVEL = 0x4;
+        const DERIVATIVE = if DISABLE_UNIFORMITY_REQ_FOR_FRAGMENT_STAGE { 0 } else { 0x2 };
+        const IMPLICIT_LEVEL = if DISABLE_UNIFORMITY_REQ_FOR_FRAGMENT_STAGE { 0 } else { 0x4 };
     }
 }
 
@@ -155,10 +159,10 @@ impl ExpressionInfo {
             ref_count: 0,
             assignable_global: None,
             // this doesn't matter at this point, will be overwritten
-            ty: TypeResolution::Value(crate::TypeInner::Scalar {
+            ty: TypeResolution::Value(crate::TypeInner::Scalar(crate::Scalar {
                 kind: crate::ScalarKind::Bool,
                 width: 0,
-            }),
+            })),
         }
     }
 }
@@ -417,13 +421,29 @@ impl FunctionInfo {
         })
     }
 
-    /// Computes the expression info and stores it in `self.expressions`.
-    /// Also, bumps the reference counts on dependent expressions.
+    /// Compute the [`ExpressionInfo`] for `handle`.
+    ///
+    /// Replace the dummy entry in [`self.expressions`] for `handle`
+    /// with a real `ExpressionInfo` value describing that expression.
+    ///
+    /// This function is called as part of a forward sweep through the
+    /// arena, so we can assume that all earlier expressions in the
+    /// arena already have valid info. Since expressions only depend
+    /// on earlier expressions, this includes all our subexpressions.
+    ///
+    /// Adjust the reference counts on all expressions we use.
+    ///
+    /// Also populate the [`sampling_set`], [`sampling`] and
+    /// [`global_uses`] fields of `self`.
+    ///
+    /// [`self.expressions`]: FunctionInfo::expressions
+    /// [`sampling_set`]: FunctionInfo::sampling_set
+    /// [`sampling`]: FunctionInfo::sampling
+    /// [`global_uses`]: FunctionInfo::global_uses
     #[allow(clippy::or_fun_call)]
     fn process_expression(
         &mut self,
         handle: Handle<crate::Expression>,
-        expression: &crate::Expression,
         expression_arena: &Arena<crate::Expression>,
         other_functions: &[FunctionInfo],
         resolve_context: &ResolveContext,
@@ -431,6 +451,7 @@ impl FunctionInfo {
     ) -> Result<(), ExpressionError> {
         use crate::{Expression as E, SampleLevel as Sl};
 
+        let expression = &expression_arena[handle];
         let mut assignable_global = None;
         let uniformity = match *expression {
             E::Access { base, index } => {
@@ -1007,10 +1028,9 @@ impl ModuleInfo {
         let resolve_context =
             ResolveContext::with_locals(module, &fun.local_variables, &fun.arguments);
 
-        for (handle, expr) in fun.expressions.iter() {
+        for (handle, _) in fun.expressions.iter() {
             if let Err(source) = info.process_expression(
                 handle,
-                expr,
                 &fun.expressions,
                 &self.functions,
                 &resolve_context,
@@ -1018,6 +1038,12 @@ impl ModuleInfo {
             ) {
                 return Err(FunctionError::Expression { handle, source }
                     .with_span_handle(handle, &fun.expressions));
+            }
+        }
+
+        for (_, expr) in fun.local_variables.iter() {
+            if let Some(init) = expr.init {
+                let _ = info.add_ref(init);
             }
         }
 
@@ -1044,8 +1070,7 @@ fn uniform_control_flow() {
             name: None,
             inner: crate::TypeInner::Vector {
                 size: crate::VectorSize::Bi,
-                kind: crate::ScalarKind::Float,
-                width: 4,
+                scalar: crate::Scalar::F32,
             },
         },
         Default::default(),
@@ -1123,10 +1148,9 @@ fn uniform_control_flow() {
         functions: &Arena::new(),
         arguments: &[],
     };
-    for (handle, expression) in expressions.iter() {
+    for (handle, _) in expressions.iter() {
         info.process_expression(
             handle,
-            expression,
             &expressions,
             &[],
             &resolve_context,
@@ -1185,21 +1209,28 @@ fn uniform_control_flow() {
         .into(),
         reject: crate::Block::new(),
     };
-    assert_eq!(
-        info.process_block(
+    {
+        let block_info = info.process_block(
             &vec![stmt_emit2, stmt_if_non_uniform].into(),
             &[],
             None,
-            &expressions
-        ),
-        Err(FunctionError::NonUniformControlFlow(
-            UniformityRequirements::DERIVATIVE,
-            derivative_expr,
-            UniformityDisruptor::Expression(non_uniform_global_expr)
-        )
-        .with_span()),
-    );
-    assert_eq!(info[derivative_expr].ref_count, 1);
+            &expressions,
+        );
+        if DISABLE_UNIFORMITY_REQ_FOR_FRAGMENT_STAGE {
+            assert_eq!(info[derivative_expr].ref_count, 2);
+        } else {
+            assert_eq!(
+                block_info,
+                Err(FunctionError::NonUniformControlFlow(
+                    UniformityRequirements::DERIVATIVE,
+                    derivative_expr,
+                    UniformityDisruptor::Expression(non_uniform_global_expr)
+                )
+                .with_span()),
+            );
+            assert_eq!(info[derivative_expr].ref_count, 1);
+        }
+    }
     assert_eq!(info[non_uniform_global], GlobalUse::READ);
 
     let stmt_emit3 = S::Emit(emit_range_globals);

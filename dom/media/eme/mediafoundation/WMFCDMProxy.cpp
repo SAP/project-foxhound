@@ -8,7 +8,9 @@
 
 #include "mozilla/dom/MediaKeySession.h"
 #include "mozilla/dom/MediaKeySystemAccessBinding.h"
+#include "mozilla/EMEUtils.h"
 #include "mozilla/WMFCDMProxyCallback.h"
+#include "mozilla/WindowsVersion.h"
 #include "WMFCDMImpl.h"
 #include "WMFCDMProxyCallback.h"
 
@@ -77,6 +79,16 @@ void WMFCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
 
   mCDM = MakeRefPtr<WMFCDMImpl>(mKeySystem);
   mProxyCallback = new WMFCDMProxyCallback(this);
+  // SWDRM has a PMP process leakage problem on Windows 10 due to the internal
+  // issue in the media foundation. Microsoft only lands the solution on Windows
+  // 11 and doesn't have plan to port it back to Windows 10. Therefore, for
+  // PlayReady, we need to force to covert SL2000 to SL3000 for our underlying
+  // CDM to avoid that issue. In addition, as we only support L1 for Widevine,
+  // this issue won't happen on it.
+  Maybe<nsString> forcedRobustness =
+      IsPlayReadyKeySystemAndSupported(mKeySystem) && !IsWin11OrLater()
+          ? Some(nsString(u"3000"))
+          : Nothing();
   WMFCDMImpl::InitParams params{
       nsString(aOrigin),
       mConfig.mInitDataTypes,
@@ -84,7 +96,8 @@ void WMFCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
       mDistinctiveIdentifierRequired,
       mProxyCallback,
       GenerateMFCDMMediaCapabilities(mConfig.mAudioCapabilities),
-      GenerateMFCDMMediaCapabilities(mConfig.mVideoCapabilities)};
+      GenerateMFCDMMediaCapabilities(mConfig.mVideoCapabilities,
+                                     forcedRobustness)};
   mCDM->Init(params)->Then(
       mMainThread, __func__,
       [self = RefPtr{this}, this, aPromiseId](const bool) {
@@ -100,11 +113,21 @@ void WMFCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
 
 CopyableTArray<MFCDMMediaCapability>
 WMFCDMProxy::GenerateMFCDMMediaCapabilities(
-    const dom::Sequence<dom::MediaKeySystemMediaCapability>& aCapabilities) {
+    const dom::Sequence<dom::MediaKeySystemMediaCapability>& aCapabilities,
+    const Maybe<nsString>& forcedRobustness) {
   CopyableTArray<MFCDMMediaCapability> outCapabilites;
   for (const auto& capabilities : aCapabilities) {
-    outCapabilites.AppendElement(MFCDMMediaCapability{
-        capabilities.mContentType, capabilities.mRobustness});
+    if (!forcedRobustness) {
+      EME_LOG("WMFCDMProxy::Init %p, robustness=%s", this,
+              NS_ConvertUTF16toUTF8(capabilities.mRobustness).get());
+      outCapabilites.AppendElement(MFCDMMediaCapability{
+          capabilities.mContentType, capabilities.mRobustness});
+    } else {
+      EME_LOG("WMFCDMProxy::Init %p, force to robustness=%s", this,
+              NS_ConvertUTF16toUTF8(*forcedRobustness).get());
+      outCapabilites.AppendElement(
+          MFCDMMediaCapability{capabilities.mContentType, *forcedRobustness});
+    }
   }
   return outCapabilites;
 }
@@ -306,6 +329,31 @@ void WMFCDMProxy::OnExpirationChange(const nsAString& aSessionId,
         NS_ConvertUTF16toUTF8(aSessionId).get());
     session->SetExpiration(static_cast<double>(aExpiryTime));
   }
+}
+
+void WMFCDMProxy::SetServerCertificate(PromiseId aPromiseId,
+                                       nsTArray<uint8_t>& aCert) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RETURN_IF_SHUTDOWN();
+  EME_LOG("WMFCDMProxy::SetServerCertificate(this=%p, pid=%" PRIu32 ")", this,
+          aPromiseId);
+  mCDM->SetServerCertificate(aPromiseId, aCert)
+      ->Then(
+          mMainThread, __func__,
+          [self = RefPtr{this}, this, aPromiseId]() {
+            RETURN_IF_SHUTDOWN();
+            ResolvePromise(aPromiseId);
+          },
+          [self = RefPtr{this}, this, aPromiseId]() {
+            RETURN_IF_SHUTDOWN();
+            RejectPromiseWithStateError(
+                aPromiseId,
+                nsLiteralCString("WMFCDMProxy::SetServerCertificate failed!"));
+          });
+}
+
+bool WMFCDMProxy::IsHardwareDecryptionSupported() const {
+  return mozilla::IsHardwareDecryptionSupported(mConfig);
 }
 
 uint64_t WMFCDMProxy::GetCDMProxyId() const {

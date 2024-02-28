@@ -21,9 +21,9 @@
 #include "jstypes.h"
 #include "NamespaceImports.h"
 
+#include "ds/LifoAlloc.h"
 #include "gc/Barrier.h"
 #include "jit/BaselineIC.h"
-#include "jit/ICStubSpace.h"
 #include "js/TypeDecls.h"
 #include "js/UniquePtr.h"
 #include "js/Vector.h"
@@ -49,6 +49,7 @@ class AllocSite;
 namespace jit {
 
 class BaselineScript;
+class ICStubSpace;
 class InliningRoot;
 class IonScript;
 class JitScript;
@@ -168,8 +169,7 @@ class alignas(uintptr_t) ICScript final : public TrailingArray {
   void removeInlinedChild(uint32_t pcOffset);
   bool hasInlinedChild(uint32_t pcOffset);
 
-  JitScriptICStubSpace* jitScriptStubSpace();
-  void purgeOptimizedStubs(Zone* zone);
+  void purgeStubs(Zone* zone);
 
   void trace(JSTracer* trc);
   bool traceWeak(JSTracer* trc);
@@ -213,8 +213,10 @@ class alignas(uintptr_t) ICScript final : public TrailingArray {
   Offset fallbackStubsOffset() const { return fallbackStubsOffset_; }
   Offset endOffset() const { return endOffset_; }
 
+ public:
   ICEntry* icEntries() { return offsetToPointer<ICEntry>(icEntriesOffset()); }
 
+ private:
   ICFallbackStub* fallbackStubs() {
     return offsetToPointer<ICFallbackStub>(fallbackStubsOffset());
   }
@@ -246,11 +248,6 @@ class alignas(uintptr_t) ICScript final : public TrailingArray {
 // because the JitScript can be reused when we have to recompile the
 // BaselineScript.
 //
-// The JitScript contains a stub space. This stores the "can GC" CacheIR stubs.
-// These stubs are never purged before destroying the JitScript. Other stubs are
-// stored in the optimized stub space stored in JitZone and can be purged more
-// eagerly. See JitScript::purgeOptimizedStubs.
-//
 // An ICScript contains a list of IC entries and a list of fallback stubs.
 // There's one ICEntry and ICFallbackStub for each JOF_IC bytecode op.
 //
@@ -279,9 +276,6 @@ class alignas(uintptr_t) JitScript final
     : public mozilla::LinkedListElement<JitScript>,
       public TrailingArray {
   friend class ::JSScript;
-
-  // Allocated space for Can-GC CacheIR stubs.
-  JitScriptICStubSpace jitScriptStubSpace_ = {};
 
   // Profile string used by the profiler for Baseline Interpreter frames.
   const char* profileString_ = nullptr;
@@ -334,6 +328,8 @@ class alignas(uintptr_t) JitScript final
 #endif
 
   // List of allocation sites referred to by ICs in this script.
+  static constexpr size_t AllocSiteChunkSize = 256;
+  LifoAlloc allocSitesSpace_{AllocSiteChunkSize};
   Vector<gc::AllocSite*, 0, SystemAllocPolicy> allocSites_;
 
   ICScript icScript_;
@@ -392,15 +388,14 @@ class alignas(uintptr_t) JitScript final
 
   void prepareForDestruction(Zone* zone);
 
-  JitScriptICStubSpace* jitScriptStubSpace() { return &jitScriptStubSpace_; }
-
   void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, size_t* data,
-                              size_t* fallbackStubs) const {
+                              size_t* allocSites) const {
     *data += mallocSizeOf(this);
 
-    // |data| already includes the ICStubSpace itself, so use
+    // |data| already includes the LifoAlloc and Vector, so use
     // sizeOfExcludingThis.
-    *fallbackStubs += jitScriptStubSpace_.sizeOfExcludingThis(mallocSizeOf);
+    *allocSites += allocSitesSpace_.sizeOfExcludingThis(mallocSizeOf);
+    *allocSites += allocSites_.sizeOfExcludingThis(mallocSizeOf);
   }
 
   ICEntry& icEntry(size_t index) { return icScript_.icEntry(index); }
@@ -418,7 +413,7 @@ class alignas(uintptr_t) JitScript final
 
   void trace(JSTracer* trc);
   void traceWeak(JSTracer* trc);
-  void purgeOptimizedStubs(JSScript* script);
+  void purgeStubs(JSScript* script);
 
   ICEntry& icEntryFromPCOffset(uint32_t pcOffset) {
     return icScript_.icEntryFromPCOffset(pcOffset);
@@ -547,8 +542,8 @@ class MOZ_RAII AutoKeepJitScripts {
 };
 
 // Mark JitScripts on the stack as active, so that they are not discarded
-// during GC.
-void MarkActiveJitScripts(Zone* zone);
+// during GC, and copy active Baseline IC stubs to the new stub space.
+void MarkActiveJitScriptsAndCopyStubs(Zone* zone, ICStubSpace& newStubSpace);
 
 #ifdef JS_STRUCTURED_SPEW
 void JitSpewBaselineICStats(JSScript* script, const char* dumpReason);

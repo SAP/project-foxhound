@@ -8,10 +8,11 @@
  */
 
 #include "WebSocket.h"
+#include "ErrorList.h"
 #include "mozilla/dom/WebSocketBinding.h"
 #include "mozilla/net/WebSocketChannel.h"
 
-#include "js/ColumnNumber.h"  // JS::ColumnNumberZeroOrigin
+#include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "mozilla/Atomics.h"
@@ -257,9 +258,6 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
 
   RefPtr<WebSocketEventService> mService;
   nsCOMPtr<nsIPrincipal> mLoadingPrincipal;
-
-  // For dispatching runnables to main thread.
-  nsCOMPtr<nsISerialEventTarget> mMainThreadEventTarget;
 
   RefPtr<WebSocketImplProxy> mImplProxy;
 
@@ -1380,7 +1378,7 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
     MOZ_ASSERT(workerPrivate);
 
     uint32_t lineno;
-    JS::ColumnNumberZeroOrigin column;
+    JS::ColumnNumberOneOrigin column;
     JS::AutoFilename file;
     if (!JS::DescribeScriptedCaller(aGlobal.Context(), &file, &lineno,
                                     &column)) {
@@ -1619,7 +1617,7 @@ nsresult WebSocketImpl::Init(JSContext* aCx, bool aIsSecure,
     MOZ_ASSERT(aCx);
 
     uint32_t lineno;
-    JS::ColumnNumberZeroOrigin column;
+    JS::ColumnNumberOneOrigin column;
     JS::AutoFilename file;
     if (JS::DescribeScriptedCaller(aCx, &file, &lineno, &column)) {
       mScriptFile = file.get();
@@ -1744,13 +1742,35 @@ nsresult WebSocketImpl::Init(JSContext* aCx, bool aIsSecure,
   }
 
   // Don't allow https:// to open ws://
+  // Check that we aren't a server side websocket or set to be upgraded to wss
+  // or allowing ws from https or a local websocket
   if (!mIsServerSide && !mSecure &&
       !Preferences::GetBool("network.websocket.allowInsecureFromHTTPS",
                             false) &&
       !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(
           mAsciiHost)) {
+    // If aIsSecure is true then disallow loading ws
     if (aIsSecure) {
       return NS_ERROR_DOM_SECURITY_ERR;
+    }
+
+    // Obtain the precursor's URI for the loading principal if it exists
+    // otherwise use the loading principal's URI
+    nsCOMPtr<nsIPrincipal> precursorPrincipal =
+        aPrincipal->GetPrecursorPrincipal();
+    nsCOMPtr<nsIURI> precursorOrLoadingURI = precursorPrincipal
+                                                 ? precursorPrincipal->GetURI()
+                                                 : aPrincipal->GetURI();
+
+    // Check if the parent was loaded securely if we have one
+    if (precursorOrLoadingURI) {
+      nsCOMPtr<nsIURI> precursorOrLoadingInnermostURI =
+          NS_GetInnermostURI(precursorOrLoadingURI);
+      // If the parent was loaded securely then disallow loading ws
+      if (precursorOrLoadingInnermostURI &&
+          precursorOrLoadingInnermostURI->SchemeIs("https")) {
+        return NS_ERROR_DOM_SECURITY_ERR;
+      }
     }
   }
 
@@ -1904,10 +1924,6 @@ nsresult WebSocketImpl::InitializeConnection(
     MOZ_ASSERT(mImplProxy);
     mService->AssociateWebSocketImplWithSerialID(mImplProxy,
                                                  mChannel->Serial());
-  }
-
-  if (mIsMainThread && doc) {
-    mMainThreadEventTarget = doc->EventTargetFor(TaskCategory::Other);
   }
 
   return NS_OK;
@@ -2521,13 +2537,14 @@ void WebSocket::Close(const Optional<uint16_t>& aCode,
     return;
   }
 
+  RefPtr<WebSocketImpl> impl = mImpl;
   if (readyState == CONNECTING) {
-    mImpl->FailConnection(closeCode, closeReason);
+    impl->FailConnection(closeCode, closeReason);
     return;
   }
 
   MOZ_ASSERT(readyState == OPEN);
-  mImpl->CloseConnection(closeCode, closeReason);
+  impl->CloseConnection(closeCode, closeReason);
 }
 
 //-----------------------------------------------------------------------------
@@ -2742,7 +2759,7 @@ class WorkerRunnableDispatcher final : public WorkerRunnable {
   WorkerRunnableDispatcher(WebSocketImpl* aImpl,
                            ThreadSafeWorkerRef* aWorkerRef,
                            already_AddRefed<nsIRunnable> aEvent)
-      : WorkerRunnable(aWorkerRef->Private(), WorkerThreadUnchangedBusyCount),
+      : WorkerRunnable(aWorkerRef->Private(), WorkerThread),
         mWebSocketImpl(aImpl),
         mEvent(std::move(aEvent)) {}
 
@@ -2792,12 +2809,8 @@ WebSocketImpl::DispatchFromScript(nsIRunnable* aEvent, uint32_t aFlags) {
 NS_IMETHODIMP
 WebSocketImpl::Dispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags) {
   nsCOMPtr<nsIRunnable> event_ref(aEvent);
-  // If the target is the main-thread, we should try to dispatch the runnable
-  // to a labeled event target.
   if (mIsMainThread) {
-    return mMainThreadEventTarget
-               ? mMainThreadEventTarget->Dispatch(event_ref.forget())
-               : GetMainThreadSerialEventTarget()->Dispatch(event_ref.forget());
+    return GetMainThreadSerialEventTarget()->Dispatch(event_ref.forget());
   }
 
   MutexAutoLock lock(mMutex);

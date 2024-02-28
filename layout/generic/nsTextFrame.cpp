@@ -27,6 +27,7 @@
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Unused.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/dom/PerformanceMainThread.h"
 
 #include "nsCOMPtr.h"
 #include "nsBlockFrame.h"
@@ -642,7 +643,11 @@ void GlyphObserver::NotifyGlyphsChanged() {
 
 int32_t nsTextFrame::GetContentEnd() const {
   nsTextFrame* next = GetNextContinuation();
-  return next ? next->GetContentOffset() : TextFragment()->GetLength();
+  // In case of allocation failure when setting/modifying the textfragment,
+  // it's possible our text might be missing. So we check the fragment length,
+  // in addition to the offset of the next continuation (if any).
+  int32_t fragLen = TextFragment()->GetLength();
+  return next ? std::min(fragLen, next->GetContentOffset()) : fragLen;
 }
 
 struct FlowLengthProperty {
@@ -739,13 +744,16 @@ static bool IsCSSWordSpacingSpace(const nsTextFragment* aFrag, uint32_t aPos,
 }
 
 constexpr char16_t kOghamSpaceMark = 0x1680;
+constexpr char16_t kIdeographicSpace = 0x3000;
 
 // Check whether the string aChars/aLength starts with space that's
 // trimmable according to CSS 'white-space:normal/nowrap'.
-static bool IsTrimmableSpace(const char16_t* aChars, uint32_t aLength) {
+static bool IsTrimmableSpaceAtStart(const char16_t* aChars, uint32_t aLength) {
   NS_ASSERTION(aLength > 0, "No text for IsSpace!");
 
   char16_t ch = *aChars;
+  // Note that Ideographic Space is NOT treated as trimmable here, because
+  // (unlike ASCII space) it does not collapse at start-of-line.
   if (ch == ' ' || ch == kOghamSpaceMark) {
     return !nsTextFrameUtils::IsSpaceCombiningSequenceTail(aChars + 1,
                                                            aLength - 1);
@@ -767,6 +775,7 @@ static bool IsTrimmableSpace(const nsTextFragment* aFrag, uint32_t aPos,
   switch (aFrag->CharAt(aPos)) {
     case ' ':
     case kOghamSpaceMark:
+    case kIdeographicSpace:
       return (!aStyleText->WhiteSpaceIsSignificant() || aAllowHangingWS) &&
              !IsSpaceCombiningSequenceTail(aFrag, aPos + 1);
     case '\n':
@@ -815,7 +824,7 @@ static uint32_t GetTrimmableWhitespaceCount(const nsTextFragment* aFrag,
     const char16_t* str = aFrag->Get2b() + aStartOffset;
     int32_t fragLen = aFrag->GetLength() - aStartOffset;
     for (; count < aLength; ++count) {
-      if (!IsTrimmableSpace(str, fragLen)) {
+      if (!IsTrimmableSpaceAtStart(str, fragLen)) {
         break;
       }
       str += aDirection;
@@ -1038,9 +1047,10 @@ class BuildTextRunsScanner {
     // was no previous text frame on this line.
     nsIFrame* mAncestorControllingInitialBreak;
 
-    int32_t GetContentEnd() {
-      return mEndFrame ? mEndFrame->GetContentOffset()
-                       : mStartFrame->TextFragment()->GetLength();
+    int32_t GetContentEnd() const {
+      int32_t fragLen = mStartFrame->TextFragment()->GetLength();
+      return mEndFrame ? std::min(fragLen, mEndFrame->GetContentOffset())
+                       : fragLen;
     }
   };
 
@@ -1075,9 +1085,6 @@ class BuildTextRunsScanner {
     }
 
     void Finish(gfxMissingFontRecorder* aMFR) {
-      MOZ_ASSERT(
-          !(mTextRun->GetFlags2() & nsTextFrameUtils::Flags::UnusedFlags),
-          "Flag set that should never be set! (memory safety error?)");
       if (mTextRun->GetFlags2() & nsTextFrameUtils::Flags::IsTransformed) {
         nsTransformedTextRun* transformedTextRun =
             static_cast<nsTransformedTextRun*>(mTextRun.get());
@@ -3109,7 +3116,7 @@ static bool IsJustifiableCharacter(const nsStyleText* aTextStyle,
 
   const char16_t ch = aFrag->CharAt(AssertedCast<uint32_t>(aPos));
   if (ch == '\n' || ch == '\t' || ch == '\r') {
-    return true;
+    return !aTextStyle->WhiteSpaceIsSignificant();
   }
   if (ch == ' ' || ch == CH_NBSP) {
     // Don't justify spaces that are combined with diacriticals
@@ -3340,6 +3347,152 @@ static void FindClusterEnd(const gfxTextRun* aTextRun, int32_t aOriginalEnd,
   aPos->AdvanceOriginal(-1);
 }
 
+// Get the line number of aFrame in the lines referenced by aLineIter, if
+// known (returning -1 if we don't find it).
+static int32_t GetFrameLineNum(nsIFrame* aFrame, nsILineIterator* aLineIter) {
+  if (!aLineIter) {
+    return -1;
+  }
+  int32_t n = aLineIter->FindLineContaining(aFrame);
+  if (n >= 0) {
+    return n;
+  }
+  // If we didn't find the frame directly, but its parent is an inline,
+  // we want the line that the inline ancestor is on.
+  nsIFrame* ancestor = aFrame->GetParent();
+  while (ancestor && ancestor->IsInlineFrame()) {
+    n = aLineIter->FindLineContaining(ancestor);
+    if (n >= 0) {
+      return n;
+    }
+    ancestor = ancestor->GetParent();
+  }
+  return -1;
+}
+
+// Get the position of the first preserved newline in aFrame, if any,
+// returning -1 if none.
+static int32_t FindFirstNewlinePosition(const nsTextFrame* aFrame) {
+  MOZ_ASSERT(aFrame->StyleText()->NewlineIsSignificantStyle(),
+             "how did the HasNewline flag get set?");
+  const auto* textFragment = aFrame->TextFragment();
+  for (auto i = aFrame->GetContentOffset(); i < aFrame->GetContentEnd(); ++i) {
+    if (textFragment->CharAt(i) == '\n') {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Get the position of the last preserved tab in aFrame that is before the
+// preserved newline at aNewlinePos.
+// Passing -1 for aNewlinePos means there is no preserved newline, so we look
+// for the last preserved tab in the whole content.
+// Returns -1 if no such preserved tab is present.
+static int32_t FindLastTabPositionBeforeNewline(const nsTextFrame* aFrame,
+                                                int32_t aNewlinePos) {
+  // We only call this if white-space is not being collapsed.
+  MOZ_ASSERT(aFrame->StyleText()->WhiteSpaceIsSignificant(),
+             "how did the HasTab flag get set?");
+  const auto* textFragment = aFrame->TextFragment();
+  // If a non-negative newline position was given, we only need to search the
+  // text before that offset.
+  for (auto i = aNewlinePos < 0 ? aFrame->GetContentEnd() : aNewlinePos;
+       i > aFrame->GetContentOffset(); --i) {
+    if (textFragment->CharAt(i - 1) == '\t') {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Look for preserved tab or newline in the given frame or its following
+// siblings on the same line, to determine whether justification should be
+// suppressed in order to avoid disrupting tab-stop positions.
+// Returns the first such preserved whitespace char, or 0 if none found.
+static char NextPreservedWhiteSpaceOnLine(nsIFrame* aSibling,
+                                          nsILineIterator* aLineIter,
+                                          int32_t aLineNum) {
+  while (aSibling) {
+    // If we find a <br>, treat it like a newline.
+    if (aSibling->IsBrFrame()) {
+      return '\n';
+    }
+    // If we've moved on to a later line, stop searching.
+    if (GetFrameLineNum(aSibling, aLineIter) > aLineNum) {
+      return 0;
+    }
+    // If we encounter an inline frame, recurse into it.
+    if (aSibling->IsInlineFrame()) {
+      auto* child = aSibling->PrincipalChildList().FirstChild();
+      char result = NextPreservedWhiteSpaceOnLine(child, aLineIter, aLineNum);
+      if (result) {
+        return result;
+      }
+    }
+    // If we have a text frame, and whitespace is not collapsed, we need to
+    // check its contents.
+    if (aSibling->IsTextFrame()) {
+      const auto* textStyle = aSibling->StyleText();
+      if (textStyle->WhiteSpaceOrNewlineIsSignificant()) {
+        const auto* textFrame = static_cast<nsTextFrame*>(aSibling);
+        const auto* textFragment = textFrame->TextFragment();
+        for (auto i = textFrame->GetContentOffset();
+             i < textFrame->GetContentEnd(); ++i) {
+          const char16_t ch = textFragment->CharAt(i);
+          if (ch == '\n' && textStyle->NewlineIsSignificantStyle()) {
+            return '\n';
+          }
+          if (ch == '\t' && textStyle->WhiteSpaceIsSignificant()) {
+            return '\t';
+          }
+        }
+      }
+    }
+    aSibling = aSibling->GetNextSibling();
+  }
+  return 0;
+}
+
+static bool HasPreservedTabInFollowingSiblingOnLine(nsTextFrame* aFrame) {
+  bool foundTab = false;
+
+  nsIFrame* lineContainer = FindLineContainer(aFrame);
+  nsILineIterator* iter = lineContainer->GetLineIterator();
+  int32_t line = GetFrameLineNum(aFrame, iter);
+  char ws = NextPreservedWhiteSpaceOnLine(aFrame->GetNextSibling(), iter, line);
+  if (ws == '\t') {
+    foundTab = true;
+  } else if (!ws) {
+    // Didn't find a preserved tab or newline in our siblings; if our parent
+    // (and its parent, etc) is an inline, we need to look at their following
+    // siblings, too, as long as they're on the same line.
+    const nsIFrame* maybeInline = aFrame->GetParent();
+    while (maybeInline && maybeInline->IsInlineFrame()) {
+      ws = NextPreservedWhiteSpaceOnLine(maybeInline->GetNextSibling(), iter,
+                                         line);
+      if (ws == '\t') {
+        foundTab = true;
+        break;
+      }
+      if (ws == '\n') {
+        break;
+      }
+      maybeInline = maybeInline->GetParent();
+    }
+  }
+
+  // We called lineContainer->GetLineIterator() above, but we mustn't
+  // allow a block frame to retain this iterator if we're currently in
+  // reflow, as it will become invalid as the line list is reflowed.
+  if (lineContainer->HasAnyStateBits(NS_FRAME_IN_REFLOW) &&
+      lineContainer->IsBlockFrameOrSubclass()) {
+    static_cast<nsBlockFrame*>(lineContainer)->ClearLineIterator();
+  }
+
+  return foundTab;
+}
+
 JustificationInfo nsTextFrame::PropertyProvider::ComputeJustification(
     Range aRange, nsTArray<JustificationAssignment>* aAssignments) {
   JustificationInfo info;
@@ -3351,6 +3504,34 @@ JustificationInfo nsTextFrame::PropertyProvider::ComputeJustification(
   // character, the sides of this frame are not justifiable either.
   if (mFrame->Style()->IsTextCombined()) {
     return info;
+  }
+
+  int32_t lastTab = -1;
+  if (StaticPrefs::layout_css_text_align_justify_only_after_last_tab()) {
+    // If there is a preserved tab on the line, we don't apply justification
+    // until we're past its position.
+    if (mTextStyle->WhiteSpaceIsSignificant()) {
+      // If there is a preserved newline within the text, we don't need to look
+      // beyond this frame, as following frames will not be on the same line.
+      int32_t newlinePos =
+          (mTextRun->GetFlags2() & nsTextFrameUtils::Flags::HasNewline)
+              ? FindFirstNewlinePosition(mFrame)
+              : -1;
+      if (newlinePos < 0) {
+        // There's no preserved newline within this frame; if there's a tab
+        // in a later sibling frame on the same line, we won't apply any
+        // justification to this one.
+        if (HasPreservedTabInFollowingSiblingOnLine(mFrame)) {
+          return info;
+        }
+      }
+
+      if (mTextRun->GetFlags2() & nsTextFrameUtils::Flags::HasTab) {
+        // Find last tab character in the content; we won't justify anything
+        // before that position, so that tab alignment remains correct.
+        lastTab = FindLastTabPositionBeforeNewline(mFrame, newlinePos);
+      }
+    }
   }
 
   bool isCJ = IsChineseOrJapanese(mFrame);
@@ -3370,7 +3551,8 @@ JustificationInfo nsTextFrame::PropertyProvider::ComputeJustification(
     gfxSkipCharsIterator iter = run.GetPos();
     for (uint32_t i = 0; i < length; ++i) {
       uint32_t offset = originalOffset + i;
-      if (!IsJustifiableCharacter(mTextStyle, mFrag, offset, isCJ)) {
+      if (!IsJustifiableCharacter(mTextStyle, mFrag, offset, isCJ) ||
+          (lastTab >= 0 && offset <= uint32_t(lastTab))) {
         continue;
       }
 
@@ -3431,14 +3613,17 @@ void nsTextFrame::PropertyProvider::GetSpacing(Range aRange,
 
 static bool CanAddSpacingAfter(const gfxTextRun* aTextRun, uint32_t aOffset,
                                bool aNewlineIsSignificant) {
+  const auto* g = aTextRun->GetCharacterGlyphs();
+  MOZ_ASSERT(aOffset < aTextRun->GetLength());
+  if (aNewlineIsSignificant && g[aOffset].CharIsNewline()) {
+    return false;
+  }
   if (aOffset + 1 >= aTextRun->GetLength()) {
     return true;
   }
-  const auto* g = aTextRun->GetCharacterGlyphs();
   return g[aOffset + 1].IsClusterStart() &&
          g[aOffset + 1].IsLigatureGroupStart() &&
-         !g[aOffset].CharIsFormattingControl() && !g[aOffset].CharIsTab() &&
-         !(aNewlineIsSignificant && g[aOffset].CharIsNewline());
+         !g[aOffset].CharIsFormattingControl() && !g[aOffset].CharIsTab();
 }
 
 static gfxFloat ComputeTabWidthAppUnits(const nsIFrame* aFrame) {
@@ -3457,11 +3642,18 @@ static gfxFloat ComputeTabWidthAppUnits(const nsIFrame* aFrame) {
   const auto* styleText = cb->StyleText();
 
   // Round the space width when converting to appunits the same way textruns do.
-  RefPtr<nsFontMetrics> fm = nsLayoutUtils::GetFontMetricsForFrame(cb, 1.0f);
+  // We don't use GetFirstFontMetrics here because that may return a font that
+  // does not actually have the <space> character, yet is considered the "first
+  // available font" per CSS Fonts. Here, we want the font that would be used
+  // to render <space>, even if that means looking further down the font-family
+  // list.
+  RefPtr fm = nsLayoutUtils::GetFontMetricsForFrame(cb, 1.0f);
   bool vertical = cb->GetWritingMode().IsCentralBaseline();
-  nscoord spaceWidth = nscoord(NS_round(
-      GetFirstFontMetrics(fm->GetThebesFontGroup(), vertical).spaceWidth *
-      cb->PresContext()->AppUnitsPerDevPixel()));
+  RefPtr font = fm->GetThebesFontGroup()->GetFirstValidFont(' ');
+  auto metrics = font->GetMetrics(vertical ? nsFontMetrics::eVertical
+                                           : nsFontMetrics::eHorizontal);
+  nscoord spaceWidth = nscoord(
+      NS_round(metrics.spaceWidth * cb->PresContext()->AppUnitsPerDevPixel()));
   return spaces * (spaceWidth + styleText->mLetterSpacing.ToAppUnits() +
                    styleText->mWordSpacing.Resolve(spaceWidth));
 }
@@ -5925,7 +6117,25 @@ void nsTextFrame::CombineSelectionRanges(
       AutoTArray<const SelectionDetails*, 1> selectionDetails;
       selectionDetails.SetCapacity(
           activeSelectionRangesSortedByPriority.Length());
+      // ensure that overlapping highlights which have the same name
+      // are only added once. If added each time, they would be painted
+      // several times (see wpt
+      // /css/css-highlight-api/painting/custom-highlight-painting-003.html)
+      // Comparing the highlight name with the previous one is
+      // sufficient here because selections are already sorted
+      // in a way that ensures that highlights of the same name are
+      // grouped together.
+      nsAtom* currentHighlightName = nullptr;
       for (const auto* selectionRange : activeSelectionRangesSortedByPriority) {
+        if (selectionRange->mDetails->mSelectionType ==
+            SelectionType::eHighlight) {
+          if (selectionRange->mDetails->mHighlightData.mHighlightName ==
+              currentHighlightName) {
+            continue;
+          }
+          currentHighlightName =
+              selectionRange->mDetails->mHighlightData.mHighlightName;
+        }
         selectionDetails.AppendElement(selectionRange->mDetails);
       }
       aCombinedSelectionRanges.AppendElement(PriorityOrderedSelectionsForRange{
@@ -6004,55 +6214,41 @@ bool nsTextFrame::PaintTextWithSelectionColors(
     while (iterator.GetNextSegment(&iOffset, &range, &hyphenWidth,
                                    selectionTypes, highlightNames,
                                    rangeStyles)) {
-      nscolor foreground(0), background(0), tmpBackground(0);
-      bool backgroundColorHasBeenSet = false;
-      for (size_t index = 0; index < selectionTypes.Length(); ++index) {
-        if (selectionTypes[index] == SelectionType::eHighlight) {
-          // `GetCustomHighlightBackgroundColor()` always sets `tmpBackground`.
-          // However, if it returns false, it means that the background color
-          // has not been specified by the author (or it is transparent).
-          // In that case, the background color of a lower-priority highlight
-          // should take precedence, therefore `background` is not overridden.
-          if (aParams.textPaintStyle->GetCustomHighlightBackgroundColor(
-                  highlightNames[index], &tmpBackground)) {
-            background = tmpBackground;
-            backgroundColorHasBeenSet = true;
-          }
-
-        } else {
-          GetSelectionTextColors(selectionTypes[index], highlightNames[index],
-                                 *aParams.textPaintStyle, rangeStyles[index],
-                                 &foreground, &background);
-          backgroundColorHasBeenSet = true;
-        }
-      }
-      if (!backgroundColorHasBeenSet) {
-        background = tmpBackground;
-      }
-      // Draw background color
+      nscolor foreground(0), background(0);
       gfxFloat advance =
           hyphenWidth + mTextRun->GetAdvanceWidth(range, aParams.provider);
-      if (NS_GET_A(background) > 0) {
-        nsRect bgRect;
-        gfxFloat offs = iOffset - (mTextRun->IsInlineReversed() ? advance : 0);
-        if (vertical) {
-          bgRect = nsRect(aParams.framePt.x, aParams.framePt.y + offs,
-                          GetSize().width, advance);
-        } else {
-          bgRect = nsRect(aParams.framePt.x + offs, aParams.framePt.y, advance,
-                          GetSize().height);
-        }
+      nsRect bgRect;
+      gfxFloat offs = iOffset - (mTextRun->IsInlineReversed() ? advance : 0);
+      if (vertical) {
+        bgRect = nsRect(nscoord(aParams.framePt.x),
+                        nscoord(aParams.framePt.y + offs), GetSize().width,
+                        nscoord(advance));
+      } else {
+        bgRect = nsRect(nscoord(aParams.framePt.x + offs),
+                        nscoord(aParams.framePt.y), nscoord(advance),
+                        GetSize().height);
+      }
 
-        LayoutDeviceRect selectionRect =
-            LayoutDeviceRect::FromAppUnits(bgRect, appUnitsPerDevPixel);
+      LayoutDeviceRect selectionRect =
+          LayoutDeviceRect::FromAppUnits(bgRect, appUnitsPerDevPixel);
+      // The elements in `selectionTypes` are ordered ascending by their
+      // priority. To account for non-opaque overlapping selections, all
+      // selection backgrounds are painted.
+      for (size_t index = 0; index < selectionTypes.Length(); ++index) {
+        GetSelectionTextColors(selectionTypes[index], highlightNames[index],
+                               *aParams.textPaintStyle, rangeStyles[index],
+                               &foreground, &background);
 
-        if (textDrawer) {
-          textDrawer->AppendSelectionRect(selectionRect,
-                                          ToDeviceColor(background));
-        } else {
-          PaintSelectionBackground(*aParams.context->GetDrawTarget(),
-                                   background, aParams.dirtyRect, selectionRect,
-                                   aParams.callbacks);
+        // Draw background color
+        if (NS_GET_A(background) > 0) {
+          if (textDrawer) {
+            textDrawer->AppendSelectionRect(selectionRect,
+                                            ToDeviceColor(background));
+          } else {
+            PaintSelectionBackground(*aParams.context->GetDrawTarget(),
+                                     background, aParams.dirtyRect,
+                                     selectionRect, aParams.callbacks);
+          }
         }
       }
       iterator.UpdateWithAdvance(advance);
@@ -7190,8 +7386,12 @@ bool nsTextFrame::CombineSelectionUnderlineRect(nsPresContext* aPresContext,
       ComputeDescentLimitForSelectionUnderline(aPresContext, metrics);
   params.vertical = verticalRun;
 
-  EnsureTextRun(nsTextFrame::eInflated);
-  params.sidewaysLeft = mTextRun ? mTextRun->IsSidewaysLeft() : false;
+  if (verticalRun) {
+    EnsureTextRun(nsTextFrame::eInflated);
+    params.sidewaysLeft = mTextRun ? mTextRun->IsSidewaysLeft() : false;
+  } else {
+    params.sidewaysLeft = false;
+  }
 
   UniquePtr<SelectionDetails> details = GetSelectionDetails();
   for (SelectionDetails* sd = details.get(); sd; sd = sd->mNext.get()) {
@@ -7822,32 +8022,8 @@ bool ClusterIterator::IsNewline() const {
 
 bool ClusterIterator::IsPunctuation() const {
   NS_ASSERTION(mCharIndex >= 0, "No cluster selected");
-  // Return true for all Punctuation categories (Unicode general category P?),
-  // and also for Symbol categories (S?) except for Modifier Symbol, which is
-  // kept together with any adjacent letter/number. (Bug 1066756)
   const char16_t ch = mFrag->CharAt(AssertedCast<uint32_t>(mCharIndex));
-  const uint8_t cat = unicode::GetGeneralCategory(ch);
-  switch (cat) {
-    case HB_UNICODE_GENERAL_CATEGORY_CONNECT_PUNCTUATION: /* Pc */
-      if (ch == '_' && !StaticPrefs::layout_word_select_stop_at_underscore()) {
-        return false;
-      }
-      [[fallthrough]];
-    case HB_UNICODE_GENERAL_CATEGORY_DASH_PUNCTUATION:    /* Pd */
-    case HB_UNICODE_GENERAL_CATEGORY_CLOSE_PUNCTUATION:   /* Pe */
-    case HB_UNICODE_GENERAL_CATEGORY_FINAL_PUNCTUATION:   /* Pf */
-    case HB_UNICODE_GENERAL_CATEGORY_INITIAL_PUNCTUATION: /* Pi */
-    case HB_UNICODE_GENERAL_CATEGORY_OTHER_PUNCTUATION:   /* Po */
-    case HB_UNICODE_GENERAL_CATEGORY_OPEN_PUNCTUATION:    /* Ps */
-    case HB_UNICODE_GENERAL_CATEGORY_CURRENCY_SYMBOL:     /* Sc */
-    // Deliberately omitted:
-    // case HB_UNICODE_GENERAL_CATEGORY_MODIFIER_SYMBOL:     /* Sk */
-    case HB_UNICODE_GENERAL_CATEGORY_MATH_SYMBOL:  /* Sm */
-    case HB_UNICODE_GENERAL_CATEGORY_OTHER_SYMBOL: /* So */
-      return true;
-    default:
-      return false;
-  }
+  return mozilla::IsPunctuationForWordSelect(ch);
 }
 
 int32_t ClusterIterator::GetAfterInternal() const {
@@ -10179,10 +10355,7 @@ void nsTextFrame::ToCString(nsCString& aBuf) const {
     return;
   }
 
-  // Limit the length to fragment length in case the text has not been reflowed.
-  const uint32_t fragLength =
-      std::min(frag->GetLength(), AssertedCast<uint32_t>(GetContentEnd()));
-
+  const uint32_t fragLength = AssertedCast<uint32_t>(GetContentEnd());
   uint32_t fragOffset = AssertedCast<uint32_t>(GetContentOffset());
 
   while (fragOffset < fragLength) {

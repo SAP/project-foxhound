@@ -180,32 +180,50 @@ NS_IMPL_CI_INTERFACE_GETTER(nsNavHistory, nsINavHistoryService)
 
 namespace {
 
-static nsCString GetSimpleBookmarksQueryParent(
+static Maybe<nsCString> GetSimpleBookmarksQueryParent(
     const RefPtr<nsNavHistoryQuery>& aQuery,
     const RefPtr<nsNavHistoryQueryOptions>& aOptions);
 static void ParseSearchTermsFromQuery(const RefPtr<nsNavHistoryQuery>& aQuery,
                                       nsTArray<nsString>* aTerms);
 
-void GetTagsSqlFragment(int64_t aTagsFolder, const nsACString& aRelation,
-                        const uint16_t aQueryType, nsACString& _sqlFragment) {
-  if (aQueryType != nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS) {
-    _sqlFragment.AssignLiteral("null");
-  } else {
-    // This subquery DOES NOT order tags for performance reasons.
-    _sqlFragment.Assign(
-        nsLiteralCString("(SELECT GROUP_CONCAT(t_t.title, ',') "
-                         "FROM moz_bookmarks b_t "
-                         "JOIN moz_bookmarks t_t ON t_t.id = +b_t.parent  "
-                         "WHERE b_t.fk = ") +
-        aRelation +
-        nsLiteralCString(" "
-                         "AND t_t.parent = ") +
-        nsPrintfCString("%" PRId64, aTagsFolder) +
-        nsLiteralCString(" "
-                         ")"));
+nsresult FetchInfo(const RefPtr<mozilla::places::Database>& aDB,
+                   const nsCString& aGUID, int32_t& aType, int64_t& aId,
+                   nsCString& aTitle, PRTime& aDateAdded,
+                   PRTime& aLastModified) {
+  nsCOMPtr<mozIStorageStatement> statement = aDB->GetStatement(
+      "SELECT type, id, title, dateAdded, lastModified FROM moz_bookmarks "
+      "WHERE guid = :guid");
+  NS_ENSURE_STATE(statement);
+  mozStorageStatementScoper scoper(statement);
+  nsresult rv = statement->BindUTF8StringByName("guid"_ns, aGUID);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  bool hasResult;
+  rv = statement->ExecuteStep(&hasResult);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!hasResult) {
+    return NS_ERROR_INVALID_ARG;
   }
 
-  _sqlFragment.AppendLiteral(" AS tags ");
+  aType = statement->AsInt32(0);
+  aId = statement->AsInt64(1);
+
+  bool isNull;
+  rv = statement->GetIsNull(2, &isNull);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (isNull) {
+    aTitle.SetIsVoid(true);
+  } else {
+    rv = statement->GetUTF8String(2, aTitle);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  aDateAdded = statement->AsInt64(3);
+  NS_ENSURE_SUCCESS(rv, rv);
+  aLastModified = statement->AsInt64(4);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
 }
 
 }  // namespace
@@ -236,6 +254,9 @@ const int32_t nsNavHistory::kGetInfoIndex_VisitType = 17;
 // nsNavBookmarks::kGetChildrenIndex_Position = 19;
 // nsNavBookmarks::kGetChildrenIndex_Type = 20;
 // nsNavBookmarks::kGetChildrenIndex_PlaceID = 21;
+const int32_t nsNavHistory::kGetTargetFolder_Guid = 22;
+const int32_t nsNavHistory::kGetTargetFolder_ItemId = 23;
+const int32_t nsNavHistory::kGetTargetFolder_Title = 24;
 
 PLACES_FACTORY_SINGLETON_IMPLEMENTATION(nsNavHistory, gHistoryService)
 
@@ -442,6 +463,43 @@ void nsNavHistory::UpdateDaysOfHistory(PRTime visitTime) {
   if (visitTime > mLastCachedEndOfDay || visitTime < mLastCachedStartOfDay) {
     InvalidateDaysOfHistory();
   }
+}
+
+/** static */
+nsLiteralCString nsNavHistory::GetTagsSqlFragment(const uint16_t aQueryType,
+                                                  bool aExcludeItems) {
+  if (aQueryType != nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS ||
+      aExcludeItems) {
+    return "WITH tagged(place_id, tags) AS (VALUES(NULL, NULL)) "_ns;
+  }
+  return "WITH tagged(place_id, tags) AS ( "
+         "  SELECT b.fk, group_concat(p.title) "
+         "  FROM moz_bookmarks b "
+         "  JOIN moz_bookmarks p ON p.id = b.parent "
+         "  JOIN moz_bookmarks g ON g.id = p.parent "
+         "  WHERE g.guid = " SQL_QUOTE(TAGS_ROOT_GUID)
+         "  GROUP BY b.fk "
+         ") "_ns;
+}
+
+/* static */
+mozilla::Maybe<nsCString> nsNavHistory::GetTargetFolderGuid(
+    const nsACString& aQueryURI) {
+  nsCOMPtr<nsINavHistoryQuery> query;
+  nsCOMPtr<nsINavHistoryQueryOptions> options;
+  if (!IsQueryURI(aQueryURI) ||
+      NS_FAILED(nsNavHistoryQuery::QueryStringToQuery(
+          aQueryURI, getter_AddRefs(query), getter_AddRefs(options)))) {
+    return Nothing();
+  }
+
+  RefPtr<nsNavHistoryQuery> queryObj = do_QueryObject(query);
+  RefPtr<nsNavHistoryQueryOptions> optionsObj = do_QueryObject(options);
+  if (!queryObj || !optionsObj) {
+    return Nothing();
+  }
+
+  return GetSimpleBookmarksQueryParent(queryObj, optionsObj);
 }
 
 Atomic<int64_t> nsNavHistory::sLastInsertedPlaceId(0);
@@ -687,17 +745,25 @@ nsNavHistory::ExecuteQuery(nsINavHistoryQuery* aQuery,
   // Create the root node.
   RefPtr<nsNavHistoryContainerResultNode> rootNode;
 
-  nsCString folderGuid = GetSimpleBookmarksQueryParent(query, options);
-  if (!folderGuid.IsEmpty()) {
-    // In the simple case where we're just querying children of a single
-    // bookmark folder, we can more efficiently generate results.
-    nsNavBookmarks* bookmarks = nsNavBookmarks::GetBookmarksService();
-    NS_ENSURE_TRUE(bookmarks, NS_ERROR_OUT_OF_MEMORY);
-    RefPtr<nsNavHistoryResultNode> tempRootNode;
-    nsresult rv = bookmarks->ResultNodeForContainer(
-        folderGuid, options, getter_AddRefs(tempRootNode));
-    if (NS_SUCCEEDED(rv)) {
-      rootNode = tempRootNode->GetAsContainer();
+  Maybe<nsCString> targetFolderGuid =
+      GetSimpleBookmarksQueryParent(query, options);
+  if (targetFolderGuid.isSome()) {
+    int32_t targetFolderType = 0;
+    int64_t targetFolderId = -1;
+    nsCString targetFolderTitle;
+    PRTime dateAdded;
+    PRTime lastModified;
+    nsresult rv =
+        FetchInfo(mDB, *targetFolderGuid, targetFolderType, targetFolderId,
+                  targetFolderTitle, dateAdded, lastModified);
+    if (NS_SUCCEEDED(rv) &&
+        targetFolderType == nsINavBookmarksService::TYPE_FOLDER) {
+      auto* node = new nsNavHistoryFolderResultNode(
+          targetFolderId, *targetFolderGuid, targetFolderId, *targetFolderGuid,
+          targetFolderTitle, options);
+      node->mDateAdded = dateAdded;
+      node->mLastModified = lastModified;
+      rootNode = node->GetAsContainer();
     } else {
       NS_WARNING("Generating a generic empty node for a broken query!");
       // This is a perf hack to generate an empty query that skips filtering.
@@ -809,6 +875,7 @@ class PlacesSQLQueryBuilder {
 
   uint16_t mResultType;
   uint16_t mQueryType;
+  bool mExcludeItems;
   bool mIncludeHidden;
   uint16_t mSortingMode;
   uint32_t mMaxResults;
@@ -829,6 +896,7 @@ PlacesSQLQueryBuilder::PlacesSQLQueryBuilder(
       mUseLimit(aUseLimit),
       mResultType(aOptions->ResultType()),
       mQueryType(aOptions->QueryType()),
+      mExcludeItems(aOptions->ExcludeItems()),
       mIncludeHidden(aOptions->IncludeHidden()),
       mSortingMode(aOptions->SortingMode()),
       mMaxResults(aOptions->MaxResults()),
@@ -908,51 +976,44 @@ nsresult PlacesSQLQueryBuilder::Select() {
 nsresult PlacesSQLQueryBuilder::SelectAsURI() {
   nsNavHistory* history = nsNavHistory::GetHistoryService();
   NS_ENSURE_TRUE(history, NS_ERROR_OUT_OF_MEMORY);
-  nsAutoCString tagsSqlFragment;
 
   switch (mQueryType) {
     case nsINavHistoryQueryOptions::QUERY_TYPE_HISTORY: {
-      GetTagsSqlFragment(history->GetTagsFolder(), "h.id"_ns, mQueryType,
-                         tagsSqlFragment);
-      mQueryString = nsLiteralCString(
-                         "SELECT h.id, h.url, h.title AS page_title, "
-                         "h.rev_host, h.visit_count, "
-                         "h.last_visit_date, null, null, null, null, null, ") +
-                     tagsSqlFragment +
-                     nsLiteralCString(
-                         ", h.frecency, h.hidden, h.guid, "
-                         "null, null, null "
-                         "FROM moz_places h "
-                         // WHERE 1 is a no-op since additonal conditions will
-                         // start with AND.
-                         "WHERE 1 "
-                         "{QUERY_OPTIONS_VISITS} {QUERY_OPTIONS_PLACES} "
-                         "{ADDITIONAL_CONDITIONS} ");
+      mQueryString =
+          nsNavHistory::GetTagsSqlFragment(mQueryType, mExcludeItems) +
+          "SELECT h.id, h.url, h.title AS page_title, h.rev_host, "
+          "  h.visit_count, h.last_visit_date, null, null, null, null, null, "
+          "  (SELECT tags FROM tagged WHERE place_id = h.id) AS tags, "
+          "  h.frecency, h.hidden, h.guid, null, null, null, "
+          "  null, null, null, null, null, null, null "
+          "FROM moz_places h "
+          // WHERE 1 is a no-op since additonal conditions will
+          // start with AND.
+          "WHERE 1 "
+          "{QUERY_OPTIONS_VISITS} {QUERY_OPTIONS_PLACES} "
+          "{ADDITIONAL_CONDITIONS} "_ns;
       break;
     }
     case nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS: {
-      GetTagsSqlFragment(history->GetTagsFolder(), "b.fk"_ns, mQueryType,
-                         tagsSqlFragment);
       mQueryString =
-          nsLiteralCString(
-              "SELECT b.fk, h.url, b.title AS page_title, "
-              "h.rev_host, h.visit_count, h.last_visit_date, null, b.id, "
-              "b.dateAdded, b.lastModified, b.parent, ") +
-          tagsSqlFragment +
-          nsLiteralCString(
-              ", h.frecency, h.hidden, h.guid,"
-              "null, null, null, b.guid, b.position, b.type, b.fk "
-              "FROM moz_bookmarks b "
-              "JOIN moz_places h ON b.fk = h.id "
-              "WHERE NOT EXISTS "
-              "(SELECT id FROM moz_bookmarks "
-              "WHERE id = b.parent AND parent = ") +
+          nsNavHistory::GetTagsSqlFragment(mQueryType, mExcludeItems) +
+          "SELECT b.fk, h.url, b.title AS page_title, "
+          "  h.rev_host, h.visit_count, h.last_visit_date, null, b.id, "
+          "  b.dateAdded, b.lastModified, b.parent, "
+          "  (SELECT tags FROM tagged WHERE place_id = h.id) AS tags, "
+          "  h.frecency, h.hidden, h.guid, null, null, null, b.guid, "
+          "  b.position, b.type, b.fk, t.guid, t.id, t.title "
+          "FROM moz_bookmarks b "
+          "JOIN moz_places h ON b.fk = h.id "
+          "LEFT JOIN moz_bookmarks t ON t.guid = target_folder_guid(h.url) "
+          "WHERE NOT EXISTS "
+          "(SELECT id FROM moz_bookmarks "
+          "WHERE id = b.parent AND parent = "_ns +
           nsPrintfCString("%" PRId64, history->GetTagsFolder()) +
-          nsLiteralCString(
-              ") "
-              "AND NOT h.url_hash BETWEEN hash('place', 'prefix_lo') AND "
-              "hash('place', 'prefix_hi') "
-              "{ADDITIONAL_CONDITIONS}");
+          ") "
+          "AND NOT h.url_hash BETWEEN hash('place', 'prefix_lo') "
+          "                       AND hash('place', 'prefix_hi') "
+          "{ADDITIONAL_CONDITIONS}"_ns;
       break;
     }
     default: {
@@ -963,26 +1024,19 @@ nsresult PlacesSQLQueryBuilder::SelectAsURI() {
 }
 
 nsresult PlacesSQLQueryBuilder::SelectAsVisit() {
-  nsNavHistory* history = nsNavHistory::GetHistoryService();
-  NS_ENSURE_TRUE(history, NS_ERROR_OUT_OF_MEMORY);
-  nsAutoCString tagsSqlFragment;
-  GetTagsSqlFragment(history->GetTagsFolder(), "h.id"_ns, mQueryType,
-                     tagsSqlFragment);
   mQueryString =
-      nsLiteralCString(
-          "SELECT h.id, h.url, h.title AS page_title, h.rev_host, "
-          "h.visit_count, "
-          "v.visit_date, null, null, null, null, null, ") +
-      tagsSqlFragment +
-      nsLiteralCString(
-          ", h.frecency, h.hidden, h.guid, "
-          "v.id, v.from_visit, v.visit_type "
-          "FROM moz_places h "
-          "JOIN moz_historyvisits v ON h.id = v.place_id "
-          // WHERE 1 is a no-op since additonal conditions will start with AND.
-          "WHERE 1 "
-          "{QUERY_OPTIONS_VISITS} {QUERY_OPTIONS_PLACES} "
-          "{ADDITIONAL_CONDITIONS} ");
+      nsNavHistory::GetTagsSqlFragment(mQueryType, mExcludeItems) +
+      "SELECT h.id, h.url, h.title AS page_title, h.rev_host, h.visit_count, "
+      "  v.visit_date, null, null, null, null, null, "
+      "  (SELECT tags FROM tagged WHERE place_id = h.id) AS tags, "
+      "  h.frecency, h.hidden, h.guid, v.id, v.from_visit, v.visit_type, "
+      "  null, null, null, null, null, null, null "
+      "FROM moz_places h "
+      "JOIN moz_historyvisits v ON h.id = v.place_id "
+      // WHERE 1 is a no-op since additonal conditions will start with AND.
+      "WHERE 1 "
+      "{QUERY_OPTIONS_VISITS} {QUERY_OPTIONS_PLACES} "
+      "{ADDITIONAL_CONDITIONS} "_ns;
 
   return NS_OK;
 }
@@ -1009,6 +1063,7 @@ nsresult PlacesSQLQueryBuilder::SelectAsDay() {
       "SELECT null, "
       "'place:type=%d&sort=%d&beginTime='||beginTime||'&endTime='||endTime, "
       "dayTitle, null, null, beginTime, null, null, null, null, null, null, "
+      "null, null, null, null, null, null, null, null, null, null, "
       "null, null, null "
       "FROM (",  // TOUTER BEGIN
       resultType, sortingMode);
@@ -1209,7 +1264,8 @@ nsresult PlacesSQLQueryBuilder::SelectAsSite() {
   mQueryString = nsPrintfCString(
       "SELECT null, 'place:type=%d&sort=%d&domain=&domainIsHost=true'%s, "
       ":localhost, :localhost, null, null, null, null, null, null, null, "
-      "null, null, null "
+      "null, null, null, null, null, null, null, null, null, null, "
+      "null, null, null, null "
       "WHERE EXISTS ( "
       "SELECT h.id FROM moz_places h "
       "%s "
@@ -1224,7 +1280,8 @@ nsresult PlacesSQLQueryBuilder::SelectAsSite() {
       "SELECT null, "
       "'place:type=%d&sort=%d&domain='||host||'&domainIsHost=true'%s, "
       "host, host, null, null, null, null, null, null, null, "
-      "null, null, null "
+      "null, null, null, null, null, null, null, null, null, null, "
+      "null, null, null, null "
       "FROM ( "
       "SELECT get_unreversed_host(h.rev_host) AS host "
       "FROM moz_places h "
@@ -1258,7 +1315,8 @@ nsresult PlacesSQLQueryBuilder::SelectAsTag() {
   mQueryString = nsPrintfCString(
       "SELECT null, 'place:tag=' || title, "
       "title, null, null, null, null, null, dateAdded, "
-      "lastModified, null, null, null, null, null, null "
+      "lastModified, null, null, null, null, null, null, "
+      "null, null, null, null, null, null, null, null, null "
       "FROM moz_bookmarks "
       "WHERE parent = %" PRId64,
       history->GetTagsFolder());
@@ -1293,7 +1351,10 @@ nsresult PlacesSQLQueryBuilder::SelectAsRoots() {
         "(null, 'place:parent=" MOBILE_ROOT_GUID
         "', :MobileBookmarksFolderTitle, null, null, null, "
         "null, null, 0, 0, null, null, null, null, "
-        "'" MOBILE_BOOKMARKS_VIRTUAL_GUID "', null) ");
+        SQL_QUOTE(MOBILE_BOOKMARKS_VIRTUAL_GUID) ", null, "
+        "null, null, null, null, null, null, " SQL_QUOTE(MOBILE_ROOT_GUID) ", "
+        "(SELECT id FROM moz_bookmarks WHERE guid = " SQL_QUOTE(MOBILE_ROOT_GUID) "), "
+        ":MobileBookmarksFolderTitle)");
   }
 
   mQueryString =
@@ -1301,13 +1362,22 @@ nsresult PlacesSQLQueryBuilder::SelectAsRoots() {
           "SELECT * FROM ("
           "VALUES(null, 'place:parent=" TOOLBAR_ROOT_GUID
           "', :BookmarksToolbarFolderTitle, null, null, null, "
-          "null, null, 0, 0, null, null, null, null, 'toolbar____v', null), "
+          "null, null, 0, 0, null, null, null, null, 'toolbar____v', null, "
+          "null, null, null, null, null, null, " SQL_QUOTE(TOOLBAR_ROOT_GUID) ", "
+          "(SELECT id FROM moz_bookmarks WHERE guid = " SQL_QUOTE(TOOLBAR_ROOT_GUID) "), "
+          ":BookmarksToolbarFolderTitle), "
           "(null, 'place:parent=" MENU_ROOT_GUID
           "', :BookmarksMenuFolderTitle, null, null, null, "
-          "null, null, 0, 0, null, null, null, null, 'menu_______v', null), "
+          "null, null, 0, 0, null, null, null, null, 'menu_______v', null, "
+          "null, null, null, null, null, null, " SQL_QUOTE(MENU_ROOT_GUID) ", "
+          "(SELECT id FROM moz_bookmarks WHERE guid = " SQL_QUOTE(MENU_ROOT_GUID) "), "
+          ":BookmarksMenuFolderTitle), "
           "(null, 'place:parent=" UNFILED_ROOT_GUID
           "', :OtherBookmarksFolderTitle, null, null, null, "
-          "null, null, 0, 0, null, null, null, null, 'unfiled____v', null) ") +
+          "null, null, 0, 0, null, null, null, null, 'unfiled____v', null, "
+          "null, null, null, null, null, null, " SQL_QUOTE(UNFILED_ROOT_GUID) ", "
+          "(SELECT id FROM moz_bookmarks WHERE guid = " SQL_QUOTE(UNFILED_ROOT_GUID) "), "
+          ":OtherBookmarksFolderTitle)") +
       mobileString + ")"_ns;
 
   return NS_OK;
@@ -1336,14 +1406,18 @@ nsresult PlacesSQLQueryBuilder::SelectAsLeftPane() {
       "VALUES"
       "(null, 'place:type=%d&sort=%d', :OrganizerQueryHistory, null, null, "
       "null, "
-      "null, null, 0, 0, null, null, null, null, 'history____v', null), "
+      "null, null, 0, 0, null, null, null, null, 'history____v', null, "
+      "null, null, null, null, null, null, null), "
       "(null, 'place:transition=%d&sort=%d', :OrganizerQueryDownloads, null, "
       "null, null, "
-      "null, null, 0, 0, null, null, null, null, 'downloads__v', null), "
+      "null, null, 0, 0, null, null, null, null, 'downloads__v', null, "
+      "null, null, null, null, null, null, null), "
       "(null, 'place:type=%d&sort=%d', :TagsFolderTitle, null, null, null, "
-      "null, null, 0, 0, null, null, null, null, 'tags_______v', null), "
+      "null, null, 0, 0, null, null, null, null, 'tags_______v', null, "
+      "null, null, null, null, null, null, null), "
       "(null, 'place:type=%d', :OrganizerQueryAllBookmarks, null, null, null, "
-      "null, null, 0, 0, null, null, null, null, 'allbms_____v', null) "
+      "null, null, 0, 0, null, null, null, null, 'allbms_____v', null, "
+      "null, null, null, null, null, null, null) "
       ")",
       nsINavHistoryQueryOptions::RESULTS_AS_DATE_QUERY,
       nsINavHistoryQueryOptions::SORT_BY_DATE_DESCENDING,
@@ -1536,10 +1610,6 @@ nsresult nsNavHistory::ConstructQueryString(
           sortingMode <= nsINavHistoryQueryOptions::SORT_BY_FRECENCY_DESCENDING,
       "Invalid sortingMode found while building query!");
 
-  nsAutoCString tagsSqlFragment;
-  GetTagsSqlFragment(GetTagsFolder(), "h.id"_ns, aOptions->QueryType(),
-                     tagsSqlFragment);
-
   if (IsOptimizableHistoryQuery(
           aQuery, aOptions,
           nsINavHistoryQueryOptions::SORT_BY_DATE_DESCENDING) ||
@@ -1549,24 +1619,21 @@ nsresult nsNavHistory::ConstructQueryString(
     // Generate an optimized query for the history menu and the old most visited
     // bookmark that was inserted into profiles.
     queryString =
-        nsLiteralCString(
-            "SELECT h.id, h.url, h.title AS page_title, h.rev_host, "
-            "h.visit_count, h.last_visit_date, "
-            "null, null, null, null, null, ") +
-        tagsSqlFragment +
-        nsLiteralCString(
-            ", h.frecency, h.hidden, h.guid, "
-            "null, null, null "
-            "FROM moz_places h "
-            "WHERE h.hidden = 0 "
-            "AND EXISTS (SELECT id FROM moz_historyvisits WHERE place_id = "
-            "h.id "
-            "AND visit_type NOT IN ") +
+        GetTagsSqlFragment(aOptions->QueryType(), aOptions->ExcludeItems()) +
+        "SELECT h.id, h.url, h.title AS page_title, h.rev_host, "
+        "  h.visit_count, h.last_visit_date, null, null, null, null, null, "
+        "  (SELECT tags FROM tagged WHERE place_id = h.id) AS tags, "
+        "  h.frecency, h.hidden, h.guid, null, null, null, "
+        "  null, null, null, null, null, null, null "
+        "FROM moz_places h "
+        "WHERE h.hidden = 0 "
+        "AND EXISTS (SELECT id FROM moz_historyvisits WHERE place_id = "
+        "h.id "
+        "AND visit_type NOT IN "_ns +
         nsPrintfCString("(0,%d,%d) ", nsINavHistoryService::TRANSITION_EMBED,
                         nsINavHistoryService::TRANSITION_FRAMED_LINK) +
-        nsLiteralCString(
-            "LIMIT 1) "
-            "{QUERY_OPTIONS} ");
+        "LIMIT 1) "
+        "{QUERY_OPTIONS} "_ns;
 
     queryString.AppendLiteral("ORDER BY ");
     if (sortingMode == nsINavHistoryQueryOptions::SORT_BY_DATE_DESCENDING)
@@ -2436,19 +2503,6 @@ nsresult nsNavHistory::RowToResult(mozIStorageValueArray* aRow,
 
   if (IsQueryURI(url)) {
     // Special case "place:" URIs: turn them into containers.
-    if (itemId != -1) {
-      // We should never expose the history title for query nodes if the
-      // bookmark-item's title is set to null (the history title may be the
-      // query string without the place: prefix). Thus we call getItemTitle
-      // explicitly. Doing this in the SQL query would be less performant since
-      // it should be done for all results rather than only for queries.
-      nsNavBookmarks* bookmarks = nsNavBookmarks::GetBookmarksService();
-      NS_ENSURE_TRUE(bookmarks, NS_ERROR_OUT_OF_MEMORY);
-
-      rv = bookmarks->GetItemTitle(itemId, title);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-
     nsAutoCString guid;
     if (itemId != -1) {
       rv = aRow->GetUTF8String(nsNavBookmarks::kGetChildrenIndex_Guid, guid);
@@ -2463,9 +2517,23 @@ nsresult nsNavHistory::RowToResult(mozIStorageValueArray* aRow,
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
+    int64_t targetFolderItemId = -1;
+    nsAutoCString targetFolderGuid;
+    nsAutoCString targetFolderTitle;
+    rv = aRow->GetIsNull(kGetTargetFolder_Guid, &isNull);
+    NS_ENSURE_SUCCESS(rv, rv);
+    if (!isNull) {
+      targetFolderItemId = aRow->AsInt64(kGetTargetFolder_ItemId);
+      rv = aRow->GetUTF8String(kGetTargetFolder_Guid, targetFolderGuid);
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = aRow->GetUTF8String(kGetTargetFolder_Title, targetFolderTitle);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+
     RefPtr<nsNavHistoryResultNode> resultNode;
-    rv = QueryRowToResult(itemId, guid, url, title, accessCount, time,
-                          getter_AddRefs(resultNode));
+    rv = QueryUriToResult(url, itemId, guid, title, targetFolderItemId,
+                          targetFolderGuid, targetFolderTitle, accessCount,
+                          time, getter_AddRefs(resultNode));
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (itemId != -1 || aOptions->ResultType() ==
@@ -2535,27 +2603,23 @@ nsresult nsNavHistory::RowToResult(mozIStorageValueArray* aRow,
   return NS_ERROR_FAILURE;
 }
 
-// nsNavHistory::QueryRowToResult
-//
-//    Called by RowToResult when the URI is a place: URI to generate the proper
-//    folder or query node.
-
-nsresult nsNavHistory::QueryRowToResult(int64_t itemId,
-                                        const nsACString& aBookmarkGuid,
-                                        const nsACString& aURI,
-                                        const nsACString& aTitle,
-                                        uint32_t aAccessCount, PRTime aTime,
-                                        nsNavHistoryResultNode** aNode) {
-  // Only assert if the itemId is set. In some cases (e.g. virtual queries), we
-  // have a guid, but not an itemId.
-  if (itemId != -1) {
+// When the URI is a place: URI, generate the proper folder or query node.
+nsresult nsNavHistory::QueryUriToResult(
+    const nsACString& aQueryURI, int64_t aItemId,
+    const nsACString& aBookmarkGuid, const nsACString& aTitle,
+    int64_t aTargetFolderItemId, const nsACString& aTargetFolderGuid,
+    const nsACString& aTargetFolderTitle, uint32_t aAccessCount, PRTime aTime,
+    nsNavHistoryResultNode** aNode) {
+  // Only assert if the aItemId is set. In some cases (e.g. virtual queries), we
+  // have a guid, but not an aItemId.
+  if (aItemId != -1) {
     MOZ_ASSERT(!aBookmarkGuid.IsEmpty());
   }
 
   nsCOMPtr<nsINavHistoryQuery> query;
   nsCOMPtr<nsINavHistoryQueryOptions> options;
-  nsresult rv =
-      QueryStringToQuery(aURI, getter_AddRefs(query), getter_AddRefs(options));
+  nsresult rv = QueryStringToQuery(aQueryURI, getter_AddRefs(query),
+                                   getter_AddRefs(options));
   RefPtr<nsNavHistoryResultNode> resultNode;
   RefPtr<nsNavHistoryQuery> queryObj = do_QueryObject(query);
   NS_ENSURE_STATE(queryObj);
@@ -2564,35 +2628,16 @@ nsresult nsNavHistory::QueryRowToResult(int64_t itemId,
   // If this failed the query does not parse correctly, let the error pass and
   // handle it later.
   if (NS_SUCCEEDED(rv)) {
-    // Check if this is a folder shortcut, so we can take a faster path.
-    nsCString targetFolderGuid =
-        GetSimpleBookmarksQueryParent(queryObj, optionsObj);
-    if (!targetFolderGuid.IsEmpty()) {
-      nsNavBookmarks* bookmarks = nsNavBookmarks::GetBookmarksService();
-      NS_ENSURE_TRUE(bookmarks, NS_ERROR_OUT_OF_MEMORY);
-
-      rv = bookmarks->ResultNodeForContainer(targetFolderGuid, optionsObj,
-                                             getter_AddRefs(resultNode));
-      // If this failed the shortcut is pointing to nowhere, let the error pass
-      // and handle it later.
-      if (NS_SUCCEEDED(rv)) {
-        // At this point the node is set up like a regular folder node. Here
-        // we make the necessary change to make it a folder shortcut.
-        resultNode->mItemId = itemId;
-        resultNode->mBookmarkGuid = aBookmarkGuid;
-        resultNode->GetAsFolder()->mTargetFolderGuid = targetFolderGuid;
-
-        // Use the query item title, unless it's empty (in that case use the
-        // concrete folder title).
-        if (!aTitle.IsEmpty()) {
-          resultNode->mTitle = aTitle;
-        }
-      }
+    if (!aTargetFolderGuid.IsEmpty()) {
+      MOZ_ASSERT(aTargetFolderItemId >= 0);
+      resultNode = new nsNavHistoryFolderResultNode(
+          aItemId, aBookmarkGuid, aTargetFolderItemId, aTargetFolderGuid,
+          !aTitle.IsEmpty() ? aTitle : aTargetFolderTitle, optionsObj);
     } else {
       // This is a regular query.
-      resultNode = new nsNavHistoryQueryResultNode(aTitle, aTime, aURI,
+      resultNode = new nsNavHistoryQueryResultNode(aTitle, aTime, aQueryURI,
                                                    queryObj, optionsObj);
-      resultNode->mItemId = itemId;
+      resultNode->mItemId = aItemId;
       resultNode->mBookmarkGuid = aBookmarkGuid;
     }
   }
@@ -2602,9 +2647,9 @@ nsresult nsNavHistory::QueryRowToResult(int64_t itemId,
     // This is a broken query, that either did not parse or points to not
     // existing data.  We don't want to return failure since that will kill the
     // whole result.  Instead make a generic empty query node.
-    resultNode =
-        new nsNavHistoryQueryResultNode(aTitle, 0, aURI, queryObj, optionsObj);
-    resultNode->mItemId = itemId;
+    resultNode = new nsNavHistoryQueryResultNode(aTitle, 0, aQueryURI, queryObj,
+                                                 optionsObj);
+    resultNode->mItemId = aItemId;
     resultNode->mBookmarkGuid = aBookmarkGuid;
     // This is a perf hack to generate an empty query that skips filtering.
     resultNode->GetAsQuery()->Options()->SetExcludeItems(true);
@@ -2686,22 +2731,23 @@ namespace {
 //    A simple bookmarks query will result in a hierarchical tree of
 //    bookmark items, folders and separators.
 //
-//    Returns the folder ID if it is a simple folder query, 0 if not.
-static nsCString GetSimpleBookmarksQueryParent(
+//    Returns the folder ID as Maybe<nsCString> if it is a simple folder
+//    query, Nothing() if not.
+static Maybe<nsCString> GetSimpleBookmarksQueryParent(
     const RefPtr<nsNavHistoryQuery>& aQuery,
     const RefPtr<nsNavHistoryQueryOptions>& aOptions) {
-  if (aQuery->Parents().Length() != 1) return ""_ns;
+  if (aQuery->Parents().Length() != 1) return Nothing();
 
   bool hasIt;
-  if (NS_SUCCEEDED(aQuery->GetHasBeginTime(&hasIt)) && hasIt) return ""_ns;
-  if (NS_SUCCEEDED(aQuery->GetHasEndTime(&hasIt)) && hasIt) return ""_ns;
-  if (!aQuery->Domain().IsVoid()) return ""_ns;
-  if (aQuery->Uri()) return ""_ns;
-  if (!aQuery->SearchTerms().IsEmpty()) return ""_ns;
-  if (aQuery->Tags().Length() > 0) return ""_ns;
-  if (aOptions->MaxResults() > 0) return ""_ns;
+  if ((NS_SUCCEEDED(aQuery->GetHasBeginTime(&hasIt)) && hasIt) ||
+      (NS_SUCCEEDED(aQuery->GetHasEndTime(&hasIt)) && hasIt) ||
+      !aQuery->Domain().IsVoid() || aQuery->Uri() ||
+      !aQuery->SearchTerms().IsEmpty() || aQuery->Tags().Length() > 0 ||
+      aOptions->MaxResults() > 0 || !IsValidGUID(aQuery->Parents()[0])) {
+    return Nothing();
+  }
 
-  return aQuery->Parents()[0];
+  return Some(aQuery->Parents()[0]);
 }
 
 // ParseSearchTermsFromQuery

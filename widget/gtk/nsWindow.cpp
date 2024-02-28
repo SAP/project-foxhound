@@ -277,8 +277,7 @@ namespace mozilla {
 #ifdef MOZ_X11
 class CurrentX11TimeGetter {
  public:
-  explicit CurrentX11TimeGetter(GdkWindow* aWindow)
-      : mWindow(aWindow), mAsyncUpdateStart() {}
+  explicit CurrentX11TimeGetter(GdkWindow* aWindow) : mWindow(aWindow) {}
 
   guint32 GetCurrentTime() const { return gdk_x11_get_server_time(mWindow); }
 
@@ -937,7 +936,7 @@ void nsWindow::ApplySizeConstraints() {
       hints |= GDK_HINT_MAX_SIZE;
     }
 
-    if (mAspectRatio != 0.0f) {
+    if (mAspectRatio != 0.0f && !mAspectResizer) {
       geometry.min_aspect = mAspectRatio;
       geometry.max_aspect = mAspectRatio;
       hints |= GDK_HINT_ASPECT;
@@ -977,6 +976,7 @@ void nsWindow::Show(bool aState) {
 #endif
 
   NativeShow(aState);
+  RefreshWindowClass();
 }
 
 void nsWindow::ResizeInt(const Maybe<LayoutDeviceIntPoint>& aMove,
@@ -3458,7 +3458,7 @@ nsresult nsWindow::SetTitle(const nsAString& aTitle) {
   if (!mShell) return NS_OK;
 
     // convert the string into utf8 and set the title.
-#define UTF8_FOLLOWBYTE(ch) (((ch)&0xC0) == 0x80)
+#define UTF8_FOLLOWBYTE(ch) (((ch) & 0xC0) == 0x80)
   NS_ConvertUTF16toUTF8 titleUTF8(aTitle);
   if (titleUTF8.Length() > NS_WINDOW_TITLE_MAX_LENGTH) {
     // Truncate overlong titles (bug 167315). Make sure we chop after a
@@ -3801,7 +3801,7 @@ gboolean nsWindow::OnExposeEvent(cairo_t* cr) {
   if (knowsCompositor && layerManager && mCompositorSession) {
     if (!mConfiguredClearColor && !IsPopup()) {
       layerManager->WrBridge()->SendSetDefaultClearColor(LookAndFeel::Color(
-          LookAndFeel::ColorID::Window, LookAndFeel::ColorSchemeForChrome(),
+          LookAndFeel::ColorID::Window, PreferenceSheet::ColorSchemeForChrome(),
           LookAndFeel::UseStandins::No));
       mConfiguredClearColor = true;
     }
@@ -4363,50 +4363,68 @@ Maybe<GdkWindowEdge> nsWindow::CheckResizerEdge(
   }();
 
   if (!canResize) {
-    return {};
+    return Nothing();
   }
 
   // If we're not in a PiP window, allow 1px resizer edge from the top edge,
   // and nothing else.
   // This is to allow resizes of tiled windows on KDE, see bug 1813554.
-  const int resizerSize = (mIsPIPWindow ? 15 : 1) * GdkCeiledScaleFactor();
+  const int resizerHeight = (mIsPIPWindow ? 15 : 1) * GdkCeiledScaleFactor();
+  const int resizerWidth = resizerHeight * 4;
 
   const int topDist = aPoint.y;
   const int leftDist = aPoint.x;
   const int rightDist = mBounds.width - aPoint.x;
   const int bottomDist = mBounds.height - aPoint.y;
 
-  if (topDist <= resizerSize) {
-    if (rightDist <= resizerSize) {
+  // We can't emulate resize of North/West edges on Wayland as we can't shift
+  // toplevel window.
+  bool waylandLimitedResize = mAspectRatio != 0.0f && GdkIsWaylandDisplay();
+
+  if (topDist <= resizerHeight) {
+    if (rightDist <= resizerWidth) {
       return Some(GDK_WINDOW_EDGE_NORTH_EAST);
     }
-    if (leftDist <= resizerSize) {
+    if (leftDist <= resizerWidth) {
       return Some(GDK_WINDOW_EDGE_NORTH_WEST);
     }
-    return Some(GDK_WINDOW_EDGE_NORTH);
+    return waylandLimitedResize ? Nothing() : Some(GDK_WINDOW_EDGE_NORTH);
   }
 
   if (!mIsPIPWindow) {
-    return {};
+    return Nothing();
   }
 
-  if (bottomDist <= resizerSize) {
-    if (leftDist <= resizerSize) {
+  if (bottomDist <= resizerHeight) {
+    if (leftDist <= resizerWidth) {
       return Some(GDK_WINDOW_EDGE_SOUTH_WEST);
     }
-    if (rightDist <= resizerSize) {
+    if (rightDist <= resizerWidth) {
       return Some(GDK_WINDOW_EDGE_SOUTH_EAST);
     }
     return Some(GDK_WINDOW_EDGE_SOUTH);
   }
 
-  if (leftDist <= resizerSize) {
-    return Some(GDK_WINDOW_EDGE_WEST);
+  if (leftDist <= resizerHeight) {
+    if (topDist <= resizerWidth) {
+      return Some(GDK_WINDOW_EDGE_NORTH_WEST);
+    }
+    if (bottomDist <= resizerWidth) {
+      return Some(GDK_WINDOW_EDGE_SOUTH_WEST);
+    }
+    return waylandLimitedResize ? Nothing() : Some(GDK_WINDOW_EDGE_WEST);
   }
-  if (rightDist <= resizerSize) {
+
+  if (rightDist <= resizerHeight) {
+    if (topDist <= resizerWidth) {
+      return Some(GDK_WINDOW_EDGE_NORTH_EAST);
+    }
+    if (bottomDist <= resizerWidth) {
+      return Some(GDK_WINDOW_EDGE_SOUTH_EAST);
+    }
     return Some(GDK_WINDOW_EDGE_EAST);
   }
-  return {};
+  return Nothing();
 }
 
 template <typename Event>
@@ -4423,8 +4441,33 @@ static LayoutDeviceIntPoint GetRefPoint(nsWindow* aWindow, Event* aEvent) {
          aWindow->WidgetToScreenOffset();
 }
 
+void nsWindow::EmulateResizeDrag(GdkEventMotion* aEvent) {
+  auto newPoint = LayoutDeviceIntPoint::Floor(aEvent->x, aEvent->y);
+  LayoutDeviceIntPoint diff = newPoint - mLastResizePoint;
+  mLastResizePoint = newPoint;
+
+  GdkRectangle size = DevicePixelsToGdkSizeRoundUp(mBounds.Size());
+  LayoutDeviceIntSize newSize(size.width + diff.x, size.height + diff.y);
+
+  if (mAspectResizer.value() == GTK_ORIENTATION_VERTICAL) {
+    newSize.width = int(newSize.height * mAspectRatio);
+  } else {  // GTK_ORIENTATION_HORIZONTAL
+    newSize.height = int(newSize.width / mAspectRatio);
+  }
+  LOG("  aspect ratio correction %d x %d aspect %f\n", newSize.width,
+      newSize.height, mAspectRatio);
+  gtk_window_resize(GTK_WINDOW(mShell), newSize.width, newSize.height);
+}
+
 void nsWindow::OnMotionNotifyEvent(GdkEventMotion* aEvent) {
   if (!mGdkWindow) {
+    return;
+  }
+
+  // Emulate gdk_window_begin_resize_drag() for windows
+  // with fixed aspect ratio on Wayland.
+  if (mAspectResizer && mAspectRatio != 0.0f) {
+    EmulateResizeDrag(aEvent);
     return;
   }
 
@@ -4480,8 +4523,10 @@ void nsWindow::OnMotionNotifyEvent(GdkEventMotion* aEvent) {
     SetCursor(Cursor{cursor});
     // If we set resize cursor on widget level keep it locked and prevent layout
     // to switch it back to default (by synthetic mouse events for instance)
-    // until resize is finished.
-    mWidgetCursorLocked = true;
+    // until resize is finished. This affects PIP windows only.
+    if (mIsPIPWindow) {
+      mWidgetCursorLocked = true;
+    }
     return;
   }
 
@@ -4660,8 +4705,29 @@ void nsWindow::OnButtonPressEvent(GdkEventButton* aEvent) {
 
   // Check to see if the event is within our window's resize region
   if (auto edge = CheckResizerEdge(refPoint)) {
-    gdk_window_begin_resize_drag(GetToplevelGdkWindow(), *edge, aEvent->button,
-                                 aEvent->x_root, aEvent->y_root, aEvent->time);
+    // On Wayland Gtk fails to vertically/horizontally resize windows
+    // with fixed aspect ratio. We need to emulate
+    // gdk_window_begin_resize_drag() at OnMotionNotifyEvent().
+    if (mAspectRatio != 0.0f && GdkIsWaylandDisplay()) {
+      mLastResizePoint = LayoutDeviceIntPoint::Floor(aEvent->x, aEvent->y);
+      switch (*edge) {
+        case GDK_WINDOW_EDGE_SOUTH:
+          mAspectResizer = Some(GTK_ORIENTATION_VERTICAL);
+          break;
+        case GDK_WINDOW_EDGE_EAST:
+          mAspectResizer = Some(GTK_ORIENTATION_HORIZONTAL);
+          break;
+        default:
+          mAspectResizer.reset();
+          break;
+      }
+      ApplySizeConstraints();
+    }
+    if (!mAspectResizer) {
+      gdk_window_begin_resize_drag(GetToplevelGdkWindow(), *edge,
+                                   aEvent->button, aEvent->x_root,
+                                   aEvent->y_root, aEvent->time);
+    }
     return;
   }
 
@@ -4685,7 +4751,7 @@ void nsWindow::OnButtonPressEvent(GdkEventButton* aEvent) {
     case 7:
       NS_WARNING("We're not supporting legacy horizontal scroll event");
       return;
-    // Map buttons 8-9 to back/forward
+    // Map buttons 8-9(10) to back/forward
     case 8:
       if (!Preferences::GetBool("mousebutton.4th.enabled", true)) {
         return;
@@ -4693,6 +4759,7 @@ void nsWindow::OnButtonPressEvent(GdkEventButton* aEvent) {
       DispatchCommandEvent(nsGkAtoms::Back);
       return;
     case 9:
+    case 10:
       if (!Preferences::GetBool("mousebutton.5th.enabled", true)) {
         return;
       }
@@ -4730,6 +4797,11 @@ void nsWindow::OnButtonReleaseEvent(GdkEventButton* aEvent) {
   SetLastMousePressEvent(nullptr);
 
   if (!mGdkWindow) {
+    return;
+  }
+
+  if (mAspectResizer) {
+    mAspectResizer = Nothing();
     return;
   }
 
@@ -6142,10 +6214,6 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
   GtkWidget* container = moz_container_new();
   mContainer = MOZ_CONTAINER(container);
 
-  // "csd" style is set when widget is realized so we need to call
-  // it explicitly now.
-  gtk_widget_realize(mShell);
-
   /* There are several cases here:
    *
    * 1) We're running on Gtk+ without client side decorations.
@@ -6157,10 +6225,8 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
    * 3) We're running on Wayland. All gecko content is rendered
    *    to mContainer and we listen to the Gtk+ events on mContainer.
    */
-  GtkStyleContext* style = gtk_widget_get_style_context(mShell);
-  mDrawToContainer = GdkIsWaylandDisplay() ||
-                     mGtkWindowDecoration == GTK_DECORATION_CLIENT ||
-                     gtk_style_context_has_class(style, "csd");
+  mDrawToContainer =
+      GdkIsWaylandDisplay() || mGtkWindowDecoration == GTK_DECORATION_CLIENT;
   eventWidget = mDrawToContainer ? container : mShell;
 
   // Prevent GtkWindow from painting a background to avoid flickering.
@@ -6421,6 +6487,17 @@ void nsWindow::RefreshWindowClass(void) {
     XFree(class_hint);
   }
 #endif /* MOZ_X11 */
+
+#ifdef MOZ_WAYLAND
+  static auto sGdkWaylandWindowSetApplicationId =
+      (void (*)(GdkWindow*, const char*))dlsym(
+          RTLD_DEFAULT, "gdk_wayland_window_set_application_id");
+
+  if (GdkIsWaylandDisplay() && sGdkWaylandWindowSetApplicationId &&
+      !mGtkWindowAppClass.IsEmpty()) {
+    sGdkWaylandWindowSetApplicationId(gdkWindow, mGtkWindowAppClass.get());
+  }
+#endif /* MOZ_WAYLAND */
 }
 
 void nsWindow::SetWindowClass(const nsAString& xulWinType,
@@ -6607,6 +6684,14 @@ void nsWindow::ResumeCompositorFlickering() {
   }
 
   MozClearHandleID(mCompositorPauseTimeoutID, g_source_remove);
+
+  // mCompositorWidgetDelegate can be deleted during timeout.
+  // In such case just flip compositor back to enabled and let
+  // SetCompositorWidgetDelegate() or Map event resume it.
+  if (!mCompositorWidgetDelegate) {
+    mCompositorState = COMPOSITOR_ENABLED;
+    return;
+  }
 
   ResumeCompositorImpl();
 }
@@ -8888,6 +8973,13 @@ void nsWindow::SetDrawsInTitlebar(bool aState) {
     SetWindowDecoration(aState ? BorderStyle::Border : mBorderStyle);
   } else if (mGtkWindowDecoration == GTK_DECORATION_CLIENT) {
     LOG("    Using CSD mode\n");
+
+    if (!gtk_widget_get_realized(GTK_WIDGET(mShell))) {
+      LOG("    Using CSD mode fast path\n");
+      gtk_window_set_titlebar(GTK_WINDOW(mShell),
+                              aState ? gtk_fixed_new() : nullptr);
+      return;
+    }
 
     /* Window manager does not support GDK_DECOR_BORDER,
      * emulate it by CSD.

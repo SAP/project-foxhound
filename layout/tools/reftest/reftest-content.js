@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/frame-script */
+
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 const DEBUG_CONTRACTID = "@mozilla.org/xpcom/debug;1";
@@ -50,7 +52,7 @@ const TYPE_SCRIPT = "script"; // test contains individual test results
 const TYPE_PRINT = "print"; // test and reference will be printed to PDF's and
 // compared structurally
 
-// keep this in sync with globals.jsm
+// keep this in sync with globals.sys.mjs
 const URL_TARGET_TYPE_TEST = 0; // first url
 const URL_TARGET_TYPE_REFERENCE = 1; // second url, if any
 
@@ -196,10 +198,11 @@ function doPrintMode(contentRootElement) {
     var classList = contentRootElement.getAttribute("class").split(/\s+/);
     if (classList.includes("reftest-print")) {
       SendException("reftest-print is obsolete, use reftest-paged instead");
-      return;
+      return false;
     }
     return classList.includes("reftest-paged");
   }
+  return false;
 }
 
 function setupPrintMode(contentRootElement) {
@@ -559,7 +562,6 @@ function WaitForTestEnd(
   var updateCanvasPending = false;
   var updateCanvasRects = [];
 
-  var stopAfterPaintReceived = false;
   var currentDoc = content.document;
   var state = STATE_WAITING_TO_FIRE_INVALIDATE_EVENT;
 
@@ -765,7 +767,7 @@ function WaitForTestEnd(
       // MozReftestInvalidate won't be sent until we finish waiting for all
       // MozAfterPaint events, we should avoid flushing throttled animations
       // here or else we'll never leave this state.
-      flushMode =
+      let flushMode =
         state === STATE_WAITING_TO_FIRE_INVALIDATE_EVENT
           ? FlushMode.IGNORE_THROTTLED_ANIMATIONS
           : FlushMode.ALL;
@@ -782,6 +784,7 @@ function WaitForTestEnd(
     });
   }
 
+  // eslint-disable-next-line complexity
   function MakeProgress2() {
     switch (state) {
       case STATE_WAITING_TO_FIRE_INVALIDATE_EVENT: {
@@ -807,28 +810,34 @@ function WaitForTestEnd(
         // Notify the test document that now is a good time to test some invalidation
         LogInfo("MakeProgress: dispatching MozReftestInvalidate");
         if (contentRootElement) {
-          var elements = getNoPaintElements(contentRootElement);
-          for (var i = 0; i < elements.length; ++i) {
+          let elements = getNoPaintElements(contentRootElement);
+          for (let i = 0; i < elements.length; ++i) {
             windowUtils().checkAndClearPaintedState(elements[i]);
           }
           elements = getNoDisplayListElements(contentRootElement);
-          for (var i = 0; i < elements.length; ++i) {
+          for (let i = 0; i < elements.length; ++i) {
             windowUtils().checkAndClearDisplayListState(elements[i]);
           }
           elements = getDisplayListElements(contentRootElement);
-          for (var i = 0; i < elements.length; ++i) {
+          for (let i = 0; i < elements.length; ++i) {
             windowUtils().checkAndClearDisplayListState(elements[i]);
           }
           var notification = content.document.createEvent("Events");
           notification.initEvent("MozReftestInvalidate", true, false);
           contentRootElement.dispatchEvent(notification);
+        } else {
+          LogInfo(
+            "MakeProgress: couldn't send MozReftestInvalidate event because content root element does not exist"
+          );
         }
 
+        CheckForLivenessOfContentRootElement();
         if (!inPrintMode && doPrintMode(contentRootElement)) {
           LogInfo("MakeProgress: setting up print mode");
           setupPrintMode(contentRootElement);
         }
 
+        CheckForLivenessOfContentRootElement();
         if (
           hasReftestWait &&
           !shouldWaitForReftestWaitRemoval(contentRootElement)
@@ -887,14 +896,11 @@ function WaitForTestEnd(
         LogInfo("MakeProgress: STATE_WAITING_FOR_APZ_FLUSH");
         gFailureReason = "timed out waiting for APZ flush to complete";
 
-        var os = Cc[NS_OBSERVER_SERVICE_CONTRACTID].getService(
-          Ci.nsIObserverService
-        );
         var flushWaiter = function (aSubject, aTopic, aData) {
           if (aTopic) {
             LogInfo("MakeProgress: apz-repaints-flushed fired");
           }
-          os.removeObserver(flushWaiter, "apz-repaints-flushed");
+          Services.obs.removeObserver(flushWaiter, "apz-repaints-flushed");
           state = STATE_WAITING_TO_FINISH;
           if (operationInProgress) {
             CallSetTimeoutMakeProgress();
@@ -902,7 +908,7 @@ function WaitForTestEnd(
             MakeProgress();
           }
         };
-        os.addObserver(flushWaiter, "apz-repaints-flushed");
+        Services.obs.addObserver(flushWaiter, "apz-repaints-flushed");
 
         var willSnapshot = IsSnapshottableTestType();
         CheckForLivenessOfContentRootElement();
@@ -939,8 +945,8 @@ function WaitForTestEnd(
         }
         CheckForLivenessOfContentRootElement();
         if (contentRootElement) {
-          var elements = getNoPaintElements(contentRootElement);
-          for (var i = 0; i < elements.length; ++i) {
+          let elements = getNoPaintElements(contentRootElement);
+          for (let i = 0; i < elements.length; ++i) {
             if (windowUtils().checkAndClearPaintedState(elements[i])) {
               SendFailedNoPaint();
             }
@@ -950,13 +956,13 @@ function WaitForTestEnd(
           // we don't have e10s.
           if (gBrowserIsRemote) {
             elements = getNoDisplayListElements(contentRootElement);
-            for (var i = 0; i < elements.length; ++i) {
+            for (let i = 0; i < elements.length; ++i) {
               if (windowUtils().checkAndClearDisplayListState(elements[i])) {
                 SendFailedNoDisplayList();
               }
             }
             elements = getDisplayListElements(contentRootElement);
-            for (var i = 0; i < elements.length; ++i) {
+            for (let i = 0; i < elements.length; ++i) {
               if (!windowUtils().checkAndClearDisplayListState(elements[i])) {
                 SendFailedDisplayList();
               }
@@ -981,7 +987,6 @@ function WaitForTestEnd(
         CheckForLivenessOfContentRootElement();
         CheckForProcessCrashExpectation(contentRootElement);
         setTimeout(RecordResult, 0, forURL);
-        return;
     }
   }
 
@@ -998,6 +1003,8 @@ function WaitForTestEnd(
   CheckForLivenessOfContentRootElement();
   if (contentRootElement?.hasAttribute("class")) {
     attrModifiedObserver =
+      // ownerGlobal doesn't exist in content windows.
+      // eslint-disable-next-line mozilla/use-ownerGlobal
       new contentRootElement.ownerDocument.defaultView.MutationObserver(
         AttrModifiedListener
       );
@@ -1209,7 +1216,7 @@ async function RecordResult(forURL) {
       // Force an unexpected failure to alert the test author to fix the test.
       error =
         "test's getTestCases() must return an Array-like Object. (SCRIPT)\n";
-    } else if (testcases.length == 0) {
+    } else if (!testcases.length) {
       // This failure may be due to a JavaScript Engine bug causing
       // early termination of the test. If we do not allow silent
       // failure, the driver will report an error.
@@ -1456,11 +1463,11 @@ function SendContentReady() {
 }
 
 function SendException(what) {
-  sendAsyncMessage("reftest:Exception", { what: what });
+  sendAsyncMessage("reftest:Exception", { what });
 }
 
 function SendFailedLoad(why) {
-  sendAsyncMessage("reftest:FailedLoad", { why: why });
+  sendAsyncMessage("reftest:FailedLoad", { why });
 }
 
 function SendFailedNoPaint() {
@@ -1476,11 +1483,11 @@ function SendFailedDisplayList() {
 }
 
 function SendFailedOpaqueLayer(why) {
-  sendAsyncMessage("reftest:FailedOpaqueLayer", { why: why });
+  sendAsyncMessage("reftest:FailedOpaqueLayer", { why });
 }
 
 function SendFailedAssignedLayer(why) {
-  sendAsyncMessage("reftest:FailedAssignedLayer", { why: why });
+  sendAsyncMessage("reftest:FailedAssignedLayer", { why });
 }
 
 // Returns a promise that resolves to a bool that indicates if a snapshot was taken.
@@ -1527,9 +1534,9 @@ async function SendInitCanvasWithSnapshot(forURL) {
 
 function SendScriptResults(runtimeMs, error, results) {
   sendAsyncMessage("reftest:ScriptResults", {
-    runtimeMs: runtimeMs,
-    error: error,
-    results: results,
+    runtimeMs,
+    error,
+    results,
   });
 }
 
@@ -1539,9 +1546,9 @@ function SendStartPrint(isPrintSelection, printRange) {
 
 function SendPrintResult(runtimeMs, status, fileName) {
   sendAsyncMessage("reftest:PrintResult", {
-    runtimeMs: runtimeMs,
-    status: status,
-    fileName: fileName,
+    runtimeMs,
+    status,
+    fileName,
   });
 }
 
@@ -1550,7 +1557,7 @@ function SendExpectProcessCrash(runtimeMs) {
 }
 
 function SendTestDone(runtimeMs) {
-  sendAsyncMessage("reftest:TestDone", { runtimeMs: runtimeMs });
+  sendAsyncMessage("reftest:TestDone", { runtimeMs });
 }
 
 function roundTo(x, fraction) {
@@ -1577,7 +1584,6 @@ async function SendUpdateCanvasForEvent(forURL, rectList, contentRootElement) {
     return;
   }
 
-  var win = content;
   var scale = docShell.browsingContext.fullZoom;
 
   var rects = [];
@@ -1618,7 +1624,7 @@ async function SendUpdateCanvasForEvent(forURL, rectList, contentRootElement) {
       var bottom = Math.ceil(roundTo(r.bottom * scale, 0.001));
       LogInfo("Rect: " + left + " " + top + " " + right + " " + bottom);
 
-      rects.push({ left: left, top: top, right: right, bottom: bottom });
+      rects.push({ left, top, right, bottom });
     }
 
     message = "reftest:UpdateCanvasForInvalidation";
@@ -1627,13 +1633,13 @@ async function SendUpdateCanvasForEvent(forURL, rectList, contentRootElement) {
   // See comments in SendInitCanvasWithSnapshot() re: the split
   // logic here.
   if (!gBrowserIsRemote) {
-    sendSyncMessage(message, { rects: rects });
+    sendSyncMessage(message, { rects });
   } else {
     await SynchronizeForSnapshot(SYNC_ALLOW_DISABLE);
     let promise = new Promise(resolve => {
       gUpdateCanvasPromiseResolver = resolve;
     });
-    sendAsyncMessage(message, { rects: rects });
+    sendAsyncMessage(message, { rects });
     await promise;
   }
 }

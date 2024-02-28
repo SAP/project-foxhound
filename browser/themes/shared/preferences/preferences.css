@@ -90,6 +90,10 @@ html|select {
   user-select: none;
 }
 
+.section-description {
+  color: var(--text-color-deemphasized);
+}
+
 /* Buttons get a default min-width in XUL. When they also have flex, they will
  * be large enough anyway, and we don't want them to become smaller than their inner
  * text which would then overflow the button. Set min-width back to auto for that:
@@ -241,7 +245,8 @@ checkbox {
   font-weight: var(--font-weight-bold);
 }
 
-@supports not -moz-bool-pref("browser.migrate.preferences-entrypoint.enabled") {
+/* stylelint-disable-next-line media-query-no-invalid */
+@media not (-moz-bool-pref: "browser.migrate.preferences-entrypoint.enabled") {
   #dataMigrationGroup {
     display: none;
   }
@@ -522,10 +527,6 @@ a[is="moz-support-link"]:not(.sidebar-footer-link) {
 
 #allowSmartSize {
   margin-block: 0 4px;
-}
-
-#nonTechnicalPrivacyBox {
-  margin-top: 32px;
 }
 
 #historyPane {
@@ -819,6 +820,7 @@ dialog > .sync-engines-list + hbox {
 
 .sync-engines-list checkbox .checkbox-icon,
 .sync-engine-image {
+  display: flex;
   margin-inline: 2px 8px;
   width: 16px;
   height: 16px;
@@ -1121,6 +1123,12 @@ menulist[indicator=true] > menupopup menuitem[indicator=true]:not([image]) > .me
   margin-inline-end: 4px;
 }
 
+#activeLanguages,
+#selectedLocales {
+  min-height: 15em;
+  contain: size;
+}
+
 #selectedLocales > richlistitem {
   padding-inline-start: 13px;
 }
@@ -1135,6 +1143,13 @@ menulist[indicator=true] > menupopup menuitem[indicator=true]:not([image]) > .me
 
 .action-button {
   margin-inline-end: 0;
+}
+
+.languages-grid {
+  flex: 1;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  grid-template-columns: 1fr auto;
 }
 
 /* Menulist styles */

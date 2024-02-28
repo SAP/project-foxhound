@@ -8,15 +8,17 @@
 // This is loaded into chrome windows with the subscript loader. Wrap in
 // a block to prevent accidentally leaking globals onto `window`.
 {
+  ChromeUtils.defineESModuleGetters(this, {
+    ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
+  });
+
   class ScreenshotsButtons extends MozXULElement {
     static get markup() {
       return `
-      <html:link rel="stylesheet" href="chrome://global/skin/in-content/common.css"/>
+      <html:link rel="stylesheet" href="chrome://global/skin/global.css"/>
       <html:link rel="stylesheet" href="chrome://browser/content/screenshots/screenshots-buttons.css"/>
-      <html:div id="screenshots-buttons" class="all-buttons-container">
-        <html:button class="visible-page" data-l10n-id="screenshots-save-visible-button"></html:button>
-        <html:button class="full-page" data-l10n-id="screenshots-save-page-button"></html:button>
-      </html:div>
+      <html:button class="visible-page footer-button" data-l10n-id="screenshots-save-visible-button"></html:button>
+      <html:button class="full-page footer-button" data-l10n-id="screenshots-save-page-button"></html:button>
       `;
     }
 
@@ -27,22 +29,14 @@
       let fragment = MozXULElement.parseXULToFragment(this.constructor.markup);
       this.shadowRoot.append(fragment);
 
-      let button1 = shadowRoot.querySelector(".visible-page");
-      button1.onclick = function () {
-        Services.obs.notifyObservers(
-          gBrowser.ownerGlobal,
-          "screenshots-take-screenshot",
-          "visible"
-        );
+      let visibleButton = shadowRoot.querySelector(".visible-page");
+      visibleButton.onclick = function () {
+        ScreenshotsUtils.doScreenshot(gBrowser.selectedBrowser, "visible");
       };
 
-      let button2 = shadowRoot.querySelector(".full-page");
-      button2.onclick = function () {
-        Services.obs.notifyObservers(
-          gBrowser.ownerGlobal,
-          "screenshots-take-screenshot",
-          "full-page"
-        );
+      let fullpageButton = shadowRoot.querySelector(".full-page");
+      fullpageButton.onclick = function () {
+        ScreenshotsUtils.doScreenshot(gBrowser.selectedBrowser, "full_page");
       };
     }
 

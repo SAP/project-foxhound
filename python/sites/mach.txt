@@ -61,6 +61,7 @@ vendored:third_party/python/attrs
 vendored:third_party/python/blessed
 vendored:third_party/python/certifi
 vendored:third_party/python/chardet
+vendored:third_party/python/charset_normalizer
 vendored:third_party/python/click
 vendored:third_party/python/colorama
 vendored:third_party/python/distro
@@ -69,17 +70,20 @@ vendored:third_party/python/importlib_metadata
 vendored:third_party/python/importlib_resources
 vendored:third_party/python/jinxed
 vendored:third_party/python/jsmin
+vendored:third_party/python/jsonschema
 vendored:third_party/python/looseversion
 vendored:third_party/python/mozilla_version
 vendored:third_party/python/packaging
 vendored:third_party/python/pip
 vendored:third_party/python/pip_tools
+vendored:third_party/python/pkgutil_resolve_name
+vendored:third_party/python/pyrsistent
 vendored:third_party/python/python-hglib
 vendored:third_party/python/requests
 vendored:third_party/python/sentry_sdk
 vendored:third_party/python/setuptools
 vendored:third_party/python/six
-vendored:third_party/python/tomlkit
+vendored:third_party/python/toml
 vendored:third_party/python/tqdm
 vendored:third_party/python/typing_extensions
 vendored:third_party/python/urllib3
@@ -88,7 +92,7 @@ vendored:third_party/python/wheel
 vendored:third_party/python/zipp
 # glean-sdk may not be installable if a wheel isn't available
 # and it has to be built from source.
-pypi-optional:glean-sdk==54.0.0:telemetry will not be collected
+pypi-optional:glean-sdk==55.0.0:telemetry will not be collected
 # Mach gracefully handles the case where `psutil` is unavailable.
 # We aren't (yet) able to pin packages in automation, so we have to
 # support down to the oldest locally-installed version (5.4.2).

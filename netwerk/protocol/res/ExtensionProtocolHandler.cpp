@@ -19,6 +19,7 @@
 #include "mozilla/Omnijar.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/Try.h"
 
 #include "FileDescriptorFile.h"
 #include "LoadInfo.h"
@@ -133,11 +134,7 @@ class ExtensionStreamGetter final : public nsICancelable {
   }
 
   void SetupEventTarget() {
-    mMainThreadEventTarget = nsContentUtils::GetEventTargetByLoadInfo(
-        mLoadInfo, TaskCategory::Other);
-    if (!mMainThreadEventTarget) {
-      mMainThreadEventTarget = GetMainThreadSerialEventTarget();
-    }
+    mMainThreadEventTarget = GetMainThreadSerialEventTarget();
   }
 
   // Get an input stream or file descriptor from the parent asynchronously.

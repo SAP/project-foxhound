@@ -611,6 +611,14 @@ void ChunkPool::verifyChunks() const {
 }
 
 void TenuredChunk::verify() const {
+  // Check the mark bits for each arena are aligned to the cache line size.
+  static_assert((offsetof(TenuredChunk, arenas) % ArenaSize) == 0);
+  constexpr size_t CellBytesPerMarkByte = CellBytesPerMarkBit * 8;
+  static_assert((ArenaSize % CellBytesPerMarkByte) == 0);
+  constexpr size_t MarkBytesPerArena = ArenaSize / CellBytesPerMarkByte;
+  static_assert((MarkBytesPerArena % TypicalCacheLineSize) == 0);
+  static_assert((offsetof(TenuredChunk, markBits) % TypicalCacheLineSize) == 0);
+
   MOZ_ASSERT(info.numArenasFree <= ArenasPerChunk);
   MOZ_ASSERT(info.numArenasFreeCommitted <= info.numArenasFree);
 

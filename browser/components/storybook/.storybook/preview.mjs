@@ -16,6 +16,11 @@ window.MozXULElement = {
   insertFTLIfNeeded,
 };
 
+// Used to set prefs in unprivileged contexts.
+window.RPMSetPref = () => {
+  /* NOOP */
+};
+
 /**
  * Wrapper component used to decorate all of our stories by providing access to
  * `in-content/common.css` without leaking styles that conflict Storybook's CSS.
@@ -60,6 +65,11 @@ class WithCommonStyles extends MozLitElement {
     story: { type: Function },
     context: { type: Object },
   };
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.classList.add("anonymous-content-host");
+  }
 
   storyContent() {
     if (this.story) {

@@ -58,14 +58,13 @@ export const INITIAL_STATE = {
   // This is the new pocket configurable layout state.
   DiscoveryStream: {
     // This is a JSON-parsed copy of the discoverystream.config pref value.
-    config: { enabled: false, layout_endpoint: "" },
+    config: { enabled: false },
     layout: [],
-    lastUpdated: null,
     isPrivacyInfoModalVisible: false,
     isCollectionDismissible: false,
     feeds: {
       data: {
-        // "https://foo.com/feed1": {lastUpdated: 123, data: []}
+        // "https://foo.com/feed1": {lastUpdated: 123, data: [], personalized: false}
       },
       loaded: false,
     },
@@ -73,8 +72,8 @@ export const INITIAL_STATE = {
       spocs_endpoint: "",
       lastUpdated: null,
       data: {
-        // "spocs": {title: "", context: "", items: []},
-        // "placement1": {title: "", context: "", items: []},
+        // "spocs": {title: "", context: "", items: [], personalized: false},
+        // "placement1": {title: "", context: "", items: [], personalized: false},
       },
       loaded: false,
       frequency_caps: [],
@@ -584,6 +583,8 @@ function Personalization(prevState = INITIAL_STATE.Personalization, action) {
         ...prevState,
         initialized: true,
       };
+    case at.DISCOVERY_STREAM_PERSONALIZATION_RESET:
+      return { ...INITIAL_STATE.Personalization };
     default:
       return prevState;
   }
@@ -659,7 +660,6 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
     case at.DISCOVERY_STREAM_LAYOUT_UPDATE:
       return {
         ...prevState,
-        lastUpdated: action.data.lastUpdated || null,
         layout: action.data.layout || [],
       };
     case at.DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE:

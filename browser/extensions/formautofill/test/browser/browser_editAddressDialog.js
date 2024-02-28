@@ -82,6 +82,8 @@ add_task(async function test_saveAddress() {
       "VK_TAB",
       TEST_ADDRESS_1["family-name"],
       "VK_TAB",
+      TEST_ADDRESS_1.organization,
+      "VK_TAB",
       TEST_ADDRESS_1["street-address"],
       "VK_TAB",
       TEST_ADDRESS_1["address-level2"],
@@ -89,8 +91,6 @@ add_task(async function test_saveAddress() {
       TEST_ADDRESS_1["address-level1"],
       "VK_TAB",
       TEST_ADDRESS_1["postal-code"],
-      "VK_TAB",
-      TEST_ADDRESS_1.organization,
       "VK_TAB",
       // TEST_ADDRESS_1.country, // Country is already US
       "VK_TAB",
@@ -211,7 +211,7 @@ add_task(async function test_editSparseAddress() {
     EDIT_ADDRESS_DIALOG_URL,
     win => {
       is(
-        win.document.querySelectorAll(":-moz-ui-invalid").length,
+        win.document.querySelectorAll(":user-invalid").length,
         0,
         "Check no fields are visually invalid"
       );
@@ -770,7 +770,7 @@ add_task(async function test_combined_name_fields_error() {
     givenNameField.value = "";
     givenNameField.focus();
     ok(
-      givenNameField.matches(":-moz-ui-invalid"),
+      givenNameField.matches(":user-invalid"),
       "Check field is visually invalid"
     );
 

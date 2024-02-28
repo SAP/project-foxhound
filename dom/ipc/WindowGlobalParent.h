@@ -179,7 +179,10 @@ class WindowGlobalParent final : public WindowContext,
       const nsTArray<nsCString>& aTrackingFullHashes,
       const Maybe<
           ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
-          aReason = Nothing());
+          aReason,
+      const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
+          aCanvasFingerprinter,
+      const Maybe<bool> aCanvasFingerprinterKnownText);
 
   ContentBlockingLog* GetContentBlockingLog() { return &mContentBlockingLog; }
 
@@ -310,8 +313,8 @@ class WindowGlobalParent final : public WindowContext,
       const IdentityCredentialRequestOptions& aOptions,
       const DiscoverIdentityCredentialFromExternalSourceResolver& aResolver);
 
-  mozilla::ipc::IPCResult RecvHasStorageAccessPermission(
-      HasStorageAccessPermissionResolver&& aResolve);
+  mozilla::ipc::IPCResult RecvGetStorageAccessPermission(
+      GetStorageAccessPermissionResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvSetCookies(
       const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,

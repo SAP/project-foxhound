@@ -304,25 +304,15 @@ class XPCStringConvert {
   static inline bool DynamicAtomToJSVal(JSContext* cx, nsDynamicAtom* atom,
                                         const StringTaint& taint,
                                         JS::MutableHandle<JS::Value> rval) {
-    bool sharedAtom;
-    JSString* str =
-        JS_NewMaybeExternalString(cx, atom->GetUTF16String(), atom->GetLength(),
-                                  &sDynamicAtomExternalString, &sharedAtom);
-    if (!str) {
+    bool shared = false;
+    nsStringBuffer* buf = atom->StringBuffer();
+    if (!StringBufferToJSVal(cx, buf, atom->GetLength(), taint, rval, &shared)) {
       return false;
     }
-    if (sharedAtom) {
-      // We only have non-owning atoms in DOMString for now.
-      // nsDynamicAtom::AddRef is always-inline and defined in a
-      // translation unit we can't get to here.  So we need to go through
-      // nsAtom::AddRef to call it.
-      static_cast<nsAtom*>(atom)->AddRef();
+    if (shared) {
+      buf->AddRef();
     }
 
-    // TaintFox: propagate taint
-    JS_SetStringTaint(cx, str, taint);
-
-    rval.setString(str);
     return true;
   }
 
@@ -362,14 +352,8 @@ class XPCStringConvert {
     size_t sizeOfBuffer(const char16_t* aChars,
                         mozilla::MallocSizeOf aMallocSizeOf) const override;
   };
-  struct DynamicAtomExternalString : public JSExternalStringCallbacks {
-    void finalize(char16_t* aChars) const override;
-    size_t sizeOfBuffer(const char16_t* aChars,
-                        mozilla::MallocSizeOf aMallocSizeOf) const override;
-  };
   static const LiteralExternalString sLiteralExternalString;
   static const DOMStringExternalString sDOMStringExternalString;
-  static const DynamicAtomExternalString sDynamicAtomExternalString;
 
   XPCStringConvert() = delete;
 };
@@ -389,6 +373,8 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
  */
 bool NonVoidStringToJsval(JSContext* cx, nsAString& str,
                           JS::MutableHandle<JS::Value> rval);
+bool NonVoidStringToJsval(JSContext* cx, const nsAString& str,
+                          JS::MutableHandle<JS::Value> rval);
 inline bool StringToJsval(JSContext* cx, nsAString& str,
                           JS::MutableHandle<JS::Value> rval) {
   // From the T_ASTRING case in XPCConvert::NativeData2JS.
@@ -399,24 +385,14 @@ inline bool StringToJsval(JSContext* cx, nsAString& str,
   return NonVoidStringToJsval(cx, str, rval);
 }
 
-inline bool NonVoidStringToJsval(JSContext* cx, const nsAString& str,
-                                 JS::MutableHandle<JS::Value> rval) {
-  nsString mutableCopy;
-  if (!mutableCopy.Assign(str, mozilla::fallible)) {
-    JS_ReportOutOfMemory(cx);
-    return false;
-  }
-  return NonVoidStringToJsval(cx, mutableCopy, rval);
-}
-
 inline bool StringToJsval(JSContext* cx, const nsAString& str,
                           JS::MutableHandle<JS::Value> rval) {
-  nsString mutableCopy;
-  if (!mutableCopy.Assign(str, mozilla::fallible)) {
-    JS_ReportOutOfMemory(cx);
-    return false;
+  // From the T_ASTRING case in XPCConvert::NativeData2JS.
+  if (str.IsVoid()) {
+    rval.setNull();
+    return true;
   }
-  return StringToJsval(cx, mutableCopy, rval);
+  return NonVoidStringToJsval(cx, str, rval);
 }
 
 /**
@@ -635,6 +611,19 @@ void SetPrefableContextOptions(JS::ContextOptions& options);
 
 // This function may be used off-main-thread.
 void SetPrefableCompileOptions(JS::PrefableCompileOptions& options);
+
+// Modify the provided realm options, consistent with |aIsSystemPrincipal| and
+// with globally-cached values of various preferences.
+//
+// Call this function *before* |aOptions| is used to create the corresponding
+// global object, as not all of the options it sets can be modified on an
+// existing global object.  (The type system should make this obvious, because
+// you can't get a *mutable* JS::RealmOptions& from an existing global
+// object.)
+void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
+                             bool aIsSystemPrincipal, bool aSecureContext,
+                             bool aForceUTC, bool aAlwaysUseFdlibm,
+                             bool aLocaleEnUS);
 
 class ErrorBase {
  public:

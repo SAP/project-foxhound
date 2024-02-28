@@ -40,6 +40,7 @@ export class ShoppingContainer extends MozLitElement {
     adsEnabled: { type: Boolean },
     adsEnabledByUser: { type: Boolean },
     isAnalysisInProgress: { type: Boolean },
+    analysisProgress: { type: Number },
     isOverflow: { type: Boolean },
   };
 
@@ -70,6 +71,8 @@ export class ShoppingContainer extends MozLitElement {
     window.document.addEventListener("ReportedProductAvailable", this);
     window.document.addEventListener("adsEnabledByUserChanged", this);
     window.document.addEventListener("scroll", this);
+    window.document.addEventListener("UpdateRecommendations", this);
+    window.document.addEventListener("UpdateAnalysisProgress", this);
 
     window.dispatchEvent(
       new CustomEvent("ContentReady", {
@@ -87,13 +90,11 @@ export class ShoppingContainer extends MozLitElement {
     adsEnabled,
     adsEnabledByUser,
     isAnalysisInProgress,
+    analysisProgress,
   }) {
     // If we're not opted in or there's no shopping URL in the main browser,
     // the actor will pass `null`, which means this will clear out any existing
     // content in the sidebar.
-    if (!this.productUrl && productUrl && data) {
-      this.firstAnalysis = true;
-    }
     this.data = data;
     this.showOnboarding = showOnboarding;
     this.productUrl = productUrl;
@@ -102,6 +103,15 @@ export class ShoppingContainer extends MozLitElement {
     this.isAnalysisInProgress = isAnalysisInProgress;
     this.adsEnabled = adsEnabled;
     this.adsEnabledByUser = adsEnabledByUser;
+    this.analysisProgress = analysisProgress;
+  }
+
+  _updateRecommendations({ recommendationData }) {
+    this.recommendationData = recommendationData;
+  }
+
+  _updateAnalysisProgress({ progress }) {
+    this.analysisProgress = progress;
   }
 
   handleEvent(event) {
@@ -112,7 +122,6 @@ export class ShoppingContainer extends MozLitElement {
       case "NewAnalysisRequested":
       case "ReanalysisRequested":
         this.isAnalysisInProgress = true;
-        this.firstAnalysis = false;
         this.analysisEvent = {
           type: event.type,
           productUrl: this.productUrl,
@@ -132,13 +141,7 @@ export class ShoppingContainer extends MozLitElement {
             composed: true,
           })
         );
-        window.dispatchEvent(
-          new CustomEvent("ShoppingTelemetryEvent", {
-            bubbles: true,
-            composed: true,
-            detail: "surfaceReactivatedButtonClicked",
-          })
-        );
+        Glean.shopping.surfaceReactivatedButtonClicked.record();
         break;
       case "adsEnabledByUserChanged":
         this.adsEnabledByUser = event.detail?.adsEnabledByUser;
@@ -146,6 +149,12 @@ export class ShoppingContainer extends MozLitElement {
       case "scroll":
         let scrollYPosition = window.scrollY;
         this.isOverflow = scrollYPosition > HEADER_SCROLL_PIXEL_OFFSET;
+        break;
+      case "UpdateRecommendations":
+        this._updateRecommendations(event.detail);
+        break;
+      case "UpdateAnalysisProgress":
+        this._updateAnalysisProgress(event.detail);
         break;
     }
   }
@@ -171,6 +180,7 @@ export class ShoppingContainer extends MozLitElement {
           type=${isReanalysis
             ? "reanalysis-in-progress"
             : "analysis-in-progress"}
+          progress=${this.analysisProgress}
         ></shopping-message-bar>
         ${isReanalysis ? this.getAnalysisDetailsTemplate() : null}`;
     }
@@ -204,22 +214,13 @@ export class ShoppingContainer extends MozLitElement {
     }
 
     if (this.data.needs_analysis) {
-      let notEnoughReviews = !this.data.grade || !this.data.adjusted_rating;
-      if (!this.data.product_id || (this.firstAnalysis && notEnoughReviews)) {
-        // Product is either new to us or (bug 1848695) it's the initial page load of a product
-        // with not enough reviews.
+      if (!this.data.product_id) {
+        // Product is new to us.
         return html`<unanalyzed-product-card
           productUrl=${ifDefined(this.productUrl)}
         ></unanalyzed-product-card>`;
       }
 
-      if (notEnoughReviews) {
-        // We already saw and tried to analyze this product before, but there are not enough reviews
-        // to make a detailed analysis.
-        return html`<shopping-message-bar
-          type="not-enough-reviews"
-        ></shopping-message-bar>`;
-      }
       // We successfully analyzed the product before, but the current analysis is outdated and can be updated
       // via a re-analysis.
       return html`
@@ -229,6 +230,14 @@ export class ShoppingContainer extends MozLitElement {
         ></shopping-message-bar>
         ${this.getAnalysisDetailsTemplate()}
       `;
+    }
+
+    if (this.data.not_enough_reviews) {
+      // We already saw and tried to analyze this product before, but there are not enough reviews
+      // to make a detailed analysis.
+      return html`<shopping-message-bar
+        type="not-enough-reviews"
+      ></shopping-message-bar>`;
     }
 
     return this.getAnalysisDetailsTemplate();
@@ -318,6 +327,7 @@ export class ShoppingContainer extends MozLitElement {
       ></analysis-explainer>
       ${this.recommendationTemplate()}
       <shopping-settings
+        ?adsEnabled=${this.adsEnabled}
         ?adsEnabledByUser=${this.adsEnabledByUser}
       ></shopping-settings>
     `;
@@ -336,6 +346,7 @@ export class ShoppingContainer extends MozLitElement {
       if (this.isAnalysisInProgress) {
         content = html`<shopping-message-bar
           type="analysis-in-progress"
+          progress=${this.analysisProgress}
         ></shopping-message-bar>`;
       } else {
         content = this.getLoadingTemplate();
@@ -349,13 +360,7 @@ export class ShoppingContainer extends MozLitElement {
 
   handleClick() {
     RPMSetPref("browser.shopping.experience2023.active", false);
-    this.dispatchEvent(
-      new CustomEvent("ShoppingTelemetryEvent", {
-        composed: true,
-        bubbles: true,
-        detail: ["surfaceClosed", "closeButton"],
-      })
-    );
+    Glean.shopping.surfaceClosed.record({ source: "closeButton" });
   }
 }
 

@@ -675,7 +675,9 @@ class BackgroundBuilder {
     let { manifest } = extension;
     extension.backgroundState = BACKGROUND_STATE.STARTING;
 
-    this.isWorker = Boolean(manifest.background.service_worker);
+    this.isWorker =
+      !!manifest.background.service_worker &&
+      WebExtensionPolicy.backgroundServiceWorkerEnabled;
 
     let BackgroundClass = this.isWorker ? BackgroundWorker : BackgroundPage;
 
@@ -794,11 +796,17 @@ class BackgroundBuilder {
         return;
       }
 
-      if (extension.backgroundState == BACKGROUND_STATE.SUSPENDING) {
+      if (
+        extension.backgroundState == BACKGROUND_STATE.SUSPENDING &&
+        // After we begin suspending the background, parent API calls from
+        // runtime.onSuspend listeners shouldn't cancel the suspension.
+        resetIdleDetails?.reason !== "parentApiCall"
+      ) {
         extension.backgroundState = BACKGROUND_STATE.RUNNING;
         // call runtime.onSuspendCanceled
         extension.emit("background-script-suspend-canceled");
       }
+
       this.resetIdleTimer();
 
       if (
@@ -818,7 +826,7 @@ class BackgroundBuilder {
         switch (resetIdleDetails?.reason) {
           case "event":
             category = "reset_event";
-            break;
+            return; // not break; because too frequent, see bug 1868960.
           case "hasActiveNativeAppPorts":
             category = "reset_nativeapp";
             break;
@@ -828,6 +836,9 @@ class BackgroundBuilder {
           case "pendingListeners":
             category = "reset_listeners";
             break;
+          case "parentApiCall":
+            category = "reset_parentapicall";
+            return; // not break; because too frequent, see bug 1868960.
         }
 
         ExtensionTelemetry.eventPageIdleResult.histogramAdd({

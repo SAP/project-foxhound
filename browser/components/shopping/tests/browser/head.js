@@ -1,6 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/toolkit/components/shopping/test/browser/head.js",
+  this
+);
+
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
@@ -58,11 +63,6 @@ const MOCK_POPULATED_DATA = {
   },
 };
 
-const MOCK_ERROR_OBJ = {
-  status: 422,
-  error: "Unprocessable entity",
-};
-
 const MOCK_INVALID_KEY_OBJ = {
   invalidHighlight: {
     negative: ["This is an invalid highlight and should not be visible"],
@@ -89,7 +89,8 @@ const MOCK_STALE_PRODUCT_RESPONSE = {
 const MOCK_NOT_ENOUGH_REVIEWS_PRODUCT_RESPONSE = {
   ...MOCK_UNPOPULATED_DATA,
   product_id: "ABCD123",
-  needs_analysis: true,
+  needs_analysis: false,
+  not_enough_reviews: true,
 };
 
 const MOCK_ANALYZED_PRODUCT_RESPONSE = {
@@ -123,6 +124,7 @@ const MOCK_RECOMMENDED_ADS_RESPONSE = [
     grade: "A",
     adjusted_rating: 4.6,
     sponsored: true,
+    image_blob: new Blob(new Uint8Array(), { type: "image/jpeg" }),
   },
 ];
 

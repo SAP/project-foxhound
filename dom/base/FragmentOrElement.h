@@ -17,6 +17,7 @@
 #include "mozilla/EnumSet.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/RadioGroupContainer.h"
 #include "nsCycleCollectionParticipant.h"  // NS_DECL_CYCLE_*
 #include "nsIContent.h"                    // base class
 #include "nsAtomHashKeys.h"
@@ -114,6 +115,14 @@ class FragmentOrElement : public nsIContent {
     return Children()->Length();
   }
 
+  RadioGroupContainer& OwnedRadioGroupContainer() {
+    auto* slots = ExtendedDOMSlots();
+    if (!slots->mRadioGroupContainer) {
+      slots->mRadioGroupContainer = MakeUnique<RadioGroupContainer>();
+    }
+    return *slots->mRadioGroupContainer;
+  }
+
  public:
   /**
    * If there are listeners for DOMNodeInserted event, fires the event on all
@@ -209,6 +218,17 @@ class FragmentOrElement : public nsIContent {
     UniquePtr<PopoverData> mPopoverData;
 
     /**
+     * CustomStates for the element.
+     */
+    nsTArray<RefPtr<nsAtom>> mCustomStates;
+
+    /**
+     * RadioGroupContainer for radio buttons grouped under this disconnected
+     * element.
+     */
+    UniquePtr<RadioGroupContainer> mRadioGroupContainer;
+
+    /**
      * Last remembered size (in CSS pixels) for the element.
      * @see {@link https://drafts.csswg.org/css-sizing-4/#last-remembered}
      */
@@ -226,6 +246,12 @@ class FragmentOrElement : public nsIContent {
      * the purposes of `content-visibility: auto.
      */
     Maybe<bool> mVisibleForContentVisibility;
+
+    /**
+     * Whether content-visibility: auto is temporarily visible for
+     * the purposes of the descendant of scrollIntoView.
+     */
+    bool mTemporarilyVisibleForScrolledIntoViewDescendant = false;
 
     /**
      * Explicitly set attr-elements, see

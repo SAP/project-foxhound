@@ -1,4 +1,4 @@
-// |reftest| skip-if(!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration()['decorators'])) -- decorators is not enabled unconditionally
+// |reftest| skip-if(!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration('decorators'))) -- decorators is not enabled unconditionally
 // This file was procedurally generated from the following sources:
 // - src/decorator/decorator-member-expr-private-identifier.case
 // - src/decorator/syntax/class-valid/cls-expr-decorators-valid-syntax.template
@@ -33,7 +33,7 @@ info: |
 ---*/
 
 
-var C = class {
+class C {
   static #$() {}
   static #_() {}
   static #\u{6F}() {}
@@ -44,7 +44,7 @@ var C = class {
   static #await() {}
 
   static {
-    var C = @C.#$
+    var D = @C.#$
     @C.#_
     @C.#\u{6F}
     @C.#\u2118

@@ -297,7 +297,11 @@ def setup_browsertime(config, tasks):
             "by-test-platform": {
                 "android.*": ["browsertime", "linux64-geckodriver", "linux64-node-16"],
                 "linux.*": ["browsertime", "linux64-geckodriver", "linux64-node-16"],
-                "macosx.*": ["browsertime", "macosx64-geckodriver", "macosx64-node-16"],
+                "macosx.*": [
+                    "browsertime",
+                    "macosx64-geckodriver",
+                    "macosx64-node-16",
+                ],
                 "windows.*aarch64.*": [
                     "browsertime",
                     "win32-geckodriver",
@@ -325,35 +329,37 @@ def setup_browsertime(config, tasks):
 
         cd_fetches = {
             "android.*": [
-                "linux64-chromedriver-115",
-                "linux64-chromedriver-116",
                 "linux64-chromedriver-117",
+                "linux64-chromedriver-118",
+                "linux64-chromedriver-119",
             ],
             "linux.*": [
-                "linux64-chromedriver-115",
-                "linux64-chromedriver-116",
                 "linux64-chromedriver-117",
+                "linux64-chromedriver-118",
+                "linux64-chromedriver-119",
             ],
             "macosx.*": [
-                "mac64-chromedriver-109",
-                "mac64-chromedriver-115",
-                "mac64-chromedriver-116",
+                "mac-arm-chromedriver-117",
+                "mac-arm-chromedriver-118",
+                "mac-arm-chromedriver-119",
                 "mac64-chromedriver-117",
+                "mac64-chromedriver-118",
+                "mac64-chromedriver-119",
             ],
             "windows.*aarch64.*": [
-                "win32-chromedriver-115",
-                "win32-chromedriver-116",
                 "win32-chromedriver-117",
+                "win32-chromedriver-118",
+                "win32-chromedriver-119",
             ],
             "windows.*-32.*": [
-                "win32-chromedriver-115",
-                "win32-chromedriver-116",
                 "win32-chromedriver-117",
+                "win32-chromedriver-118",
+                "win32-chromedriver-119",
             ],
             "windows.*-64.*": [
-                "win32-chromedriver-115",
-                "win32-chromedriver-116",
                 "win32-chromedriver-117",
+                "win32-chromedriver-118",
+                "win32-chromedriver-119",
             ],
         }
 
@@ -363,6 +369,7 @@ def setup_browsertime(config, tasks):
             "windows.*aarch64.*": ["win32-chromium"],
             "windows.*-32.*": ["win32-chromium"],
             "windows.*-64.*": ["win64-chromium"],
+            "android.*": ["linux64-chromium"],
         }
 
         cd_extracted_name = {
@@ -375,7 +382,11 @@ def setup_browsertime(config, tasks):
             # Only add the chromedriver fetches when chrome is running
             for platform in cd_fetches:
                 fs["by-test-platform"][platform].extend(cd_fetches[platform])
-        if "--app=chromium" in extra_options or "--app=custom-car" in extra_options:
+        if (
+            "--app=chromium" in extra_options
+            or "--app=custom-car" in extra_options
+            or "--app=cstm-car-m" in extra_options
+        ):
             for platform in chromium_fetches:
                 fs["by-test-platform"][platform].extend(chromium_fetches[platform])
 
@@ -389,7 +400,7 @@ def setup_browsertime(config, tasks):
             }
 
         # Disable the Raptor install step
-        if "--app=chrome-m" in extra_options:
+        if "--app=chrome-m" in extra_options or "--app=cstm-car-m" in extra_options:
             extra_options.append("--noinstall")
 
         task.setdefault("fetches", {}).setdefault("fetch", []).extend(
@@ -449,7 +460,7 @@ def get_mobile_project(task):
     if not task["build-platform"].startswith("android"):
         return
 
-    mobile_projects = ("fenix", "geckoview", "refbrow", "chrome-m")
+    mobile_projects = ("fenix", "geckoview", "refbrow", "chrome-m", "cstm-car-m")
 
     for name in mobile_projects:
         if name in task["test-name"]:
@@ -743,7 +754,7 @@ test_setting_description_schema = Schema(
             },
             Optional("device"): str,
             Optional("display"): "wayland",
-            Optional("machine"): Any("ref-hw-2017"),
+            Optional("machine"): Any("ref-hw-2017", "hw-ref"),
         },
         "build": {
             Required("type"): Any("opt", "debug", "debug-isolated-process"),
@@ -805,6 +816,7 @@ def set_test_setting(config, tasks):
     dash_attrs = [
         "clang-trunk",
         "ref-hw-2017",
+        "hw-ref",
     ]
     dash_token = "%D%"
     platform_re = re.compile(r"(\D+)(\d*)")
@@ -859,11 +871,17 @@ def set_test_setting(config, tasks):
             if parts[0].isdigit():
                 os_build = parts.pop(0)
 
-            if parts[0] == "ref-hw-2017":
+            if parts and parts[0] == "ref-hw-2017":
                 machine = parts.pop(0)
 
-            if parts[0] == "wayland":
+            if parts and parts[0] == "hw-ref":
+                machine = parts.pop(0)
+
+            if parts and parts[0] == "wayland":
                 display = parts.pop(0)
+
+            if parts and parts[0] == "aarch64":
+                arch = parts.pop(0)
 
         # It's not always possible to glean the exact architecture used from
         # the task, so sometimes this will just be set to "32" or "64".

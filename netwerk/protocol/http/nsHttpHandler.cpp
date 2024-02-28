@@ -337,26 +337,30 @@ nsresult nsHttpHandler::Init() {
     Telemetry::ScalarSet(Telemetry::ScalarID::NETWORKING_HTTPS_RR_PREFS_USAGE,
                          static_cast<uint32_t>(usageOfHTTPSRRPrefs.to_ulong()));
     mActivityDistributor = components::HttpActivityDistributor::Service();
+
+    auto initQLogDir = [&]() {
+      if (!StaticPrefs::network_http_http3_enable_qlog()) {
+        return EmptyCString();
+      }
+
+      nsCOMPtr<nsIFile> qlogDir;
+      nsresult rv =
+          NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(qlogDir));
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return EmptyCString();
+      }
+
+      nsAutoCString dirName("qlog_");
+      dirName.AppendInt(mProcessId);
+      rv = qlogDir->AppendNative(dirName);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return EmptyCString();
+      }
+
+      return qlogDir->HumanReadablePath();
+    };
+    mHttp3QlogDir = initQLogDir();
   }
-
-  auto initQLogDir = [&]() {
-    nsCOMPtr<nsIFile> qlogDir;
-    nsresult rv =
-        NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(qlogDir));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return EmptyCString();
-    }
-
-    nsAutoCString dirName("qlog_");
-    dirName.AppendInt(mProcessId);
-    rv = qlogDir->AppendNative(dirName);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return EmptyCString();
-    }
-
-    return qlogDir->HumanReadablePath();
-  };
-  mHttp3QlogDir = initQLogDir();
 
   // monitor some preference changes
   Preferences::RegisterPrefixCallbacks(nsHttpHandler::PrefsChanged,
@@ -384,15 +388,7 @@ nsresult nsHttpHandler::Init() {
     mAppVersion.AssignLiteral(MOZ_APP_UA_VERSION);
   }
 
-  mMisc.AssignLiteral("rv:");
-  bool isFirefox = mAppName.EqualsLiteral("Firefox");
-  uint32_t forceVersion =
-      mozilla::StaticPrefs::network_http_useragent_forceRVOnly();
-  if (forceVersion && (isFirefox || mCompatFirefoxEnabled)) {
-    mMisc.Append(nsPrintfCString("%u.0", forceVersion));
-  } else {
-    mMisc.AppendLiteral(MOZILLA_UAVERSION);
-  }
+  mMisc.AssignLiteral("rv:" MOZILLA_UAVERSION);
 
   // Generate the spoofed User Agent for fingerprinting resistance.
   nsRFPService::GetSpoofedUserAgent(mSpoofedUserAgent, true);
@@ -861,14 +857,7 @@ void nsHttpHandler::InitUserAgentComponents() {
   rv = infoService->GetPropertyAsAString(u"release_version"_ns, androidVersion);
   if (NS_SUCCEEDED(rv)) {
     mPlatform += " ";
-    // If the 2nd character is a ".", we know the major version is a single
-    // digit. If we're running on a version below 4 we pretend to be on
-    // Android KitKat (4.4) to work around scripts sniffing for low versions.
-    if (androidVersion[1] == 46 && androidVersion[0] < 52) {
-      mPlatform += "4.4";
-    } else {
-      mPlatform += NS_LossyConvertUTF16toASCII(androidVersion);
-    }
+    mPlatform += NS_LossyConvertUTF16toASCII(androidVersion);
   }
 
   // Add the `Mobile` or `TV` token when running on device.

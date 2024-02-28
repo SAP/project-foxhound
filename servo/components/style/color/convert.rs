@@ -13,6 +13,7 @@
 //! with the `euclid` library.
 
 use crate::color::ColorComponents;
+use crate::values::normalize;
 
 type Transform = euclid::default::Transform3D<f32>;
 type Vector = euclid::default::Vector3D<f32>;
@@ -65,7 +66,8 @@ pub fn hsl_to_rgb(from: &ColorComponents) -> ColorComponents {
         }
     }
 
-    let ColorComponents(hue, saturation, lightness) = *from;
+    // Convert missing components to 0.0.
+    let ColorComponents(hue, saturation, lightness) = from.map(normalize);
 
     let t2 = if lightness <= 0.5 {
         lightness * (saturation + 1.0)
@@ -108,7 +110,8 @@ pub fn rgb_to_hsl(from: &ColorComponents) -> ColorComponents {
 /// https://drafts.csswg.org/css-color-4/#hwb-to-rgb
 #[inline]
 pub fn hwb_to_rgb(from: &ColorComponents) -> ColorComponents {
-    let ColorComponents(hue, whiteness, blackness) = *from;
+    // Convert missing components to 0.0.
+    let ColorComponents(hue, whiteness, blackness) = from.map(normalize);
 
     if whiteness + blackness > 1.0 {
         let gray = whiteness / (whiteness + blackness);
@@ -135,23 +138,34 @@ pub fn rgb_to_hwb(from: &ColorComponents) -> ColorComponents {
 
 /// Convert from the rectangular orthogonal to the cylindrical polar coordinate
 /// system. This is used to convert (ok)lab to (ok)lch.
-/// <https://drafts.csswg.org/css-color-4/#color-conversion-code>
+/// <https://drafts.csswg.org/css-color-4/#lab-to-lch>
 #[inline]
 pub fn orthogonal_to_polar(from: &ColorComponents) -> ColorComponents {
     let ColorComponents(lightness, a, b) = *from;
 
-    let hue = normalize_hue(b.atan2(a).to_degrees());
     let chroma = (a * a + b * b).sqrt();
+
+    // Very small chroma values make the hue component powerless.
+    let hue = if chroma.abs() < 1.0e-6 {
+        f32::NAN
+    } else {
+        normalize_hue(b.atan2(a).to_degrees())
+    };
 
     ColorComponents(lightness, chroma, hue)
 }
 
 /// Convert from the cylindrical polar to the rectangular orthogonal coordinate
 /// system. This is used to convert (ok)lch to (ok)lab.
-/// <https://drafts.csswg.org/css-color-4/#color-conversion-code>
+/// <https://drafts.csswg.org/css-color-4/#lch-to-lab>
 #[inline]
 pub fn polar_to_orthogonal(from: &ColorComponents) -> ColorComponents {
     let ColorComponents(lightness, chroma, hue) = *from;
+
+    // A missing hue component results in an achromatic color.
+    if hue.is_nan() {
+        return ColorComponents(lightness, 0.0, 0.0);
+    }
 
     let hue = hue.to_radians();
     let a = chroma * hue.cos();

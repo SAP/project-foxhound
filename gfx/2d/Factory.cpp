@@ -51,6 +51,8 @@
 #  include <stdlib.h>
 #  include "HelpersD2D.h"
 #  include "DXVA2Manager.h"
+#  include "ImageContainer.h"
+#  include "mozilla/layers/LayersSurfaces.h"
 #  include "mozilla/layers/TextureD3D11.h"
 #  include "nsWindowsHelpers.h"
 #endif
@@ -594,11 +596,10 @@ already_AddRefed<UnscaledFont> Factory::CreateUnscaledFontFromFontDescriptor(
 #ifdef XP_DARWIN
 already_AddRefed<ScaledFont> Factory::CreateScaledFontForMacFont(
     CGFontRef aCGFont, const RefPtr<UnscaledFont>& aUnscaledFont, Float aSize,
-    const DeviceColor& aFontSmoothingBackgroundColor, bool aUseFontSmoothing,
-    bool aApplySyntheticBold, bool aHasColorGlyphs) {
-  return MakeAndAddRef<ScaledFontMac>(
-      aCGFont, aUnscaledFont, aSize, false, aFontSmoothingBackgroundColor,
-      aUseFontSmoothing, aApplySyntheticBold, aHasColorGlyphs);
+    bool aUseFontSmoothing, bool aApplySyntheticBold, bool aHasColorGlyphs) {
+  return MakeAndAddRef<ScaledFontMac>(aCGFont, aUnscaledFont, aSize, false,
+                                      aUseFontSmoothing, aApplySyntheticBold,
+                                      aHasColorGlyphs);
 }
 #endif
 
@@ -1153,6 +1154,34 @@ Factory::CreateBGRA8DataSourceSurfaceForD3D11Texture(
     return nullptr;
   }
   return destTexture.forget();
+}
+
+/* static */ nsresult Factory::CreateSdbForD3D11Texture(
+    ID3D11Texture2D* aSrcTexture, const IntSize& aSrcSize,
+    layers::SurfaceDescriptorBuffer& aSdBuffer,
+    const std::function<layers::MemoryOrShmem(uint32_t)>& aAllocate) {
+  D3D11_TEXTURE2D_DESC srcDesc = {0};
+  aSrcTexture->GetDesc(&srcDesc);
+  if (srcDesc.Width != uint32_t(aSrcSize.width) ||
+      srcDesc.Height != uint32_t(aSrcSize.height) ||
+      srcDesc.Format != DXGI_FORMAT_B8G8R8A8_UNORM) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  const auto format = gfx::SurfaceFormat::B8G8R8A8;
+  uint8_t* buffer = nullptr;
+  int32_t stride = 0;
+  nsresult rv = layers::Image::AllocateSurfaceDescriptorBufferRgb(
+      aSrcSize, format, buffer, aSdBuffer, stride, aAllocate);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  if (!ReadbackTexture(buffer, stride, aSrcTexture)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
 }
 
 /* static */

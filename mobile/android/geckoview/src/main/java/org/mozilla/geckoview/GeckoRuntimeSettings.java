@@ -98,6 +98,32 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     /**
+     * Set the crash threshold within the timeframe before spawning is disabled for the remote
+     * extensions process.
+     *
+     * @param crashThreshold The crash threshold within the timeframe before spawning is disabled.
+     * @return This Builder instance.
+     */
+    public @NonNull Builder extensionsProcessCrashThreshold(final @NonNull Integer crashThreshold) {
+      getSettings().mExtensionsProcessCrashThreshold.set(crashThreshold);
+      return this;
+    }
+
+    /**
+     * Set the crash threshold timeframe before spawning is disabled for the remote extensions
+     * process. Crashes that are older than the current time minus timeframeMs will not be counted
+     * towards meeting the threshold.
+     *
+     * @param timeframeMs The timeframe for the crash threshold in milliseconds. Any crashes older
+     *     than the current time minus the timeframeMs are not counted.
+     * @return This Builder instance.
+     */
+    public @NonNull Builder extensionsProcessCrashTimeframe(final @NonNull Long timeframeMs) {
+      getSettings().mExtensionsProcessCrashTimeframe.set(timeframeMs);
+      return this;
+    }
+
+    /**
      * Set whether JavaScript support should be enabled.
      *
      * @param flag A flag determining whether JavaScript should be enabled. Default is true.
@@ -299,6 +325,17 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
      */
     public @NonNull Builder loginAutofillEnabled(final boolean enabled) {
       getSettings().setLoginAutofillEnabled(enabled);
+      return this;
+    }
+
+    /**
+     * Set whether a candidate page should automatically offer a translation via a popup.
+     *
+     * @param enabled A flag determining whether the translations offer popup should be enabled.
+     * @return The builder instance.
+     */
+    public @NonNull Builder translationsOfferPopup(final boolean enabled) {
+      getSettings().setTranslationsOfferPopup(enabled);
       return this;
     }
 
@@ -523,7 +560,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   /* package */ final Pref<Integer> mGlMsaaLevel = new Pref<>("webgl.msaa-samples", 4);
   /* package */ final Pref<Boolean> mTelemetryEnabled =
       new Pref<>("toolkit.telemetry.geckoview.streaming", false);
-  /* package */ final Pref<String> mGeckoViewLogLevel = new Pref<>("geckoview.logging", "Debug");
+  /* package */ final Pref<String> mGeckoViewLogLevel =
+      new Pref<>("geckoview.logging", BuildConfig.DEBUG_BUILD ? "Debug" : "Warn");
   /* package */ final Pref<Boolean> mConsoleServiceToLogcat =
       new Pref<>("consoleservice.logcat", true);
   /* package */ final Pref<Boolean> mDevToolsConsoleToLogcat =
@@ -533,6 +571,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new Pref<>("browser.ui.zoom.force-user-scalable", false);
   /* package */ final Pref<Boolean> mAutofillLogins =
       new Pref<Boolean>("signon.autofillForms", true);
+  /* package */ final Pref<Boolean> mAutomaticallyOfferPopup =
+      new Pref<Boolean>("browser.translations.automaticallyPopup", true);
   /* package */ final Pref<Boolean> mHttpsOnly =
       new Pref<Boolean>("dom.security.https_only_mode", false);
   /* package */ final Pref<Boolean> mHttpsOnlyPrivateMode =
@@ -542,6 +582,10 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new Pref<>("extensions.webapi.enabled", false);
   /* package */ final PrefWithoutDefault<Boolean> mExtensionsProcess =
       new PrefWithoutDefault<Boolean>("extensions.webextensions.remote");
+  /* package */ final PrefWithoutDefault<Long> mExtensionsProcessCrashTimeframe =
+      new PrefWithoutDefault<Long>("extensions.webextensions.crash.timeframe");
+  /* package */ final PrefWithoutDefault<Integer> mExtensionsProcessCrashThreshold =
+      new PrefWithoutDefault<Integer>("extensions.webextensions.crash.threshold");
 
   /* package */ int mPreferredColorScheme = COLOR_SCHEME_SYSTEM;
 
@@ -692,6 +736,50 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   }
 
   /**
+   * Get the crash threshold before spawning is disabled for the remote extensions process.
+   *
+   * @return the crash threshold
+   */
+  public @Nullable Integer getExtensionsProcessCrashThreshold() {
+    return mExtensionsProcessCrashThreshold.get();
+  }
+
+  /**
+   * Get the timeframe in milliseconds for the threshold before spawning is disabled for the remote
+   * extensions process.
+   *
+   * @return the timeframe in milliseconds for the crash threshold
+   */
+  public @Nullable Long getExtensionsProcessCrashTimeframe() {
+    return mExtensionsProcessCrashTimeframe.get();
+  }
+
+  /**
+   * Set the crash threshold before disabling spawning of the extensions remote process.
+   *
+   * @param crashThreshold max crashes allowed
+   * @return This GeckoRuntimeSettings instance.
+   */
+  public @NonNull GeckoRuntimeSettings setExtensionsProcessCrashThreshold(
+      final @NonNull Integer crashThreshold) {
+    mExtensionsProcessCrashThreshold.commit(crashThreshold);
+    return this;
+  }
+
+  /**
+   * Set the timeframe for the extensions process crash threshold. Any crashes older than the
+   * current time minus the timeframe are not included in the crash count.
+   *
+   * @param timeframeMs time in milliseconds
+   * @return This GeckoRuntimeSettings instance.
+   */
+  public @NonNull GeckoRuntimeSettings setExtensionsProcessCrashTimeframe(
+      final @NonNull Long timeframeMs) {
+    mExtensionsProcessCrashTimeframe.commit(timeframeMs);
+    return this;
+  }
+
+  /**
    * Get whether remote debugging support is enabled.
    *
    * @return True if remote debugging support is enabled.
@@ -717,7 +805,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
    * @return Whether web fonts support is enabled.
    */
   public boolean getWebFontsEnabled() {
-    return mWebFonts.get() != 0 ? true : false;
+    return mWebFonts.get() != 0;
   }
 
   /**
@@ -891,12 +979,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
     final String[] locales = new String[1];
     final Locale locale = Locale.getDefault();
-    if (VERSION.SDK_INT >= 21) {
-      locales[0] = locale.toLanguageTag();
-      return locales;
-    }
-
-    locales[0] = getLanguageTag(locale);
+    locales[0] = locale.toLanguageTag();
     return locales;
   }
 
@@ -1264,6 +1347,27 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
    */
   public boolean getLoginAutofillEnabled() {
     return mAutofillLogins.get();
+  }
+
+  /**
+   * Set whether automatic popups should appear for offering translations on candidate pages.
+   *
+   * @param enabled A flag determining whether automatic offer popups should be enabled for
+   *     translations.
+   * @return The builder instance.
+   */
+  public @NonNull GeckoRuntimeSettings setTranslationsOfferPopup(final boolean enabled) {
+    mAutomaticallyOfferPopup.commit(enabled);
+    return this;
+  }
+
+  /**
+   * Get whether automatic popups for translations is enabled.
+   *
+   * @return True if login automatic popups for translations are enabled.
+   */
+  public boolean getTranslationsOfferPopup() {
+    return mAutomaticallyOfferPopup.get();
   }
 
   /**

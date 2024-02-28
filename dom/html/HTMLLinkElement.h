@@ -12,8 +12,8 @@
 #include "mozilla/dom/LinkStyle.h"
 #include "mozilla/dom/Link.h"
 #include "mozilla/WeakPtr.h"
-#include "nsGenericHTMLElement.h"
 #include "nsDOMTokenList.h"
+#include "nsGenericHTMLElement.h"
 
 namespace mozilla {
 class EventChainPostVisitor;
@@ -40,7 +40,6 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   NS_DECL_ADDSIZEOFEXCLUDINGTHIS
 
   void LinkAdded();
-  void LinkRemoved();
 
   // nsINode
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
@@ -61,7 +60,7 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
                       nsIPrincipal* aMaybeScriptedPrincipal,
                       nsAttrValue& aResult) override;
 
-  void CreateAndDispatchEvent(Document* aDoc, const nsAString& aEventName);
+  void CreateAndDispatchEvent(const nsAString& aEventName);
 
   // WebIDL
   bool Disabled() const;

@@ -140,6 +140,8 @@ class SmartMockCubebStream;
 // Represents the fake cubeb_stream. The context instance is needed to
 // provide access on cubeb_ops struct.
 class MockCubebStream {
+  friend class MockCubeb;
+
   // These members need to have the exact same memory layout as a real
   // cubeb_stream, so that AsMock() returns a pointer to this that can be used
   // as a cubeb_stream.
@@ -147,13 +149,18 @@ class MockCubebStream {
   void* mUserPtr;
 
  public:
-  MockCubebStream(cubeb* aContext, cubeb_devid aInputDevice,
+  enum class KeepProcessing { No, Yes };
+  enum class RunningMode { Automatic, Manual };
+
+  MockCubebStream(cubeb* aContext, char const* aStreamName,
+                  cubeb_devid aInputDevice,
                   cubeb_stream_params* aInputStreamParams,
                   cubeb_devid aOutputDevice,
                   cubeb_stream_params* aOutputStreamParams,
                   cubeb_data_callback aDataCallback,
                   cubeb_state_callback aStateCallback, void* aUserPtr,
-                  SmartMockCubebStream* aSelf, bool aFrozenStart);
+                  SmartMockCubebStream* aSelf, RunningMode aRunningMode,
+                  bool aFrozenStart);
 
   ~MockCubebStream();
 
@@ -161,12 +168,14 @@ class MockCubebStream {
   int Stop();
   uint64_t Position();
   void Destroy();
+  int SetName(char const* aName);
   int RegisterDeviceChangedCallback(
       cubeb_device_changed_callback aDeviceChangedCallback);
 
   cubeb_stream* AsCubebStream();
   static MockCubebStream* AsMock(cubeb_stream* aStream);
 
+  char const* StreamName() const { return mName.get(); }
   cubeb_devid GetInputDeviceID() const;
   cubeb_devid GetOutputDeviceID() const;
 
@@ -179,6 +188,9 @@ class MockCubebStream {
   void ForceError();
   void ForceDeviceChanged();
   void Thaw();
+
+  // For RunningMode::Manual, drive this MockCubebStream forward.
+  KeepProcessing ManualDataCallback(long aNrFrames);
 
   // Enable input recording for this driver. This is best called before
   // the thread is running, but is safe to call whenever.
@@ -193,6 +205,7 @@ class MockCubebStream {
   // only works once.
   nsTArray<AudioDataValue>&& TakeRecordedInput();
 
+  MediaEventSource<nsCString>& NameSetEvent();
   MediaEventSource<cubeb_state>& StateEvent();
   MediaEventSource<uint32_t>& FramesProcessedEvent();
   MediaEventSource<uint32_t>& FramesVerifiedEvent();
@@ -201,10 +214,12 @@ class MockCubebStream {
   MediaEventSource<void>& ErrorForcedEvent();
   MediaEventSource<void>& DeviceChangeForcedEvent();
 
-  enum class KeepProcessing { No, Yes };
+ private:
+  KeepProcessing Process(long aNrFrames);
   KeepProcessing Process10Ms();
 
  public:
+  const RunningMode mRunningMode;
   const bool mHasInput;
   const bool mHasOutput;
   SmartMockCubebStream* const mSelf;
@@ -212,6 +227,7 @@ class MockCubebStream {
  private:
   void NotifyState(cubeb_state aState);
 
+  static constexpr long kMaxNrFrames = 1920;
   // Monitor used to block start until mFrozenStart is false.
   Monitor mFrozenStartMonitor MOZ_UNANNOTATED;
   // Whether this stream should wait for an explicit start request before
@@ -229,14 +245,16 @@ class MockCubebStream {
   // available via `TakeRecordedInput`.
   std::atomic_bool mInputRecordingEnabled{false};
   // The audio buffer used on data callback.
-  AudioDataValue mOutputBuffer[MAX_OUTPUT_CHANNELS * 1920] = {};
-  AudioDataValue mInputBuffer[MAX_INPUT_CHANNELS * 1920] = {};
+  AudioDataValue mOutputBuffer[MAX_OUTPUT_CHANNELS * kMaxNrFrames] = {};
+  AudioDataValue mInputBuffer[MAX_INPUT_CHANNELS * kMaxNrFrames] = {};
   // The audio callback
   cubeb_data_callback mDataCallback = nullptr;
   // The stream state callback
   cubeb_state_callback mStateCallback = nullptr;
   // The device changed callback
   cubeb_device_changed_callback mDeviceChangedCallback = nullptr;
+  // A name for this stream
+  nsCString mName;
   // The stream params
   cubeb_stream_params mOutputParams = {};
   cubeb_stream_params mInputParams = {};
@@ -253,6 +271,7 @@ class MockCubebStream {
   AudioGenerator<AudioDataValue> mAudioGenerator;
   AudioVerifier<AudioDataValue> mAudioVerifier;
 
+  MediaEventProducer<nsCString> mNameSetEvent;
   MediaEventProducer<cubeb_state> mStateEvent;
   MediaEventProducer<uint32_t> mFramesProcessedEvent;
   MediaEventProducer<uint32_t> mFramesVerifiedEvent;
@@ -273,16 +292,18 @@ class SmartMockCubebStream
       public SupportsThreadSafeWeakPtr<SmartMockCubebStream> {
  public:
   MOZ_DECLARE_REFCOUNTED_TYPENAME(SmartMockCubebStream)
-  SmartMockCubebStream(cubeb* aContext, cubeb_devid aInputDevice,
+  SmartMockCubebStream(cubeb* aContext, char const* aStreamName,
+                       cubeb_devid aInputDevice,
                        cubeb_stream_params* aInputStreamParams,
                        cubeb_devid aOutputDevice,
                        cubeb_stream_params* aOutputStreamParams,
                        cubeb_data_callback aDataCallback,
                        cubeb_state_callback aStateCallback, void* aUserPtr,
-                       bool aFrozenStart)
-      : MockCubebStream(aContext, aInputDevice, aInputStreamParams,
+                       RunningMode aRunningMode, bool aFrozenStart)
+      : MockCubebStream(aContext, aStreamName, aInputDevice, aInputStreamParams,
                         aOutputDevice, aOutputStreamParams, aDataCallback,
-                        aStateCallback, aUserPtr, this, aFrozenStart) {}
+                        aStateCallback, aUserPtr, this, aRunningMode,
+                        aFrozenStart) {}
 };
 
 // This class has two facets: it is both a fake cubeb backend that is intended
@@ -299,7 +320,10 @@ class MockCubeb {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MockCubeb);
 
  public:
+  using RunningMode = MockCubebStream::RunningMode;
+
   MockCubeb();
+  explicit MockCubeb(RunningMode aRunningMode);
   // Cubeb backend implementation
   // This allows passing this class as a cubeb* instance.
   // cubeb_destroy(context) should eventually be called on the return value
@@ -371,7 +395,7 @@ class MockCubeb {
   void UnforceAudioThread();
 
   int StreamInit(cubeb* aContext, cubeb_stream** aStream,
-                 cubeb_devid aInputDevice,
+                 char const* aStreamName, cubeb_devid aInputDevice,
                  cubeb_stream_params* aInputStreamParams,
                  cubeb_devid aOutputDevice,
                  cubeb_stream_params* aOutputStreamParams,
@@ -413,6 +437,7 @@ class MockCubeb {
   // notification via a system callback. If not, Gecko is expected to re-query
   // the list every time.
   bool mSupportsDeviceCollectionChangedCallback = true;
+  const RunningMode mRunningMode;
   Atomic<bool> mStreamInitErrorState;
   // Whether new MockCubebStreams should be frozen on start.
   Atomic<bool> mStreamStartFreezeEnabled{false};
@@ -466,8 +491,9 @@ int cubeb_mock_stream_init(
     unsigned int latency, cubeb_data_callback data_callback,
     cubeb_state_callback state_callback, void* user_ptr) {
   return MockCubeb::AsMock(context)->StreamInit(
-      context, stream, input_device, input_stream_params, output_device,
-      output_stream_params, data_callback, state_callback, user_ptr);
+      context, stream, stream_name, input_device, input_stream_params,
+      output_device, output_stream_params, data_callback, state_callback,
+      user_ptr);
 }
 
 int cubeb_mock_stream_start(cubeb_stream* stream) {
@@ -507,6 +533,7 @@ static int cubeb_mock_stream_set_volume(cubeb_stream* stream, float volume) {
 
 static int cubeb_mock_stream_set_name(cubeb_stream* stream,
                                       char const* stream_name) {
+  return MockCubebStream::AsMock(stream)->SetName(stream_name);
   return CUBEB_OK;
 }
 

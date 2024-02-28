@@ -54,10 +54,9 @@ JSObject* AuthenticatorAttestationResponse::WrapObject(
 void AuthenticatorAttestationResponse::GetAttestationObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aValue, ErrorResult& aRv) {
   if (!mAttestationObjectCachedObj) {
-    mAttestationObjectCachedObj = ArrayBuffer::Create(
-        aCx, mAttestationObject.Length(), mAttestationObject.Elements());
-    if (!mAttestationObjectCachedObj) {
-      aRv.NoteJSContextException(aCx);
+    mAttestationObjectCachedObj =
+        ArrayBuffer::Create(aCx, mAttestationObject, aRv);
+    if (aRv.Failed()) {
       return;
     }
   }
@@ -106,10 +105,8 @@ void AuthenticatorAttestationResponse::GetAuthenticatorData(
     return;
   }
 
-  JS::Heap<JSObject*> buffer(ArrayBuffer::Create(
-      aCx, authenticatorData.Length(), authenticatorData.Elements()));
-  if (!buffer) {
-    aRv.NoteJSContextException(aCx);
+  JS::Heap<JSObject*> buffer(ArrayBuffer::Create(aCx, authenticatorData, aRv));
+  if (aRv.Failed()) {
     return;
   }
   aValue.set(buffer);
@@ -145,10 +142,8 @@ void AuthenticatorAttestationResponse::GetPublicKey(
     return;
   }
 
-  JS::Heap<JSObject*> buffer(
-      ArrayBuffer::Create(aCx, publicKey.Length(), publicKey.Elements()));
-  if (!buffer) {
-    aRv.NoteJSContextException(aCx);
+  JS::Heap<JSObject*> buffer(ArrayBuffer::Create(aCx, publicKey, aRv));
+  if (aRv.Failed()) {
     return;
   }
   aValue.set(buffer);

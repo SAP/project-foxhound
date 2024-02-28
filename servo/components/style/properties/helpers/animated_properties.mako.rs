@@ -13,8 +13,8 @@
 use crate::properties::{CSSWideKeyword, PropertyDeclaration, NonCustomPropertyIterator};
 use crate::properties::longhands;
 use crate::properties::longhands::visibility::computed_value::T as Visibility;
+use crate::properties::longhands::content_visibility::computed_value::T as ContentVisibility;
 use crate::properties::LonghandId;
-use servo_arc::Arc;
 use std::ptr;
 use std::mem;
 use fxhash::FxHashMap;
@@ -198,6 +198,11 @@ impl AnimationValue {
         id
     }
 
+    /// Returns whether this value is interpolable with another one.
+    pub fn interpolable_with(&self, other: &Self) -> bool {
+        self.animate(other, Procedure::Interpolate { progress: 0.5 }).is_ok()
+    }
+
     /// "Uncompute" this animation value in order to be used inside the CSS
     /// cascade.
     pub fn uncompute(&self) -> PropertyDeclaration {
@@ -245,7 +250,7 @@ impl AnimationValue {
     pub fn from_declaration(
         decl: &PropertyDeclaration,
         context: &mut Context,
-        extra_custom_properties: Option<<&Arc<crate::custom_properties::CustomPropertiesMap>>,
+        extra_custom_properties: Option< &crate::custom_properties::ComputedCustomProperties>,
         initial: &ComputedValues,
     ) -> Option<Self> {
         use super::PropertyDeclarationVariantRepr;
@@ -365,8 +370,7 @@ impl AnimationValue {
             PropertyDeclaration::WithVariables(ref declaration) => {
                 let mut cache = Default::default();
                 let substituted = {
-                    let custom_properties =
-                        extra_custom_properties.or_else(|| context.style().custom_properties());
+                    let custom_properties = extra_custom_properties.unwrap_or(&context.style().custom_properties());
 
                     debug_assert!(
                         context.builder.stylist.is_some(),
@@ -374,10 +378,9 @@ impl AnimationValue {
                     );
                     declaration.value.substitute_variables(
                         declaration.id,
-                        context.builder.writing_mode,
                         custom_properties,
-                        context.quirks_mode,
                         context.builder.stylist.unwrap(),
+                        context,
                         &mut cache,
                     )
                 };
@@ -578,6 +581,42 @@ impl ComputeSquaredDistance for Visibility {
 }
 
 impl ToAnimatedZero for Visibility {
+    #[inline]
+    fn to_animated_zero(&self) -> Result<Self, ()> {
+        Err(())
+    }
+}
+
+/// <https://drafts.csswg.org/css-contain-3/#content-visibility-animation>
+impl Animate for ContentVisibility {
+    #[inline]
+    fn animate(&self, other: &Self, procedure: Procedure) -> Result<Self, ()> {
+        match procedure {
+            Procedure::Interpolate { .. } => {
+                let (this_weight, other_weight) = procedure.weights();
+                match (*self, *other) {
+                    (ContentVisibility::Hidden, _) => {
+                        Ok(if other_weight > 0.0 { *other } else { *self })
+                    },
+                    (_, ContentVisibility::Hidden) => {
+                        Ok(if this_weight > 0.0 { *self } else { *other })
+                    },
+                    _ => Err(()),
+                }
+            },
+            _ => Err(()),
+        }
+    }
+}
+
+impl ComputeSquaredDistance for ContentVisibility {
+    #[inline]
+    fn compute_squared_distance(&self, other: &Self) -> Result<SquaredDistance, ()> {
+        Ok(SquaredDistance::from_sqrt(if *self == *other { 0. } else { 1. }))
+    }
+}
+
+impl ToAnimatedZero for ContentVisibility {
     #[inline]
     fn to_animated_zero(&self) -> Result<Self, ()> {
         Err(())

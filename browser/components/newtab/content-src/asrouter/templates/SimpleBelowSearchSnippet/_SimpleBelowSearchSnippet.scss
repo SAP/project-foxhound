@@ -1,3 +1,4 @@
+/* stylelint-disable max-nesting-depth */
 
 .below-search-snippet {
   margin: 0 auto 16px;
@@ -61,7 +62,7 @@
       width: 696px;
     }
 
-    @media (max-width: 865px) {
+    @media (width <= 865px) {
       margin-inline-start: 0;
     }
 

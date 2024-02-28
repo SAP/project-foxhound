@@ -158,6 +158,9 @@ def mock_mozinfo():
             "tsan": tsan,
             "appname": "firefox",
             "condprof": False,
+            "canvas": False,
+            "webgpu": False,
+            "privatebrowsing": False,
         }
 
     return inner

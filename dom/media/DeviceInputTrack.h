@@ -161,7 +161,7 @@ class DeviceInputTrack : public ProcessedMediaTrack {
   // audio settings via the attached AudioDataListener, and delivers the
   // notifications when it needs.
   static NotNull<RefPtr<DeviceInputTrack>> OpenAudio(
-      MediaTrackGraphImpl* aGraph, CubebUtils::AudioDeviceID aDeviceId,
+      MediaTrackGraph* aGraph, CubebUtils::AudioDeviceID aDeviceId,
       const PrincipalHandle& aPrincipalHandle,
       DeviceInputConsumerTrack* aConsumer);
   // Destroy the DeviceInputTrack reference obtained by the above API. The
@@ -177,7 +177,7 @@ class DeviceInputTrack : public ProcessedMediaTrack {
   uint32_t MaxRequestedInputChannels() const;
   bool HasVoiceInput() const;
   // Deliver notification to its users.
-  void DeviceChanged(MediaTrackGraphImpl* aGraph) const;
+  void DeviceChanged(MediaTrackGraph* aGraph) const;
 
   // Any thread:
   DeviceInputTrack* AsDeviceInputTrack() override { return this; }
@@ -220,10 +220,9 @@ class NativeInputTrack final : public DeviceInputTrack {
   uint32_t NumberOfChannels() const override;
 
   // Graph thread APIs: Get input audio data and event from graph.
-  void NotifyInputStopped(MediaTrackGraphImpl* aGraph);
-  void NotifyInputData(MediaTrackGraphImpl* aGraph,
-                       const AudioDataValue* aBuffer, size_t aFrames,
-                       TrackRate aRate, uint32_t aChannels,
+  void NotifyInputStopped(MediaTrackGraph* aGraph);
+  void NotifyInputData(MediaTrackGraph* aGraph, const AudioDataValue* aBuffer,
+                       size_t aFrames, TrackRate aRate, uint32_t aChannels,
                        uint32_t aAlreadyBuffered);
 
   // Any thread
@@ -269,15 +268,17 @@ class NonNativeInputTrack final : public DeviceInputTrack {
  private:
   ~NonNativeInputTrack() = default;
 
-  // Graph driver thread only.
-  bool CheckGraphDriverChanged();
-
   // Graph thread only.
   RefPtr<AudioInputSource> mAudioSource;
   AudioInputSource::Id mSourceIdNumber;
 
-  // Graph driver thread only.
-  std::thread::id mGraphDriverThreadId;
+#ifdef DEBUG
+  // Graph thread only.
+  bool HasGraphThreadChanged();
+  // Graph thread only.  Identifies a thread only between StartAudio()
+  // and StopAudio(), to track the thread used with mAudioSource.
+  std::thread::id mGraphThreadId;
+#endif
 };
 
 class AudioInputSourceListener : public AudioInputSource::EventListener {

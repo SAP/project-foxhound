@@ -111,6 +111,7 @@ pub enum SortKey {
     Em,
     Ex,
     Ic,
+    Lh,
     Lvb,
     Lvh,
     Lvi,
@@ -119,6 +120,7 @@ pub enum SortKey {
     Lvw,
     Px,
     Rem,
+    Rlh,
     Sec,
     Svb,
     Svh,
@@ -217,6 +219,7 @@ bitflags! {
     /// This is used as a hint for the parser to fast-reject invalid
     /// expressions. Numbers are always allowed because they multiply other
     /// units.
+    #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct CalcUnits: u8 {
         /// <length>
         const LENGTH = 1 << 0;
@@ -563,10 +566,23 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                 }
             },
             CalcNode::Round {
+                ref mut strategy,
                 ref mut value,
                 ref mut step,
-                ..
             } => {
+                match *strategy {
+                    RoundingStrategy::Nearest => {
+                        // Nearest is tricky because we'd have to swap the
+                        // behavior at the half-way point from using the upper
+                        // to lower bound.
+                        // Simpler to just wrap self in a negate node.
+                        wrap_self_in_negate(self);
+                        return;
+                    },
+                    RoundingStrategy::Up => *strategy = RoundingStrategy::Down,
+                    RoundingStrategy::Down => *strategy = RoundingStrategy::Up,
+                    RoundingStrategy::ToZero => (),
+                }
                 value.negate();
                 step.negate();
             },
@@ -583,7 +599,10 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                     child.negate();
                 }
             },
-            CalcNode::Abs(ref mut child) | CalcNode::Sign(ref mut child) => {
+            CalcNode::Abs(_) => {
+                wrap_self_in_negate(self);
+            },
+            CalcNode::Sign(ref mut child) => {
                 child.negate();
             },
         }
@@ -647,7 +666,7 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
         false
     }
 
-    /// Tries to apply a generic arithmentic operator
+    /// Tries to apply a generic arithmetic operator
     fn try_op<O>(&self, other: &Self, op: O) -> Result<Self, ()>
     where
         O: Fn(f32, f32) -> f32,
@@ -1284,6 +1303,10 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                 }
 
                 let remainder = value_or_stop!(value.try_op(step, Rem::rem));
+                if remainder.is_zero_leaf() {
+                    replace_self_with!(&mut **value);
+                    return;
+                }
 
                 let (mut lower_bound, mut upper_bound) = if value.is_negative_leaf() {
                     let upper_bound = value_or_stop!(value.try_op(&remainder, Sub::sub));

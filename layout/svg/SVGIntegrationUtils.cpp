@@ -163,26 +163,6 @@ bool SVGIntegrationUtils::UsingEffectsForFrame(const nsIFrame* aFrame) {
          style->HasClipPath() || style->HasMask();
 }
 
-bool SVGIntegrationUtils::UsingMaskOrClipPathForFrame(const nsIFrame* aFrame) {
-  const nsStyleSVGReset* style = aFrame->StyleSVGReset();
-  return style->HasClipPath() || style->HasMask();
-}
-
-bool SVGIntegrationUtils::UsingSimpleClipPathForFrame(const nsIFrame* aFrame) {
-  const nsStyleSVGReset* style = aFrame->StyleSVGReset();
-  if (!style->HasClipPath() || style->HasMask()) {
-    return false;
-  }
-
-  const auto& clipPath = style->mClipPath;
-  if (!clipPath.IsShape()) {
-    return false;
-  }
-
-  const auto& shape = clipPath.AsShape()._0;
-  return shape->IsRect() || shape->IsCircle() || shape->IsEllipse();
-}
-
 nsPoint SVGIntegrationUtils::GetOffsetToBoundingBox(nsIFrame* aFrame) {
   if (aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
     // Do NOT call GetAllInFlowRectsUnion for SVG - it will get the
@@ -367,12 +347,10 @@ nsRect SVGIntegrationUtils::ComputePostEffectsInkOverflowRect(
       nsLayoutUtils::FirstContinuationOrIBSplitSibling(aFrame);
   // Note: we do not return here for eHasNoRefs since we must still handle any
   // CSS filter functions.
-  // TODO: We currently pass nullptr instead of an nsTArray* here, but we
-  // actually should get the filter frames and then pass them into
-  // GetPostFilterBounds below!  See bug 1494263.
   // TODO: we should really return an empty rect for eHasRefsSomeInvalid since
   // in that case we disable painting of the element.
-  if (SVGObserverUtils::GetAndObserveFilters(firstFrame, nullptr) ==
+  nsTArray<SVGFilterFrame*> filterFrames;
+  if (SVGObserverUtils::GetAndObserveFilters(firstFrame, &filterFrames) ==
       SVGObserverUtils::eHasRefsSomeInvalid) {
     return aPreEffectsOverflowRect;
   }
@@ -388,8 +366,8 @@ nsRect SVGIntegrationUtils::ComputePostEffectsInkOverflowRect(
       AppUnitsPerCSSPixel());
   overrideBBox.RoundOut();
 
-  Maybe<nsRect> overflowRect =
-      FilterInstance::GetPostFilterBounds(firstFrame, &overrideBBox);
+  Maybe<nsRect> overflowRect = FilterInstance::GetPostFilterBounds(
+      firstFrame, filterFrames, &overrideBBox);
   if (!overflowRect) {
     return aPreEffectsOverflowRect;
   }
@@ -408,8 +386,9 @@ nsRect SVGIntegrationUtils::GetRequiredSourceForInvalidArea(
   // during reflow/ComputeFrameEffectsRect, so we use GetFiltersIfObserving
   // here to avoid needless work (or masking bugs by setting up observers at
   // the wrong time).
+  nsTArray<SVGFilterFrame*> filterFrames;
   if (!aFrame->StyleEffects()->HasFilters() ||
-      SVGObserverUtils::GetFiltersIfObserving(firstFrame, nullptr) ==
+      SVGObserverUtils::GetFiltersIfObserving(firstFrame, &filterFrames) ==
           SVGObserverUtils::eHasRefsSomeInvalid) {
     return aDirtyRect;
   }
@@ -420,7 +399,8 @@ nsRect SVGIntegrationUtils::GetRequiredSourceForInvalidArea(
   nsRect postEffectsRect = aDirtyRect + toUserSpace;
 
   // Return ther result, relative to aFrame, not in user space:
-  return FilterInstance::GetPreFilterNeededArea(firstFrame, postEffectsRect)
+  return FilterInstance::GetPreFilterNeededArea(firstFrame, filterFrames,
+                                                postEffectsRect)
              .GetBounds() -
          toUserSpace;
 }
@@ -642,9 +622,9 @@ bool SVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams,
                                     bool& aOutIsMaskComplete) {
   aOutIsMaskComplete = true;
 
-  SVGUtils::MaskUsage maskUsage;
-  SVGUtils::DetermineMaskUsage(aParams.frame, aParams.handleOpacity, maskUsage);
-  if (!maskUsage.shouldDoSomething()) {
+  SVGUtils::MaskUsage maskUsage =
+      SVGUtils::DetermineMaskUsage(aParams.frame, aParams.handleOpacity);
+  if (!maskUsage.ShouldDoSomething()) {
     return false;
   }
 
@@ -656,9 +636,7 @@ bool SVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams,
   gfxContext& ctx = aParams.ctx;
   RefPtr<DrawTarget> maskTarget = ctx.GetDrawTarget();
 
-  if (maskUsage.shouldGenerateMaskLayer &&
-      (maskUsage.shouldGenerateClipMaskLayer ||
-       maskUsage.shouldApplyClipPath)) {
+  if (maskUsage.ShouldGenerateMaskLayer() && maskUsage.HasSVGClip()) {
     // We will paint both mask of positioned mask and clip-path into
     // maskTarget.
     //
@@ -675,25 +653,24 @@ bool SVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams,
   SVGObserverUtils::GetAndObserveMasks(firstFrame, &maskFrames);
 
   gfxGroupForBlendAutoSaveRestore autoPop(&ctx);
-  bool shouldPushOpacity =
-      (maskUsage.opacity != 1.0) && (maskFrames.Length() != 1);
+  bool shouldPushOpacity = !maskUsage.IsOpaque() && maskFrames.Length() != 1;
   if (shouldPushOpacity) {
     autoPop.PushGroupForBlendBack(gfxContentType::COLOR_ALPHA,
-                                  maskUsage.opacity);
+                                  maskUsage.Opacity());
   }
 
   gfxContextMatrixAutoSaveRestore matSR;
 
   // Paint clip-path-basic-shape onto ctx
   gfxContextAutoSaveRestore basicShapeSR;
-  if (maskUsage.shouldApplyBasicShapeOrPath) {
+  if (maskUsage.ShouldApplyBasicShapeOrPath()) {
     matSR.SetContext(&ctx);
 
     MoveContextOriginToUserSpace(firstFrame, aParams);
 
     basicShapeSR.SetContext(&ctx);
     gfxMatrix mat = SVGUtils::GetCSSPxToDevPxMatrix(frame);
-    if (!maskUsage.shouldGenerateMaskLayer) {
+    if (!maskUsage.ShouldGenerateMaskLayer()) {
       // Only have basic-shape clip-path effect. Fill clipped region by
       // opaque white.
       ctx.SetDeviceColor(DeviceColor::MaskOpaqueWhite());
@@ -710,7 +687,7 @@ bool SVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams,
   }
 
   // Paint mask into maskTarget.
-  if (maskUsage.shouldGenerateMaskLayer) {
+  if (maskUsage.ShouldGenerateMaskLayer()) {
     matSR.Restore();
     matSR.SetContext(&ctx);
 
@@ -718,12 +695,12 @@ bool SVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams,
     maskTarget->SetTransform(maskTarget->GetTransform().PreTranslate(
         ToPoint(offsets.offsetToUserSpaceInDevPx)));
     aOutIsMaskComplete = PaintMaskSurface(
-        aParams, maskTarget, shouldPushOpacity ? 1.0 : maskUsage.opacity,
+        aParams, maskTarget, shouldPushOpacity ? 1.0f : maskUsage.Opacity(),
         firstFrame->Style(), maskFrames, offsets.offsetToUserSpace);
   }
 
   // Paint clip-path onto ctx.
-  if (maskUsage.shouldGenerateClipMaskLayer || maskUsage.shouldApplyClipPath) {
+  if (maskUsage.HasSVGClip()) {
     matSR.Restore();
     matSR.SetContext(&ctx);
 
@@ -735,7 +712,7 @@ bool SVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams,
     // XXX check return value?
     SVGObserverUtils::GetAndObserveClipPath(firstFrame, &clipPathFrame);
     RefPtr<SourceSurface> maskSurface =
-        maskUsage.shouldGenerateMaskLayer ? maskTarget->Snapshot() : nullptr;
+        maskUsage.ShouldGenerateMaskLayer() ? maskTarget->Snapshot() : nullptr;
     clipPathFrame->PaintClipMask(ctx, frame, cssPxToDevPxMatrix, maskSurface);
   }
 
@@ -745,9 +722,12 @@ bool SVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams,
 template <class T>
 void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams,
                                   const T& aPaintChild) {
-  MOZ_ASSERT(SVGIntegrationUtils::UsingMaskOrClipPathForFrame(aParams.frame),
+#ifdef DEBUG
+  const nsStyleSVGReset* style = aParams.frame->StyleSVGReset();
+  MOZ_ASSERT(style->HasClipPath() || style->HasMask(),
              "Should not use this method when no mask or clipPath effect"
              "on this frame");
+#endif
 
   /* SVG defines the following rendering model:
    *
@@ -767,10 +747,10 @@ void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams,
     return;
   }
 
-  SVGUtils::MaskUsage maskUsage;
-  SVGUtils::DetermineMaskUsage(aParams.frame, aParams.handleOpacity, maskUsage);
+  SVGUtils::MaskUsage maskUsage =
+      SVGUtils::DetermineMaskUsage(aParams.frame, aParams.handleOpacity);
 
-  if (maskUsage.opacity == 0.0f) {
+  if (maskUsage.IsTransparent()) {
     return;
   }
 
@@ -790,22 +770,19 @@ void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams,
 
   gfxMatrix cssPxToDevPxMatrix = SVGUtils::GetCSSPxToDevPxMatrix(frame);
 
-  bool shouldGenerateMask =
-      (maskUsage.opacity != 1.0f || maskUsage.shouldGenerateClipMaskLayer ||
-       maskUsage.shouldGenerateMaskLayer);
   bool shouldPushMask = false;
 
   gfxGroupForBlendAutoSaveRestore autoGroupForBlend(&context);
 
   /* Check if we need to do additional operations on this child's
    * rendering, which necessitates rendering into another surface. */
-  if (shouldGenerateMask) {
+  if (maskUsage.ShouldGenerateMask()) {
     gfxContextMatrixAutoSaveRestore matSR;
 
     RefPtr<SourceSurface> maskSurface;
     bool opacityApplied = false;
 
-    if (maskUsage.shouldGenerateMaskLayer) {
+    if (maskUsage.ShouldGenerateMaskLayer()) {
       matSR.SetContext(&context);
 
       // For css-mask, we want to generate a mask for each continuation frame,
@@ -813,7 +790,7 @@ void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams,
       // instead of the first continuation frame.
       EffectOffsets offsets = MoveContextOriginToUserSpace(frame, aParams);
       MaskPaintResult paintResult = CreateAndPaintMaskSurface(
-          aParams, maskUsage.opacity, firstFrame->Style(), maskFrames,
+          aParams, maskUsage.Opacity(), firstFrame->Style(), maskFrames,
           offsets.offsetToUserSpace);
 
       if (paintResult.transparentBlackMask) {
@@ -828,7 +805,7 @@ void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams,
       }
     }
 
-    if (maskUsage.shouldGenerateClipMaskLayer) {
+    if (maskUsage.ShouldGenerateClipMaskLayer()) {
       matSR.Restore();
       matSR.SetContext(&context);
 
@@ -848,9 +825,8 @@ void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams,
     }
 
     // opacity != 1.0f.
-    if (!maskUsage.shouldGenerateClipMaskLayer &&
-        !maskUsage.shouldGenerateMaskLayer) {
-      MOZ_ASSERT(maskUsage.opacity != 1.0f);
+    if (!maskUsage.ShouldGenerateLayer()) {
+      MOZ_ASSERT(!maskUsage.IsOpaque());
 
       matSR.SetContext(&context);
       MoveContextOriginToUserSpace(firstFrame, aParams);
@@ -865,7 +841,7 @@ void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams,
 
       autoGroupForBlend.PushGroupForBlendBack(
           gfxContentType::COLOR_ALPHA,
-          opacityApplied ? 1.0f : maskUsage.opacity, maskSurface,
+          opacityApplied ? 1.0f : maskUsage.Opacity(), maskSurface,
           maskTransform);
     }
   }
@@ -873,14 +849,15 @@ void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams,
   /* If this frame has only a trivial clipPath, set up cairo's clipping now so
    * we can just do normal painting and get it clipped appropriately.
    */
-  if (maskUsage.shouldApplyClipPath || maskUsage.shouldApplyBasicShapeOrPath) {
+  if (maskUsage.ShouldApplyClipPath() ||
+      maskUsage.ShouldApplyBasicShapeOrPath()) {
     gfxContextMatrixAutoSaveRestore matSR(&context);
 
     MoveContextOriginToUserSpace(firstFrame, aParams);
 
-    MOZ_ASSERT(!maskUsage.shouldApplyClipPath ||
-               !maskUsage.shouldApplyBasicShapeOrPath);
-    if (maskUsage.shouldApplyClipPath) {
+    MOZ_ASSERT(!maskUsage.ShouldApplyClipPath() ||
+               !maskUsage.ShouldApplyBasicShapeOrPath());
+    if (maskUsage.ShouldApplyClipPath()) {
       clipPathFrame->ApplyClipPath(context, frame, cssPxToDevPxMatrix);
     } else {
       CSSClipPathInstance::ApplyBasicShapeOrPathClip(context, frame,
@@ -900,14 +877,13 @@ void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams,
         aParams.borderArea, frame->PresContext()->AppUnitsPerDevPixel());
     context.SnappedRectangle(drawingRect);
     sRGBColor overlayColor(0.0f, 0.0f, 0.0f, 0.8f);
-    if (maskUsage.shouldGenerateMaskLayer) {
+    if (maskUsage.ShouldGenerateMaskLayer()) {
       overlayColor.r = 1.0f;  // red represents css positioned mask.
     }
-    if (maskUsage.shouldApplyClipPath ||
-        maskUsage.shouldGenerateClipMaskLayer) {
+    if (maskUsage.HasSVGClip()) {
       overlayColor.g = 1.0f;  // green represents clip-path:<clip-source>.
     }
-    if (maskUsage.shouldApplyBasicShapeOrPath) {
+    if (maskUsage.ShouldApplyBasicShapeOrPath()) {
       overlayColor.b = 1.0f;  // blue represents
                               // clip-path:<basic-shape>||<geometry-box>.
     }
@@ -916,7 +892,8 @@ void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams,
     context.Fill();
   }
 
-  if (maskUsage.shouldApplyClipPath || maskUsage.shouldApplyBasicShapeOrPath) {
+  if (maskUsage.ShouldApplyClipPath() ||
+      maskUsage.ShouldApplyBasicShapeOrPath()) {
     context.PopClip();
   }
 }
@@ -951,13 +928,11 @@ void SVGIntegrationUtils::PaintFilter(const PaintFramesParams& aParams,
       nsLayoutUtils::FirstContinuationOrIBSplitSibling(frame);
   // Note: we do not return here for eHasNoRefs since we must still handle any
   // CSS filter functions.
-  // TODO: We currently pass nullptr instead of an nsTArray* here, but we
-  // actually should get the filter frames and then pass them into
-  // PaintFilteredFrame below!  See bug 1494263.
   // XXX: Do we need to check for eHasRefsSomeInvalid here given that
   // nsDisplayFilter::BuildLayer returns nullptr for eHasRefsSomeInvalid?
   // Or can we just assert !eHasRefsSomeInvalid?
-  if (SVGObserverUtils::GetAndObserveFilters(firstFrame, nullptr) ==
+  nsTArray<SVGFilterFrame*> filterFrames;
+  if (SVGObserverUtils::GetAndObserveFilters(firstFrame, &filterFrames) ==
       SVGObserverUtils::eHasRefsSomeInvalid) {
     aCallback(aParams.ctx, aParams.imgParams, nullptr, nullptr);
     return;
@@ -971,8 +946,9 @@ void SVGIntegrationUtils::PaintFilter(const PaintFramesParams& aParams,
   /* Paint the child and apply filters */
   nsRegion dirtyRegion = aParams.dirtyRect - offsets.offsetToBoundingBox;
 
-  FilterInstance::PaintFilteredFrame(frame, aFilters, &context, aCallback,
-                                     &dirtyRegion, aParams.imgParams, opacity);
+  FilterInstance::PaintFilteredFrame(frame, aFilters, filterFrames, &context,
+                                     aCallback, &dirtyRegion, aParams.imgParams,
+                                     opacity);
 }
 
 bool SVGIntegrationUtils::CreateWebRenderCSSFilters(
@@ -1059,9 +1035,10 @@ bool SVGIntegrationUtils::CreateWebRenderCSSFilters(
 
 bool SVGIntegrationUtils::BuildWebRenderFilters(
     nsIFrame* aFilteredFrame, Span<const StyleFilter> aFilters,
-    WrFiltersHolder& aWrFilters, bool& aInitialized) {
-  return FilterInstance::BuildWebRenderFilters(aFilteredFrame, aFilters,
-                                               aWrFilters, aInitialized);
+    StyleFilterType aStyleFilterType, WrFiltersHolder& aWrFilters,
+    bool& aInitialized) {
+  return FilterInstance::BuildWebRenderFilters(
+      aFilteredFrame, aFilters, aStyleFilterType, aWrFilters, aInitialized);
 }
 
 bool SVGIntegrationUtils::CanCreateWebRenderFiltersForFrame(nsIFrame* aFrame) {
@@ -1069,7 +1046,8 @@ bool SVGIntegrationUtils::CanCreateWebRenderFiltersForFrame(nsIFrame* aFrame) {
   auto filterChain = aFrame->StyleEffects()->mFilters.AsSpan();
   bool initialized = true;
   return CreateWebRenderCSSFilters(filterChain, aFrame, wrFilters) ||
-         BuildWebRenderFilters(aFrame, filterChain, wrFilters, initialized);
+         BuildWebRenderFilters(aFrame, filterChain, StyleFilterType::Filter,
+                               wrFilters, initialized);
 }
 
 bool SVGIntegrationUtils::UsesSVGEffectsNotSupportedInCompositor(

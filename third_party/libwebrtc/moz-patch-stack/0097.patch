@@ -1,77 +1,40 @@
-From: Jan Grulich <jgrulich@redhat.com>
-Date: Tue, 8 Aug 2023 10:05:00 +0000
-Subject: Bug 1840150 - WebRTC backport: Video capture PipeWire: guard callback
- to avoid concurrent access r=jib,webrtc-reviewers,mjf
+From: Michael Froman <mfroman@mozilla.com>
+Date: Tue, 14 Feb 2023 03:27:00 +0000
+Subject: Bug 1816173 - pt12 - add shim config for
+ third_party/libwebrtc/testing/{gmock|gtest} r=ng
 
-This is a simple backport of an WebRTC upstream change.
+We don't vendor third_party/libwebrtc/third_party/gmock
+                third_party/libwebrtc/third_party/gtest, so:
+- add BUILD.gn to avoid scattered BUILD.gn changes
 
-Upstream commit: 666d707450eff6cc2946eba8edf67420f87ad11e
-
-Differential Revision: https://phabricator.services.mozilla.com/D184386
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/144cbf240a6b53de6f821bf04bfdb74218fea1a8
+Differential Revision: https://phabricator.services.mozilla.com/D169674
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/4ea9d2db79c42a144235e45c47c71adf1dd01fdc
 ---
- modules/video_capture/linux/pipewire_session.cc | 10 +++++++++-
- modules/video_capture/linux/pipewire_session.h  |  5 ++++-
- 2 files changed, 13 insertions(+), 2 deletions(-)
+ testing/gmock/BUILD.gn | 5 +++++
+ testing/gtest/BUILD.gn | 5 +++++
+ 2 files changed, 10 insertions(+)
+ create mode 100644 testing/gmock/BUILD.gn
+ create mode 100644 testing/gtest/BUILD.gn
 
-diff --git a/modules/video_capture/linux/pipewire_session.cc b/modules/video_capture/linux/pipewire_session.cc
-index f2680b2816..6cd4b7dcd7 100644
---- a/modules/video_capture/linux/pipewire_session.cc
-+++ b/modules/video_capture/linux/pipewire_session.cc
-@@ -232,7 +232,10 @@ PipeWireSession::~PipeWireSession() {
- }
- 
- void PipeWireSession::Init(VideoCaptureOptions::Callback* callback, int fd) {
--  callback_ = callback;
-+  {
-+    webrtc::MutexLock lock(&callback_lock_);
-+    callback_ = callback;
-+  }
- 
-   if (fd != -1) {
-     InitPipeWire(fd);
-@@ -374,6 +377,8 @@ void PipeWireSession::OnRegistryGlobalRemove(void* data, uint32_t id) {
- }
- 
- void PipeWireSession::Finish(VideoCaptureOptions::Status status) {
-+  webrtc::MutexLock lock(&callback_lock_);
+diff --git a/testing/gmock/BUILD.gn b/testing/gmock/BUILD.gn
+new file mode 100644
+index 0000000000..a2a1efdea9
+--- /dev/null
++++ b/testing/gmock/BUILD.gn
+@@ -0,0 +1,5 @@
++import("//third_party/libaom/options.gni")
++import("../../webrtc.gni")
 +
-   if (callback_) {
-     callback_->OnInitialized(status);
-     callback_ = nullptr;
-@@ -381,6 +386,9 @@ void PipeWireSession::Finish(VideoCaptureOptions::Status status) {
- }
- 
- void PipeWireSession::Cleanup() {
-+  webrtc::MutexLock lock(&callback_lock_);
-+  callback_ = nullptr;
++rtc_library("gmock") {
++}
+diff --git a/testing/gtest/BUILD.gn b/testing/gtest/BUILD.gn
+new file mode 100644
+index 0000000000..c9c2703c37
+--- /dev/null
++++ b/testing/gtest/BUILD.gn
+@@ -0,0 +1,5 @@
++import("//third_party/libaom/options.gni")
++import("../../webrtc.gni")
 +
-   StopPipeWire();
- }
- 
-diff --git a/modules/video_capture/linux/pipewire_session.h b/modules/video_capture/linux/pipewire_session.h
-index 7055e50fae..923606b0c3 100644
---- a/modules/video_capture/linux/pipewire_session.h
-+++ b/modules/video_capture/linux/pipewire_session.h
-@@ -23,6 +23,7 @@
- #include "modules/video_capture/linux/camera_portal.h"
- #include "modules/video_capture/video_capture.h"
- #include "modules/video_capture/video_capture_options.h"
-+#include "rtc_base/synchronization/mutex.h"
- 
- namespace webrtc {
- namespace videocapturemodule {
-@@ -115,7 +116,9 @@ class PipeWireSession : public rtc::RefCountedNonVirtual<PipeWireSession> {
-   void Finish(VideoCaptureOptions::Status status);
-   void Cleanup();
- 
--  VideoCaptureOptions::Callback* callback_ = nullptr;
-+  webrtc::Mutex callback_lock_;
-+  VideoCaptureOptions::Callback* callback_ RTC_GUARDED_BY(&callback_lock_) =
-+      nullptr;
- 
-   struct pw_thread_loop* pw_main_loop_ = nullptr;
-   struct pw_context* pw_context_ = nullptr;
--- 
-2.34.1
-
++rtc_library("gtest") {
++}

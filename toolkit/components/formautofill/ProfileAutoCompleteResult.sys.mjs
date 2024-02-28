@@ -174,8 +174,7 @@ class ProfileAutoCompleteResult {
    * @returns {string} The image url at the specified index
    */
   getImageAt(index) {
-    this.getAt(index);
-    return "";
+    return this.getAt(index).image ?? "";
   }
 
   /**
@@ -209,10 +208,6 @@ class ProfileAutoCompleteResult {
 }
 
 export class AddressResult extends ProfileAutoCompleteResult {
-  constructor(...args) {
-    super(...args);
-  }
-
   _getSecondaryLabel(focusedFieldName, allFieldNames, profile) {
     // We group similar fields into the same field name so we won't pick another
     // field in the same group as the secondary label.
@@ -331,15 +326,6 @@ export class AddressResult extends ProfileAutoCompleteResult {
 }
 
 export class CreditCardResult extends ProfileAutoCompleteResult {
-  constructor(...args) {
-    super(...args);
-    this._cardTypes = this._generateCardTypes(
-      this._focusedFieldName,
-      this._allFieldNames,
-      this._matchingProfiles
-    );
-  }
-
   _getSecondaryLabel(focusedFieldName, allFieldNames, profile) {
     const GROUP_FIELDS = {
       "cc-name": [
@@ -377,10 +363,7 @@ export class CreditCardResult extends ProfileAutoCompleteResult {
 
       if (matching) {
         if (currentFieldName == "cc-number") {
-          let { affix, label } = lazy.CreditCard.formatMaskedNumber(
-            profile[currentFieldName]
-          );
-          return affix + label;
+          return lazy.CreditCard.formatMaskedNumber(profile[currentFieldName]);
         }
         return profile[currentFieldName];
       }
@@ -415,13 +398,10 @@ export class CreditCardResult extends ProfileAutoCompleteResult {
         return !!profile[focusedFieldName];
       })
       .map(profile => {
-        let primaryAffix;
         let primary = profile[focusedFieldName];
 
         if (focusedFieldName == "cc-number") {
-          let { affix, label } = lazy.CreditCard.formatMaskedNumber(primary);
-          primaryAffix = affix;
-          primary = label;
+          primary = lazy.CreditCard.formatMaskedNumber(primary);
         }
         const secondary = this._getSecondaryLabel(
           focusedFieldName,
@@ -432,47 +412,29 @@ export class CreditCardResult extends ProfileAutoCompleteResult {
         // to expose it as text. We do this using aria-label. However,
         // aria-label overrides the text content, so we must include that also.
         const ccType = profile["cc-type"];
+        const image = lazy.CreditCard.getCreditCardLogo(ccType);
         const ccTypeL10nId = lazy.CreditCard.getNetworkL10nId(ccType);
         const ccTypeName = ccTypeL10nId
           ? lazy.l10n.formatValueSync(ccTypeL10nId)
           : ccType ?? ""; // Unknown card type
-        const ariaLabel = [ccTypeName, primaryAffix, primary, secondary]
+        const ariaLabel = [
+          ccTypeName,
+          primary.toString().replaceAll("*", ""),
+          secondary,
+        ]
           .filter(chunk => !!chunk) // Exclude empty chunks.
           .join(" ");
         return {
-          primaryAffix,
           primary,
           secondary,
           ariaLabel,
+          image,
         };
       });
     // Add an empty result entry for footer.
     labels.push({ primary: "", secondary: "" });
 
     return labels;
-  }
-
-  // This method needs to return an array that parallels the
-  // array returned by _generateLabels, above. As a consequence,
-  // its logic follows very closely.
-  _generateCardTypes(focusedFieldName, allFieldNames, profiles) {
-    if (this._isInputAutofilled) {
-      return [
-        "", // Clear button
-        "", // Footer
-      ];
-    }
-
-    // Skip results without a primary label.
-    let cardTypes = profiles
-      .filter(profile => {
-        return !!profile[focusedFieldName];
-      })
-      .map(profile => profile["cc-type"]);
-
-    // Add an empty result entry for footer.
-    cardTypes.push("");
-    return cardTypes;
   }
 
   getStyleAt(index) {
@@ -486,16 +448,5 @@ export class CreditCardResult extends ProfileAutoCompleteResult {
     }
 
     return super.getStyleAt(index);
-  }
-
-  getImageAt(index) {
-    this.getAt(index);
-
-    if (index < this._cardTypes.length) {
-      let network = this._cardTypes[index];
-      return lazy.CreditCard.getCreditCardLogo(network);
-    }
-
-    return "";
   }
 }

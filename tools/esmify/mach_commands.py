@@ -63,7 +63,6 @@ excluded_from_imports_prefix = list(
             "devtools/client/shared/source-map-loader/test/browser/fixtures/bundle.js",
             "layout/style/test/property_database.js",
             "services/fxaccounts/FxAccountsPairingChannel.js",
-            "testing/talos/talos/tests/devtools/addon/content/pages/custom/debugger/app-build/static/js/main.js",  # noqa E501
             "testing/web-platform/",
             # Unrelated testcases that has edge case syntax.
             "browser/components/sessionstore/test/unit/data/",
@@ -123,7 +122,6 @@ excluded_from_imports_prefix = list(
             "browser/components/enterprisepolicies/schemas/schema.sys.mjs",
             "browser/locales/en-US/firefox-l10n.js",
             "mobile/android/app/geckoview-prefs.js",
-            "mobile/android/app/mobile.js",
             "mobile/android/locales/en-US/mobile-l10n.js",
             "modules/libpref/greprefs.js",
             "modules/libpref/init/all.js",
@@ -147,7 +145,7 @@ def load_exclusion_files():
     for path in EXCLUSION_FILES:
         with open(path, "r") as f:
             for line in f:
-                p = path_sep_to_native(re.sub("\*$", "", line.strip()))
+                p = path_sep_to_native(re.sub(r"\*$", "", line.strip()))
                 excluded_from_imports_prefix.append(p)
 
 
@@ -197,7 +195,7 @@ class HgUtils(VCSUtils):
         cmd = [
             "hg",
             "files",
-            f"set:grep('EXPORTED_SYMBOLS = \[') and glob:\"{path}/**/*.js\"",
+            rf"set:grep('EXPORTED_SYMBOLS = \[') and glob:\"{path}/**/*.js\"",
         ]
         for line in self.run(cmd):
             jsm = pathlib.Path(line)
@@ -247,7 +245,7 @@ class GitUtils(VCSUtils):
             jsms.append(jsm)
 
         handled = {}
-        cmd = ["git", "grep", "EXPORTED_SYMBOLS = \[", f"{path}/*.js"]
+        cmd = ["git", "grep", "EXPORTED_SYMBOLS = \\[", f"{path}/*.js"]
         for line in self.run(cmd):
             m = re.search("^([^:]+):", line)
             if not m:

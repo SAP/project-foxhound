@@ -26,6 +26,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/UrlbarProviderSearchTips.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
 });
 
 export var UrlbarUtils = {
@@ -52,6 +53,7 @@ export var UrlbarUtils = {
     HEURISTIC_TOKEN_ALIAS_ENGINE: "heuristicTokenAliasEngine",
     INPUT_HISTORY: "inputHistory",
     OMNIBOX: "extension",
+    RECENT_SEARCH: "recentSearch",
     REMOTE_SUGGESTION: "remoteSuggestion",
     REMOTE_TAB: "remoteTab",
     SUGGESTED_INDEX: "suggestedIndex",
@@ -548,7 +550,9 @@ export var UrlbarUtils = {
     switch (result.type) {
       case UrlbarUtils.RESULT_TYPE.SEARCH:
         if (result.source == UrlbarUtils.RESULT_SOURCE.HISTORY) {
-          return UrlbarUtils.RESULT_GROUP.FORM_HISTORY;
+          return result.providerName == "RecentSearches"
+            ? UrlbarUtils.RESULT_GROUP.RECENT_SEARCH
+            : UrlbarUtils.RESULT_GROUP.FORM_HISTORY;
         }
         if (result.payload.tail) {
           return UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION;
@@ -1204,6 +1208,9 @@ export var UrlbarUtils = {
       case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
         return "switchtab";
       case UrlbarUtils.RESULT_TYPE.SEARCH:
+        if (result.providerName == "RecentSearches") {
+          return "recent_search";
+        }
         if (result.source == UrlbarUtils.RESULT_SOURCE.HISTORY) {
           return "formhistory";
         }
@@ -1296,6 +1303,46 @@ export var UrlbarUtils = {
   },
 
   /**
+   * Checks whether a given text has right-to-left direction or not.
+   *
+   * @param {string} value The text which should be check for RTL direction.
+   * @param {Window} window The window where 'value' is going to be displayed.
+   * @returns {boolean} Returns true if text has right-to-left direction and
+   *                    false otherwise.
+   */
+  isTextDirectionRTL(value, window) {
+    let directionality = window.windowUtils.getDirectionFromText(value);
+    return directionality == window.windowUtils.DIRECTION_RTL;
+  },
+
+  /**
+   * Unescape, decode punycode, and trim (both protocol and trailing slash)
+   * the URL.
+   *
+   * @param {string} url The url that should be prepared for display.
+   * @returns {string} Prepared url.
+   */
+  prepareUrlForDisplay(url) {
+    // Some domains are encoded in punycode. The following ensures we display
+    // the url in utf-8.
+    try {
+      url = new URL(url).URI.displaySpec;
+    } catch {} // In some cases url is not a valid url.
+
+    if (url && lazy.UrlbarPrefs.get("trimURLs")) {
+      url = lazy.BrowserUIUtils.removeSingleTrailingSlashFromURL(url);
+      if (url.startsWith("https://")) {
+        url = url.substring(8);
+        if (url.startsWith("www.")) {
+          url = url.substring(4);
+        }
+      }
+    }
+
+    return this.unEscapeURIForUI(url);
+  },
+
+  /**
    * Extracts a group for search engagement telemetry from a result.
    *
    * @param {UrlbarResult} result The result to analyze.
@@ -1315,6 +1362,9 @@ export var UrlbarUtils = {
     switch (this.getResultGroup(result)) {
       case UrlbarUtils.RESULT_GROUP.INPUT_HISTORY: {
         return "adaptive_history";
+      }
+      case UrlbarUtils.RESULT_GROUP.RECENT_SEARCH: {
+        return "recent_search";
       }
       case UrlbarUtils.RESULT_GROUP.FORM_HISTORY: {
         return "search_history";
@@ -1389,6 +1439,8 @@ export var UrlbarUtils = {
             return "site_specific_contextual_search";
           case "UrlbarProviderQuickSuggest":
             return this._getQuickSuggestTelemetryType(result);
+          case "UrlbarProviderQuickSuggestContextualOptIn":
+            return "fxsuggest_data_sharing_opt_in";
           case "Weather":
             return "weather";
         }
@@ -1404,7 +1456,9 @@ export var UrlbarUtils = {
           return "tab_to_search";
         }
         if (result.source == UrlbarUtils.RESULT_SOURCE.HISTORY) {
-          return "search_history";
+          return result.providerName == "RecentSearches"
+            ? "recent_search"
+            : "search_history";
         }
         if (result.payload.suggestion) {
           let type = result.payload.trending
@@ -1503,6 +1557,18 @@ export var UrlbarUtils = {
       source = "rs";
     }
     return `${source}_${result.payload.telemetryType}`;
+  },
+
+  /**
+   * For use when we want to hash a pair of items in a dictionary
+   *
+   * @param {string[]} tokens
+   *   list of tokens to join into a string eg "a" "b" "c"
+   * @returns {string}
+   *   the tokens joined in a string "a|b|c"
+   */
+  tupleString(...tokens) {
+    return tokens.filter(t => t).join("|");
   },
 };
 
@@ -1687,6 +1753,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       },
       icon: {
         type: "string",
+      },
+      iconBlob: {
+        type: "object",
       },
       isBlockable: {
         type: "boolean",
@@ -2341,6 +2410,18 @@ export class UrlbarProvider {
    *  The associated controller.
    */
   onEngagement(state, queryContext, details, controller) {}
+
+  /**
+   * Called before a result from the provider is selected. See `onSelection`
+   * for details on what that means.
+   *
+   * @param {UrlbarResult} result
+   *   The result that was selected.
+   * @param {Element} element
+   *   The element in the result's view that was selected.
+   * @abstract
+   */
+  onBeforeSelection(result, element) {}
 
   /**
    * Called when a result from the provider is selected. "Selected" refers to

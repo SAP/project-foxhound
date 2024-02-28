@@ -43,6 +43,13 @@ GPU_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_INHERITED(Device, DOMEventTargetHelper,
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(Device, DOMEventTargetHelper)
 GPU_IMPL_JS_WRAP(Device)
 
+/* static */ CheckedInt<uint32_t> Device::BufferStrideWithMask(
+    const gfx::IntSize& aSize, const gfx::SurfaceFormat& aFormat) {
+  constexpr uint32_t kBufferAlignmentMask = 0xff;
+  return CheckedInt<uint32_t>(aSize.width) * gfx::BytesPerPixel(aFormat) +
+         kBufferAlignmentMask;
+}
+
 RefPtr<WebGPUChild> Device::GetBridge() { return mBridge; }
 
 Device::Device(Adapter* const aParent, RawId aId,
@@ -69,14 +76,6 @@ void Device::Cleanup() {
   if (mBridge) {
     mBridge->UnregisterDevice(mId);
   }
-
-  // Cycle collection may have disconnected the promise object.
-  if (mLostPromise && mLostPromise->PromiseObj() != nullptr) {
-    auto info = MakeRefPtr<DeviceLostInfo>(GetParentObject(),
-                                           dom::GPUDeviceLostReason::Destroyed,
-                                           u"Device destroyed"_ns);
-    mLostPromise->MaybeResolve(info);
-  }
 }
 
 void Device::CleanupUnregisteredInParent() {
@@ -86,23 +85,34 @@ void Device::CleanupUnregisteredInParent() {
   mValid = false;
 }
 
-bool Device::IsLost() const { return !mBridge || !mBridge->CanSend(); }
+bool Device::IsLost() const {
+  return !mBridge || !mBridge->CanSend() ||
+         (mLostPromise &&
+          (mLostPromise->State() != dom::Promise::PromiseState::Pending));
+}
+
+bool Device::IsBridgeAlive() const { return mBridge && mBridge->CanSend(); }
 
 // Generate an error on the Device timeline for this device.
 //
 // aMessage is interpreted as UTF-8.
 void Device::GenerateValidationError(const nsCString& aMessage) {
-  if (IsLost()) {
+  if (!IsBridgeAlive()) {
     return;  // Just drop it?
   }
   mBridge->SendGenerateError(Some(mId), dom::GPUErrorFilter::Validation,
                              aMessage);
 }
 
+void Device::TrackBuffer(Buffer* aBuffer) { mTrackedBuffers.Insert(aBuffer); }
+
+void Device::UntrackBuffer(Buffer* aBuffer) { mTrackedBuffers.Remove(aBuffer); }
+
 void Device::GetLabel(nsAString& aValue) const { aValue = mLabel; }
 void Device::SetLabel(const nsAString& aLabel) { mLabel = aLabel; }
 
 dom::Promise* Device::GetLost(ErrorResult& aRv) {
+  aRv = NS_OK;
   if (!mLostPromise) {
     mLostPromise = dom::Promise::Create(GetParentObject(), aRv);
     if (mLostPromise && !mBridge->CanSend()) {
@@ -114,9 +124,55 @@ dom::Promise* Device::GetLost(ErrorResult& aRv) {
   return mLostPromise;
 }
 
+void Device::ResolveLost(Maybe<dom::GPUDeviceLostReason> aReason,
+                         const nsAString& aMessage) {
+  IgnoredErrorResult rv;
+  dom::Promise* lostPromise = GetLost(rv);
+  if (!lostPromise) {
+    // Promise doesn't exist? Maybe out of memory.
+    return;
+  }
+  if (lostPromise->State() != dom::Promise::PromiseState::Pending) {
+    // lostPromise was already resolved or rejected.
+    return;
+  }
+  if (!lostPromise->PromiseObj()) {
+    // The underlying JS object is gone.
+    return;
+  }
+
+  RefPtr<DeviceLostInfo> info;
+  if (aReason.isSome()) {
+    info = MakeRefPtr<DeviceLostInfo>(GetParentObject(), *aReason, aMessage);
+  } else {
+    info = MakeRefPtr<DeviceLostInfo>(GetParentObject(), aMessage);
+  }
+  lostPromise->MaybeResolve(info);
+}
+
 already_AddRefed<Buffer> Device::CreateBuffer(
     const dom::GPUBufferDescriptor& aDesc, ErrorResult& aRv) {
   return Buffer::Create(this, mId, aDesc, aRv);
+}
+
+already_AddRefed<Texture> Device::CreateTextureForSwapChain(
+    const dom::GPUCanvasConfiguration* const aConfig,
+    const gfx::IntSize& aCanvasSize, layers::RemoteTextureOwnerId aOwnerId) {
+  MOZ_ASSERT(aConfig);
+
+  dom::GPUTextureDescriptor desc;
+  desc.mDimension = dom::GPUTextureDimension::_2d;
+  auto& sizeDict = desc.mSize.SetAsGPUExtent3DDict();
+  sizeDict.mWidth = aCanvasSize.width;
+  sizeDict.mHeight = aCanvasSize.height;
+  sizeDict.mDepthOrArrayLayers = 1;
+  desc.mFormat = aConfig->mFormat;
+  desc.mMipLevelCount = 1;
+  desc.mSampleCount = 1;
+  desc.mUsage = aConfig->mUsage | dom::GPUTextureUsage_Binding::COPY_SRC;
+  desc.mViewFormats = aConfig->mViewFormats;
+
+  return CreateTexture(desc, Some(aOwnerId));
 }
 
 already_AddRefed<Texture> Device::CreateTexture(
@@ -299,11 +355,20 @@ already_AddRefed<dom::Promise> Device::CreateRenderPipelineAsync(
 }
 
 already_AddRefed<Texture> Device::InitSwapChain(
-    const dom::GPUCanvasConfiguration& aDesc,
+    const dom::GPUCanvasConfiguration* const aConfig,
     const layers::RemoteTextureOwnerId aOwnerId,
     bool aUseExternalTextureInSwapChain, gfx::SurfaceFormat aFormat,
     gfx::IntSize aCanvasSize) {
+  MOZ_ASSERT(aConfig);
+
   if (!mBridge->CanSend()) {
+    return nullptr;
+  }
+
+  // Check that aCanvasSize and aFormat will generate a texture stride
+  // within limits.
+  const auto bufferStrideWithMask = BufferStrideWithMask(aCanvasSize, aFormat);
+  if (!bufferStrideWithMask.isValid()) {
     return nullptr;
   }
 
@@ -313,20 +378,9 @@ already_AddRefed<Texture> Device::InitSwapChain(
   mBridge->DeviceCreateSwapChain(mId, rgbDesc, maxBufferCount, aOwnerId,
                                  aUseExternalTextureInSwapChain);
 
-  dom::GPUTextureDescriptor desc;
-  desc.mDimension = dom::GPUTextureDimension::_2d;
-  auto& sizeDict = desc.mSize.SetAsGPUExtent3DDict();
-  sizeDict.mWidth = aCanvasSize.width;
-  sizeDict.mHeight = aCanvasSize.height;
-  sizeDict.mDepthOrArrayLayers = 1;
-  desc.mFormat = aDesc.mFormat;
-  desc.mMipLevelCount = 1;
-  desc.mSampleCount = 1;
-  desc.mUsage = aDesc.mUsage | dom::GPUTextureUsage_Binding::COPY_SRC;
-  desc.mViewFormats = aDesc.mViewFormats;
   // TODO: `mColorSpace`: <https://bugzilla.mozilla.org/show_bug.cgi?id=1846608>
   // TODO: `mAlphaMode`: <https://bugzilla.mozilla.org/show_bug.cgi?id=1846605>
-  return CreateTexture(desc, Some(aOwnerId));
+  return CreateTextureForSwapChain(aConfig, aCanvasSize, aOwnerId);
 }
 
 bool Device::CheckNewWarning(const nsACString& aMessage) {
@@ -334,11 +388,27 @@ bool Device::CheckNewWarning(const nsACString& aMessage) {
 }
 
 void Device::Destroy() {
-  // TODO
+  if (IsLost()) {
+    return;
+  }
+
+  // Unmap all buffers from this device, as specified by
+  // https://gpuweb.github.io/gpuweb/#dom-gpudevice-destroy.
+  dom::AutoJSAPI jsapi;
+  if (jsapi.Init(GetOwnerGlobal())) {
+    IgnoredErrorResult rv;
+    for (const auto& buffer : mTrackedBuffers) {
+      buffer->Unmap(jsapi.cx(), rv);
+    }
+
+    mTrackedBuffers.Clear();
+  }
+
+  mBridge->SendDeviceDestroy(mId);
 }
 
 void Device::PushErrorScope(const dom::GPUErrorFilter& aFilter) {
-  if (IsLost()) {
+  if (!IsBridgeAlive()) {
     return;
   }
   mBridge->SendDevicePushErrorScope(mId, aFilter);
@@ -357,7 +427,7 @@ already_AddRefed<dom::Promise> Device::PopErrorScope(ErrorResult& aRv) {
     return nullptr;
   }
 
-  if (IsLost()) {
+  if (!IsBridgeAlive()) {
     WebGPUChild::JsWarning(
         GetOwnerGlobal(),
         "popErrorScope resolving to null because device is already lost."_ns);

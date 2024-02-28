@@ -11,6 +11,7 @@
 #include "mozilla/DebugOnly.h"
 
 #include <limits.h>
+#include <utility>  // std::pair
 
 #include "gc/Barrier.h"
 #include "jit/AtomicOp.h"
@@ -40,6 +41,8 @@
 // describing how Bind() should patch them.
 #  define JS_CODELABEL_LINKMODE
 #endif
+
+using js::wasm::FaultingCodeOffset;
 
 namespace js {
 namespace jit {
@@ -617,6 +620,8 @@ class AssemblerShared {
   wasm::TrapSiteVectorArray trapSites_;
   wasm::SymbolicAccessVector symbolicAccesses_;
   wasm::TryNoteVector tryNotes_;
+  wasm::CodeRangeUnwindInfoVector codeRangesUnwind_;
+
 #ifdef DEBUG
   // To facilitate figuring out which part of SM created each instruction as
   // shown by IONFLAGS=codegen, this maintains a stack of (notionally)
@@ -673,12 +678,11 @@ class AssemblerShared {
   void append(wasm::Trap trap, wasm::TrapSite site) {
     enoughMemory_ &= trapSites_[trap].append(site);
   }
-  void append(const wasm::MemoryAccessDesc& access, uint32_t pcOffset) {
-    appendOutOfBoundsTrap(access.trapOffset(), pcOffset);
-  }
-  void appendOutOfBoundsTrap(wasm::BytecodeOffset trapOffset,
-                             uint32_t pcOffset) {
-    append(wasm::Trap::OutOfBounds, wasm::TrapSite(pcOffset, trapOffset));
+  void append(const wasm::MemoryAccessDesc& access, wasm::TrapMachineInsn insn,
+              FaultingCodeOffset assemblerOffsetOfFaultingMachineInsn) {
+    append(wasm::Trap::OutOfBounds,
+           wasm::TrapSite(insn, assemblerOffsetOfFaultingMachineInsn,
+                          access.trapOffset()));
   }
   void append(wasm::SymbolicAccess access) {
     enoughMemory_ &= symbolicAccesses_.append(access);
@@ -694,11 +698,19 @@ class AssemblerShared {
     return true;
   }
 
+  void append(wasm::CodeRangeUnwindInfo::UnwindHow unwindHow,
+              uint32_t pcOffset) {
+    enoughMemory_ &= codeRangesUnwind_.emplaceBack(pcOffset, unwindHow);
+  }
+
   wasm::CallSiteVector& callSites() { return callSites_; }
   wasm::CallSiteTargetVector& callSiteTargets() { return callSiteTargets_; }
   wasm::TrapSiteVectorArray& trapSites() { return trapSites_; }
   wasm::SymbolicAccessVector& symbolicAccesses() { return symbolicAccesses_; }
   wasm::TryNoteVector& tryNotes() { return tryNotes_; }
+  wasm::CodeRangeUnwindInfoVector& codeRangeUnwindInfos() {
+    return codeRangesUnwind_;
+  }
 };
 
 // AutoCreatedBy pushes and later pops a who-created-these-insns? tag into the

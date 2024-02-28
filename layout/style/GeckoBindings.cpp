@@ -47,6 +47,7 @@
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/EffectSet.h"
 #include "mozilla/FontPropertyTypes.h"
+#include "mozilla/Hal.h"
 #include "mozilla/Keyframe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Preferences.h"
@@ -705,8 +706,11 @@ bool Gecko_IsDarkColorScheme(const Document* aDoc,
 nscolor Gecko_ComputeSystemColor(StyleSystemColor aColor, const Document* aDoc,
                                  const StyleColorScheme* aStyle) {
   auto colorScheme = LookAndFeel::ColorSchemeForStyle(*aDoc, aStyle->bits);
-
-  const auto& colors = PreferenceSheet::PrefsFor(*aDoc).ColorsFor(colorScheme);
+  const auto& prefs = PreferenceSheet::PrefsFor(*aDoc);
+  if (prefs.mMustUseLightSystemColors) {
+    colorScheme = ColorScheme::Light;
+  }
+  const auto& colors = prefs.ColorsFor(colorScheme);
   switch (aColor) {
     case StyleSystemColor::Canvastext:
       return colors.mDefault;
@@ -762,14 +766,16 @@ bool Gecko_MatchLang(const Element* aElement, nsAtom* aOverrideLang,
   // is missing as well from the preferences.
   // The content language can be a comma-separated list of
   // language codes.
-  nsAutoString language;
-  aElement->OwnerDoc()->GetContentLanguage(language);
-
-  NS_ConvertUTF16toUTF8 langString(aValue);
-  language.StripWhitespace();
-  for (auto const& lang : language.Split(char16_t(','))) {
-    if (nsStyleUtil::LangTagCompare(NS_ConvertUTF16toUTF8(lang), langString)) {
-      return true;
+  // FIXME: We're not really consistent in our treatment of comma-separated
+  // content-language values.
+  if (nsAtom* language = aElement->OwnerDoc()->GetContentLanguage()) {
+    const NS_ConvertUTF16toUTF8 langString(aValue);
+    nsAtomCString docLang(language);
+    docLang.StripWhitespace();
+    for (auto const& lang : docLang.Split(',')) {
+      if (nsStyleUtil::LangTagCompare(lang, langString)) {
+        return true;
+      }
     }
   }
   return false;
@@ -1189,7 +1195,12 @@ void Gecko_GetComputedImageURLSpec(const StyleComputedUrl* aURL,
     }
   }
 
-  aOut->AssignLiteral("about:invalid");
+  // Empty URL computes to empty, per spec:
+  if (aURL->SpecifiedSerialization().IsEmpty()) {
+    aOut->Truncate();
+  } else {
+    aOut->AssignLiteral("about:invalid");
+  }
 }
 
 bool Gecko_IsSupportedImageMimeType(const uint8_t* aMimeType,
@@ -1626,21 +1637,40 @@ const nsTArray<Element*>* Gecko_Document_GetElementsWithId(const Document* aDoc,
                                                            nsAtom* aId) {
   MOZ_ASSERT(aDoc);
   MOZ_ASSERT(aId);
-
-  return aDoc->GetAllElementsForId(nsDependentAtomString(aId));
+  return aDoc->GetAllElementsForId(aId);
 }
 
 const nsTArray<Element*>* Gecko_ShadowRoot_GetElementsWithId(
     const ShadowRoot* aShadowRoot, nsAtom* aId) {
   MOZ_ASSERT(aShadowRoot);
   MOZ_ASSERT(aId);
-
-  return aShadowRoot->GetAllElementsForId(nsDependentAtomString(aId));
+  return aShadowRoot->GetAllElementsForId(aId);
 }
 
-bool Gecko_GetBoolPrefValue(const char* aPrefName) {
+bool Gecko_ComputeBoolPrefMediaQuery(nsAtom* aPref) {
   MOZ_ASSERT(NS_IsMainThread());
-  return Preferences::GetBool(aPrefName);
+  // This map leaks until shutdown, but that's fine, all the values are
+  // controlled by us so it's not expected to be big.
+  static StaticAutoPtr<nsTHashMap<RefPtr<nsAtom>, bool>> sRegisteredPrefs;
+  if (!sRegisteredPrefs) {
+    sRegisteredPrefs = new nsTHashMap<RefPtr<nsAtom>, bool>();
+    ClearOnShutdown(&sRegisteredPrefs);
+  }
+  return sRegisteredPrefs->LookupOrInsertWith(aPref, [&] {
+    nsAutoAtomCString prefName(aPref);
+    Preferences::RegisterCallback(
+        [](const char* aPrefName, void*) {
+          if (sRegisteredPrefs) {
+            RefPtr<nsAtom> name = NS_Atomize(nsDependentCString(aPrefName));
+            sRegisteredPrefs->InsertOrUpdate(name,
+                                             Preferences::GetBool(aPrefName));
+          }
+          LookAndFeel::NotifyChangedAllWindows(
+              widget::ThemeChangeKind::MediaQueriesOnly);
+        },
+        prefName);
+    return Preferences::GetBool(prefName.get());
+  });
 }
 
 bool Gecko_IsFontFormatSupported(StyleFontFaceSourceFormatKeyword aFormat) {
@@ -1662,6 +1692,26 @@ bool Gecko_IsInServoTraversal() { return ServoStyleSet::IsInServoTraversal(); }
 bool Gecko_IsMainThread() { return NS_IsMainThread(); }
 
 bool Gecko_IsDOMWorkerThread() { return !!GetCurrentThreadWorkerPrivate(); }
+
+int32_t Gecko_GetNumStyleThreads() {
+  if (const auto& cpuInfo = hal::GetHeterogeneousCpuInfo()) {
+    size_t numBigCpus = cpuInfo->mBigCpus.Count();
+    // If CPUs are homogeneous we do not need to override stylo's
+    // default number of threads.
+    if (numBigCpus != cpuInfo->mTotalNumCpus) {
+      // From testing on a variety of devices it appears using only
+      // the number of big cores gives best performance when there are
+      // 2 or more big cores. If there are fewer than 2 big cores then
+      // additionally using the medium cores performs better.
+      if (numBigCpus >= 2) {
+        return static_cast<int32_t>(numBigCpus);
+      }
+      return static_cast<int32_t>(numBigCpus + cpuInfo->mMediumCpus.Count());
+    }
+  }
+
+  return -1;
+}
 
 const nsAttrValue* Gecko_GetSVGAnimatedClass(const Element* aElement) {
   MOZ_ASSERT(aElement->IsSVGElement());

@@ -134,6 +134,35 @@ static void settings_changed_signal_cb(GDBusProxy* proxy, gchar* sender_name,
   }
 }
 
+void nsLookAndFeel::WatchDBus() {
+  GUniquePtr<GError> error;
+  mDBusSettingsProxy = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
+      G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr,
+      "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+      "org.freedesktop.portal.Settings", nullptr, getter_Transfers(error)));
+  if (mDBusSettingsProxy) {
+    g_signal_connect(mDBusSettingsProxy, "g-signal",
+                     G_CALLBACK(settings_changed_signal_cb), this);
+  } else {
+    LOGLNF("Can't create DBus proxy for settings: %s\n", error->message);
+    return;
+  }
+
+  // DBus interface was started after L&F init so we need to load
+  // our settings from DBus explicitly.
+  if (!sIgnoreChangedSettings) {
+    OnColorSchemeSettingChanged();
+  }
+}
+
+void nsLookAndFeel::UnwatchDBus() {
+  if (mDBusSettingsProxy) {
+    g_signal_handlers_disconnect_by_func(
+        mDBusSettingsProxy, FuncToGpointer(settings_changed_signal_cb), this);
+    mDBusSettingsProxy = nullptr;
+  }
+}
+
 nsLookAndFeel::nsLookAndFeel() {
   static constexpr nsLiteralCString kObservedSettings[] = {
       // Affects system font sizes.
@@ -172,27 +201,29 @@ nsLookAndFeel::nsLookAndFeel() {
       nsWindow::GetSystemGtkWindowDecoration() != nsWindow::GTK_DECORATION_NONE;
 
   if (ShouldUsePortal(PortalKind::Settings)) {
-    GUniquePtr<GError> error;
-    mDBusSettingsProxy = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
-        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr,
-        "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.Settings", nullptr, getter_Transfers(error)));
-    if (mDBusSettingsProxy) {
-      g_signal_connect(mDBusSettingsProxy, "g-signal",
-                       G_CALLBACK(settings_changed_signal_cb), this);
-    } else {
-      LOGLNF("Can't create DBus proxy for settings: %s\n", error->message);
-    }
+    mDBusID = g_bus_watch_name(
+        G_BUS_TYPE_SESSION, "org.freedesktop.portal.Desktop",
+        G_BUS_NAME_WATCHER_FLAGS_AUTO_START,
+        [](GDBusConnection*, const gchar*, const gchar*,
+           gpointer data) -> void {
+          auto* lnf = static_cast<nsLookAndFeel*>(data);
+          lnf->WatchDBus();
+        },
+        [](GDBusConnection*, const gchar*, gpointer data) -> void {
+          auto* lnf = static_cast<nsLookAndFeel*>(data);
+          lnf->UnwatchDBus();
+        },
+        this, nullptr);
   }
 }
 
 nsLookAndFeel::~nsLookAndFeel() {
   ClearRoundedCornerProvider();
-  if (mDBusSettingsProxy) {
-    g_signal_handlers_disconnect_by_func(
-        mDBusSettingsProxy, FuncToGpointer(settings_changed_signal_cb), this);
-    mDBusSettingsProxy = nullptr;
+  if (mDBusID) {
+    g_bus_unwatch_name(mDBusID);
+    mDBusID = 0;
   }
+  UnwatchDBus();
   g_signal_handlers_disconnect_by_func(
       gtk_settings_get_default(), FuncToGpointer(settings_changed_cb), nullptr);
 }
@@ -919,6 +950,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = mCSDReversedPlacement;
       break;
     case IntID::PrefersReducedMotion: {
+      EnsureInit();
       aResult = mPrefersReducedMotion;
       break;
     }
@@ -1548,22 +1580,22 @@ void nsLookAndFeel::InitializeGlobalSettings() {
 void nsLookAndFeel::ConfigureFinalEffectiveTheme() {
   MOZ_ASSERT(mSystemThemeOverridden,
              "By this point, the alt theme should be configured");
-
   const bool shouldUseSystemTheme = [&] {
+    using ChromeSetting = PreferenceSheet::ChromeColorSchemeSetting;
     // NOTE: We can't call ColorSchemeForChrome directly because this might run
     // while we're computing it.
-    switch (ColorSchemeSettingForChrome()) {
-      case ChromeColorSchemeSetting::Light:
+    switch (PreferenceSheet::ColorSchemeSettingForChrome()) {
+      case ChromeSetting::Light:
         return !mSystemTheme.mIsDark;
-      case ChromeColorSchemeSetting::Dark:
+      case ChromeSetting::Dark:
         return mSystemTheme.mIsDark;
-      case ChromeColorSchemeSetting::System:
+      case ChromeSetting::System:
         break;
     };
     if (!mColorSchemePreference) {
       return true;
     }
-    bool preferenceIsDark = *mColorSchemePreference == ColorScheme::Dark;
+    const bool preferenceIsDark = *mColorSchemePreference == ColorScheme::Dark;
     return preferenceIsDark == mSystemTheme.mIsDark;
   }();
 

@@ -15,11 +15,13 @@
 
 #include "frontend/CompilationStencil.h"  // frontend::CompilationStencil
 #include "gc/GC.h"
+#include "jit/Ion.h"
 #include "jit/IonCompileTask.h"
 #include "jit/JitRuntime.h"
 #include "jit/JitScript.h"
 #include "js/CompileOptions.h"  // JS::PrefableCompileOptions, JS::ReadOnlyCompileOptions
-#include "js/friend/StackLimits.h"  // js::ReportOverRecursed
+#include "js/experimental/CompileScript.h"  // JS::ThreadStackQuotaForSize
+#include "js/friend/StackLimits.h"          // js::ReportOverRecursed
 #include "js/HelperThreadAPI.h"
 #include "js/Stack.h"
 #include "js/UniquePtr.h"
@@ -117,11 +119,6 @@ void JS::SetProfilingThreadCallbacks(
   HelperThreadState().unregisterThread = unregisterThread;
 }
 
-static size_t ThreadStackQuotaForSize(size_t size) {
-  // Set the stack quota to 10% less that the actual size.
-  return size_t(double(size) * 0.9);
-}
-
 // Bug 1630189: Without MOZ_NEVER_INLINE, Windows PGO builds have a linking
 // error for HelperThreadTaskCallback.
 JS_PUBLIC_API MOZ_NEVER_INLINE void JS::SetHelperThreadTaskCallback(
@@ -141,7 +138,7 @@ void GlobalHelperThreadState::setDispatchTaskCallback(
 
   dispatchTaskCallback = callback;
   this->threadCount = threadCount;
-  this->stackQuota = ThreadStackQuotaForSize(stackSize);
+  this->stackQuota = JS::ThreadStackQuotaForSize(stackSize);
 }
 
 bool js::StartOffThreadWasmCompile(wasm::CompileTask* task,
@@ -348,6 +345,10 @@ static bool IonCompileTaskMatches(const CompilationSelector& selector,
 
 static void CancelOffThreadIonCompileLocked(const CompilationSelector& selector,
                                             AutoLockHelperThreadState& lock) {
+  if (jit::IsPortableBaselineInterpreterEnabled()) {
+    return;
+  }
+
   if (!HelperThreadState().isInitialized(lock)) {
     return;
   }
@@ -427,6 +428,10 @@ void js::CancelOffThreadIonCompile(const CompilationSelector& selector) {
 
 #ifdef DEBUG
 bool js::HasOffThreadIonCompile(Zone* zone) {
+  if (jit::IsPortableBaselineInterpreterEnabled()) {
+    return false;
+  }
+
   AutoLockHelperThreadState lock;
 
   if (!HelperThreadState().isInitialized(lock)) {
@@ -1535,39 +1540,43 @@ bool GlobalHelperThreadState::submitTask(PromiseHelperTask* task) {
 }
 
 void GlobalHelperThreadState::trace(JSTracer* trc) {
-  AutoLockHelperThreadState lock;
+  {
+    AutoLockHelperThreadState lock;
 
 #ifdef DEBUG
-  // Since we hold the helper thread lock here we must disable GCMarker's
-  // checking of the atom marking bitmap since that also relies on taking the
-  // lock.
-  GCMarker* marker = nullptr;
-  if (trc->isMarkingTracer()) {
-    marker = GCMarker::fromTracer(trc);
-    marker->setCheckAtomMarking(false);
-  }
-  auto reenableAtomMarkingCheck = mozilla::MakeScopeExit([marker] {
-    if (marker) {
-      marker->setCheckAtomMarking(true);
+    // Since we hold the helper thread lock here we must disable GCMarker's
+    // checking of the atom marking bitmap since that also relies on taking the
+    // lock.
+    GCMarker* marker = nullptr;
+    if (trc->isMarkingTracer()) {
+      marker = GCMarker::fromTracer(trc);
+      marker->setCheckAtomMarking(false);
     }
-  });
+    auto reenableAtomMarkingCheck = mozilla::MakeScopeExit([marker] {
+      if (marker) {
+        marker->setCheckAtomMarking(true);
+      }
+    });
 #endif
 
-  for (auto task : ionWorklist(lock)) {
-    task->alloc().lifoAlloc()->setReadWrite();
-    task->trace(trc);
-    task->alloc().lifoAlloc()->setReadOnly();
-  }
-  for (auto task : ionFinishedList(lock)) {
-    task->trace(trc);
-  }
+    for (auto task : ionWorklist(lock)) {
+      task->alloc().lifoAlloc()->setReadWrite();
+      task->trace(trc);
+      task->alloc().lifoAlloc()->setReadOnly();
+    }
+    for (auto task : ionFinishedList(lock)) {
+      task->trace(trc);
+    }
 
-  for (auto* helper : HelperThreadState().helperTasks(lock)) {
-    if (helper->is<jit::IonCompileTask>()) {
-      helper->as<jit::IonCompileTask>()->trace(trc);
+    for (auto* helper : HelperThreadState().helperTasks(lock)) {
+      if (helper->is<jit::IonCompileTask>()) {
+        helper->as<jit::IonCompileTask>()->trace(trc);
+      }
     }
   }
 
+  // The lazy link list is only accessed on the main thread, so trace it after
+  // releasing the lock.
   JSRuntime* rt = trc->runtime();
   if (auto* jitRuntime = rt->jitRuntime()) {
     jit::IonCompileTask* task = jitRuntime->ionLazyLinkList(rt).getFirst();

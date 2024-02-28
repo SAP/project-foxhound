@@ -352,11 +352,13 @@ uint32_t MacroAssembler::buildFakeExitFrame(Register scratch) {
 // Exit frame footer.
 
 void MacroAssembler::enterExitFrame(Register cxreg, Register scratch,
-                                    const VMFunctionData* f) {
-  MOZ_ASSERT(f);
+                                    VMFunctionId f) {
   linkExitFrame(cxreg, scratch);
-  // Push VMFunction pointer, to mark arguments.
-  Push(ImmPtr(f));
+  // Push `ExitFrameType::VMFunction + VMFunctionId`, for marking the arguments.
+  // See ExitFooterFrame::data_.
+  uintptr_t type = uintptr_t(ExitFrameType::VMFunction) + uintptr_t(f);
+  MOZ_ASSERT(type <= INT32_MAX);
+  Push(Imm32(type));
 }
 
 void MacroAssembler::enterFakeExitFrame(Register cxreg, Register scratch,
@@ -901,15 +903,16 @@ void MacroAssembler::canonicalizeDoubleIfDeterministic(FloatRegister reg) {
 // ========================================================================
 // Memory access primitives.
 template <class T>
-void MacroAssembler::storeDouble(FloatRegister src, const T& dest) {
+FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
+                                               const T& dest) {
   canonicalizeDoubleIfDeterministic(src);
-  storeUncanonicalizedDouble(src, dest);
+  return storeUncanonicalizedDouble(src, dest);
 }
 
-template void MacroAssembler::storeDouble(FloatRegister src,
-                                          const Address& dest);
-template void MacroAssembler::storeDouble(FloatRegister src,
-                                          const BaseIndex& dest);
+template FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
+                                                        const Address& dest);
+template FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
+                                                        const BaseIndex& dest);
 
 template <class T>
 void MacroAssembler::boxDouble(FloatRegister src, const T& dest) {
@@ -917,15 +920,16 @@ void MacroAssembler::boxDouble(FloatRegister src, const T& dest) {
 }
 
 template <class T>
-void MacroAssembler::storeFloat32(FloatRegister src, const T& dest) {
+FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
+                                                const T& dest) {
   canonicalizeFloatIfDeterministic(src);
-  storeUncanonicalizedFloat32(src, dest);
+  return storeUncanonicalizedFloat32(src, dest);
 }
 
-template void MacroAssembler::storeFloat32(FloatRegister src,
-                                           const Address& dest);
-template void MacroAssembler::storeFloat32(FloatRegister src,
-                                           const BaseIndex& dest);
+template FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
+                                                         const Address& dest);
+template FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
+                                                         const BaseIndex& dest);
 
 template <typename T>
 void MacroAssembler::fallibleUnboxInt32(const T& src, Register dest,

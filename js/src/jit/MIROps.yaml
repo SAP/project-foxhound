@@ -156,6 +156,13 @@
 #   - attribute not specified (default): no code generated
 #   - true: allows cloning
 #
+# can_consume_float32
+# ===================
+# Indicates whether this instruction's operands can have MIRType::Float32.
+# Possible values:
+#   - attribute not specified (default): no code generated
+#   - true: canConsumeFloat32 returns true
+#
 
 # TODO(no-TI): try to remove this instruction.
 - name: Start
@@ -1194,6 +1201,7 @@
   result_type: String
   congruent_to: if_operands_equal
   alias_set: none
+  movable: true
   can_recover: true
 
 - name: ModuleMetadata
@@ -2157,6 +2165,11 @@
     completionKind: uint8_t
   possibly_calls: true
 
+- name: OptimizeGetIteratorCache
+  operands:
+    value: Value
+  result_type: Boolean
+
 - name: InCache
   gen_boilerplate: false
 
@@ -2302,6 +2315,8 @@
   folds_to: custom
   congruent_to: if_operands_equal
   alias_set: none
+  type_policy: none
+  can_consume_float32: true
 
 - name: HasClass
   gen_boilerplate: false
@@ -2917,6 +2932,17 @@
 
 - name: WasmBoundsCheck
   gen_boilerplate: false
+
+- name: WasmBoundsCheckRange32
+  operands:
+    index: Int32
+    length: Int32
+    limit: Int32
+  arguments:
+    bytecodeOffset: wasm::BytecodeOffset
+  result_type: Int32
+  congruent_to: if_operands_equal
+  type_policy: none
 
 - name: WasmExtendU32Index
   operands:

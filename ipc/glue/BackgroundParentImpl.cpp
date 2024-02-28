@@ -126,6 +126,35 @@ BackgroundParentImpl::~BackgroundParentImpl() {
   MOZ_COUNT_DTOR(mozilla::ipc::BackgroundParentImpl);
 }
 
+void BackgroundParentImpl::ProcessingError(Result aCode, const char* aReason) {
+  if (MsgDropped == aCode) {
+    return;
+  }
+
+  // XXX Remove this cut-out once bug 1858621 is fixed. Some parent actors
+  // currently return nullptr in actor allocation methods for non fatal errors.
+  // We don't want to crash the parent process or child processes in that case.
+  if (MsgValueError == aCode) {
+    return;
+  }
+
+  // Other errors are big deals.
+  nsDependentCString reason(aReason);
+  if (BackgroundParent::IsOtherProcessActor(this)) {
+#ifndef FUZZING
+    BackgroundParent::KillHardAsync(this, reason);
+#endif
+    if (CanSend()) {
+      GetIPCChannel()->InduceConnectionError();
+    }
+  } else {
+    CrashReporter::AnnotateCrashReport(
+        CrashReporter::Annotation::ipc_channel_error, reason);
+
+    MOZ_CRASH("in-process BackgroundParent abort due to IPC error");
+  }
+}
+
 void BackgroundParentImpl::ActorDestroy(ActorDestroyReason aWhy) {
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
@@ -816,6 +845,10 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvPBroadcastChannelConstructor(
     return IPC_OK();
   }
 
+  // XXX The principal can be checked right here on the PBackground thread
+  // since BackgroundParentImpl now overrides the ProcessingError method and
+  // kills invalid child processes (IPC_FAIL triggers a processing error).
+
   RefPtr<CheckPrincipalRunnable> runnable =
       new CheckPrincipalRunnable(parent.forget(), aPrincipalInfo, aOrigin);
   MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(runnable));
@@ -1257,26 +1290,36 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvPEndpointForReportConstructor(
 mozilla::ipc::IPCResult
 BackgroundParentImpl::RecvEnsureRDDProcessAndCreateBridge(
     EnsureRDDProcessAndCreateBridgeResolver&& aResolver) {
-  RDDProcessManager* rdd = RDDProcessManager::Get();
   using Type = std::tuple<const nsresult&,
                           Endpoint<mozilla::PRemoteDecoderManagerChild>&&>;
+
+  RefPtr<ThreadsafeContentParentHandle> parent =
+      BackgroundParent::GetContentParentHandle(this);
+  if (NS_WARN_IF(!parent)) {
+    aResolver(
+        Type(NS_ERROR_NOT_AVAILABLE, Endpoint<PRemoteDecoderManagerChild>()));
+    return IPC_OK();
+  }
+
+  RDDProcessManager* rdd = RDDProcessManager::Get();
   if (!rdd) {
     aResolver(
         Type(NS_ERROR_NOT_AVAILABLE, Endpoint<PRemoteDecoderManagerChild>()));
-  } else {
-    rdd->EnsureRDDProcessAndCreateBridge(OtherPid())
-        ->Then(GetCurrentSerialEventTarget(), __func__,
-               [resolver = std::move(aResolver)](
-                   mozilla::RDDProcessManager::EnsureRDDPromise::
-                       ResolveOrRejectValue&& aValue) mutable {
-                 if (aValue.IsReject()) {
-                   resolver(Type(aValue.RejectValue(),
-                                 Endpoint<PRemoteDecoderManagerChild>()));
-                   return;
-                 }
-                 resolver(Type(NS_OK, std::move(aValue.ResolveValue())));
-               });
+    return IPC_OK();
   }
+
+  rdd->EnsureRDDProcessAndCreateBridge(OtherPid(), parent->ChildID())
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [resolver = std::move(aResolver)](
+                 mozilla::RDDProcessManager::EnsureRDDPromise::
+                     ResolveOrRejectValue&& aValue) mutable {
+               if (aValue.IsReject()) {
+                 resolver(Type(aValue.RejectValue(),
+                               Endpoint<PRemoteDecoderManagerChild>()));
+                 return;
+               }
+               resolver(Type(NS_OK, std::move(aValue.ResolveValue())));
+             });
   return IPC_OK();
 }
 
@@ -1285,13 +1328,19 @@ BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge(
     const RemoteDecodeIn& aLocation,
     EnsureUtilityProcessAndCreateBridgeResolver&& aResolver) {
   base::ProcessId otherPid = OtherPid();
+  RefPtr<ThreadsafeContentParentHandle> parent =
+      BackgroundParent::GetContentParentHandle(this);
+  if (NS_WARN_IF(!parent)) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  dom::ContentParentId childId = parent->ChildID();
   nsCOMPtr<nsISerialEventTarget> managerThread = GetCurrentSerialEventTarget();
   if (!managerThread) {
     return IPC_FAIL_NO_REASON(this);
   }
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       "BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge()",
-      [aResolver, managerThread, otherPid, aLocation]() {
+      [aResolver, managerThread, otherPid, childId, aLocation]() {
         RefPtr<UtilityProcessManager> upm =
             UtilityProcessManager::GetSingleton();
         using Type =
@@ -1307,7 +1356,7 @@ BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge(
               }));
         } else {
           SandboxingKind sbKind = GetSandboxingKindFromLocation(aLocation);
-          upm->StartProcessForRemoteMediaDecoding(otherPid, sbKind)
+          upm->StartProcessForRemoteMediaDecoding(otherPid, childId, sbKind)
               ->Then(managerThread, __func__,
                      [resolver = aResolver](
                          mozilla::ipc::UtilityProcessManager::

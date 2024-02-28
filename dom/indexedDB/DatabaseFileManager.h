@@ -32,7 +32,7 @@ class DatabaseFileManager final
   const nsString mDatabaseName;
   const nsCString mDatabaseID;
 
-  mutable IndexedDBCipherKeyManager mCipherKeyManager;
+  RefPtr<IndexedDBCipherKeyManager> mCipherKeyManager;
 
   LazyInitializedOnce<const nsString> mDirectoryPath;
   LazyInitializedOnce<const nsString> mJournalDirectoryPath;
@@ -84,7 +84,10 @@ class DatabaseFileManager final
   const nsCString& DatabaseID() const { return mDatabaseID; }
 
   IndexedDBCipherKeyManager& MutableCipherKeyManagerRef() const {
-    return mCipherKeyManager;
+    MOZ_ASSERT(mIsInPrivateBrowsingMode);
+    MOZ_ASSERT(mCipherKeyManager);
+
+    return *mCipherKeyManager;
   }
 
   auto IsInPrivateBrowsingMode() const { return mIsInPrivateBrowsingMode; }
@@ -111,6 +114,8 @@ class DatabaseFileManager final
                                         nsIFile& aJournalFile) const;
 
   [[nodiscard]] nsresult AsyncDeleteFile(int64_t aFileId);
+
+  nsresult Invalidate() override;
 
   MOZ_DECLARE_REFCOUNTED_TYPENAME(DatabaseFileManager)
 

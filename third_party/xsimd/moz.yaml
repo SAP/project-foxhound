@@ -10,15 +10,15 @@ origin:
 
   url: https://github.com/QuantStack/xsimd
 
-  release: e8f209c3397c8a866be2312682689a04e4abfd66 (2023-02-27T06:32:46Z).
-  revision: e8f209c3397c8a866be2312682689a04e4abfd66
+  release: 11.2.0 (2023-11-08T21:37:47+01:00).
+  revision: 11.2.0
 
   license: BSD-3-Clause
 
 vendoring:
   url: https://github.com/QuantStack/xsimd
   source-hosting: github
-  tracking: commit
+  tracking: tag
 
   exclude:
     - ".*"
@@ -35,3 +35,11 @@ vendoring:
 
   keep:
     - include/
+
+updatebot:
+  maintainer-phab: padenot
+  maintainer-bz: padenot@mozilla.com
+  tasks:
+    - type: vendoring
+      enabled: true
+      frequency: release

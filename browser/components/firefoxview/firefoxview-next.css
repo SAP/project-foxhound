@@ -69,12 +69,6 @@ body {
   color: var(--fxview-text-primary-color);
 }
 
-#pages {
-  overflow-y: auto;
-  max-height: 100vh;
-  max-width: 100%;
-}
-
 .main-container {
   width: 90%;
   margin: 0 auto;
@@ -90,6 +84,10 @@ body {
 
 .page-header {
   margin: 0;
+}
+
+fxview-category-button:focus-visible {
+  outline-offset: var(--in-content-focus-outline-inset);
 }
 
 fxview-category-button[name="recentbrowsing"]::part(icon) {

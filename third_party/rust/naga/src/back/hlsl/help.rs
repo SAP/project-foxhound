@@ -133,7 +133,7 @@ impl<'a, W: Write> super::Writer<'a, W> {
             }
             crate::ImageClass::Sampled { kind, multi } => {
                 let multi_str = if multi { "MS" } else { "" };
-                let scalar_kind_str = kind.to_hlsl_str(4)?;
+                let scalar_kind_str = crate::Scalar { kind, width: 4 }.to_hlsl_str()?;
                 write!(self.out, "{multi_str}<{scalar_kind_str}4>")?
             }
             crate::ImageClass::Storage { format, .. } => {
@@ -244,7 +244,7 @@ impl<'a, W: Write> super::Writer<'a, W> {
         const MIP_LEVEL_PARAM: &str = "mip_level";
 
         // Write function return type and name
-        let ret_ty = func_ctx.info[expr_handle].ty.inner_with(&module.types);
+        let ret_ty = func_ctx.resolve_type(expr_handle, &module.types);
         self.write_value_type(module, ret_ty)?;
         write!(self.out, " ")?;
         self.write_wrapped_image_query_function_name(wiq)?;
@@ -658,8 +658,7 @@ impl<'a, W: Write> super::Writer<'a, W> {
         let vec_ty = match module.types[member.ty].inner {
             crate::TypeInner::Matrix { rows, width, .. } => crate::TypeInner::Vector {
                 size: rows,
-                kind: crate::ScalarKind::Float,
-                width,
+                scalar: crate::Scalar::float(width),
             },
             _ => unreachable!(),
         };
@@ -737,10 +736,9 @@ impl<'a, W: Write> super::Writer<'a, W> {
             _ => unreachable!(),
         };
         let scalar_ty = match module.types[member.ty].inner {
-            crate::TypeInner::Matrix { width, .. } => crate::TypeInner::Scalar {
-                kind: crate::ScalarKind::Float,
-                width,
-            },
+            crate::TypeInner::Matrix { width, .. } => {
+                crate::TypeInner::Scalar(crate::Scalar::float(width))
+            }
             _ => unreachable!(),
         };
         self.write_value_type(module, &scalar_ty)?;
@@ -891,7 +889,7 @@ impl<'a, W: Write> super::Writer<'a, W> {
                     }
                 }
                 crate::Expression::ImageQuery { image, query } => {
-                    let wiq = match *func_ctx.info[image].ty.inner_with(&module.types) {
+                    let wiq = match *func_ctx.resolve_type(image, &module.types) {
                         crate::TypeInner::Image {
                             dim,
                             arrayed,
@@ -912,9 +910,8 @@ impl<'a, W: Write> super::Writer<'a, W> {
                 // Write `WrappedConstructor` for structs that are loaded from `AddressSpace::Storage`
                 // since they will later be used by the fn `write_storage_load`
                 crate::Expression::Load { pointer } => {
-                    let pointer_space = func_ctx.info[pointer]
-                        .ty
-                        .inner_with(&module.types)
+                    let pointer_space = func_ctx
+                        .resolve_type(pointer, &module.types)
                         .pointer_space();
 
                     if let Some(crate::AddressSpace::Storage { .. }) = pointer_space {
@@ -1016,7 +1013,7 @@ impl<'a, W: Write> super::Writer<'a, W> {
         if extra == 0 {
             self.write_expr(module, coordinate, func_ctx)?;
         } else {
-            let num_coords = match *func_ctx.info[coordinate].ty.inner_with(&module.types) {
+            let num_coords = match *func_ctx.resolve_type(coordinate, &module.types) {
                 crate::TypeInner::Scalar { .. } => 1,
                 crate::TypeInner::Vector { size, .. } => size as usize,
                 _ => unreachable!(),

@@ -1,69 +1,71 @@
-From: Byron Campen <docfaraday@gmail.com>
-Date: Thu, 20 Jul 2023 14:24:00 +0000
-Subject: Bug 1838080: Use the current TaskQueue, instead of the current
- thread, to init this. r=pehrsons,webrtc-reviewers
+From: Robert Mader <robert.mader@posteo.de>
+Date: Wed, 6 Sep 2023 16:37:00 +0000
+Subject: Bug 1843786 - webrtc: Implement Pipewire camera rotation support,
+ r=webrtc-reviewers,pehrsons,@webrtc-reviewers
 
-There are situations where the current thread is not set, but the current
-TaskQueue is (but not vice versa).
+Support the Pipewire videotransform meta via the already existing shared
+infrastructure. This is needed for mobile devices which often have a 90
+degree rotated camera - which is likely the reason there is already
+support in the shared code paths.
 
-Differential Revision: https://phabricator.services.mozilla.com/D180736
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/62e71a2f745c4b98d5ee7ce9e6386aa1b657be9b
+Upstream commit: dc4c019c62abefc09e4903abea44bc36f3427452
+
+Differential Revision: https://phabricator.services.mozilla.com/D183652
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/1db7a958b945838c64dcfcb638f79b99f729b364
 ---
- .../rtp_video_stream_receiver_frame_transformer_delegate.cc  | 3 +--
- .../rtp_video_stream_receiver_frame_transformer_delegate.h   | 5 ++---
- video/rtp_video_stream_receiver2.cc                          | 2 +-
- 3 files changed, 4 insertions(+), 6 deletions(-)
+ .../linux/video_capture_pipewire.cc           | 28 +++++++++++++++++++
+ 1 file changed, 28 insertions(+)
 
-diff --git a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc
-index aa5c8dfa28..15a8da18ca 100644
---- a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc
-+++ b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc
-@@ -79,8 +79,7 @@ RtpVideoStreamReceiverFrameTransformerDelegate::
-     RtpVideoStreamReceiverFrameTransformerDelegate(
-         RtpVideoFrameReceiver* receiver,
-         rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
--        rtc::Thread* network_thread,
--        uint32_t ssrc)
-+        TaskQueueBase* network_thread, uint32_t ssrc)
-     : receiver_(receiver),
-       frame_transformer_(std::move(frame_transformer)),
-       network_thread_(network_thread),
-diff --git a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h
-index 3e8257f906..5adca0634c 100644
---- a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h
-+++ b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h
-@@ -39,8 +39,7 @@ class RtpVideoStreamReceiverFrameTransformerDelegate
-   RtpVideoStreamReceiverFrameTransformerDelegate(
-       RtpVideoFrameReceiver* receiver,
-       rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
--      rtc::Thread* network_thread,
--      uint32_t ssrc);
-+      TaskQueueBase* network_thread, uint32_t ssrc);
+diff --git a/modules/video_capture/linux/video_capture_pipewire.cc b/modules/video_capture/linux/video_capture_pipewire.cc
+index 46cfe9bc15..7b79f15a6c 100644
+--- a/modules/video_capture/linux/video_capture_pipewire.cc
++++ b/modules/video_capture/linux/video_capture_pipewire.cc
+@@ -301,6 +301,10 @@ void VideoCaptureModulePipeWire::OnFormatChanged(const struct spa_pod* format) {
+       &builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta, SPA_PARAM_META_type,
+       SPA_POD_Id(SPA_META_Header), SPA_PARAM_META_size,
+       SPA_POD_Int(sizeof(struct spa_meta_header)))));
++  params.push_back(reinterpret_cast<spa_pod*>(spa_pod_builder_add_object(
++      &builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta, SPA_PARAM_META_type,
++      SPA_POD_Id(SPA_META_VideoTransform), SPA_PARAM_META_size,
++      SPA_POD_Int(sizeof(struct spa_meta_videotransform)))));
+   pw_stream_update_params(stream_, params.data(), params.size());
+ }
  
-   void Init();
-   void Reset();
-@@ -65,7 +64,7 @@ class RtpVideoStreamReceiverFrameTransformerDelegate
-   RtpVideoFrameReceiver* receiver_ RTC_GUARDED_BY(network_sequence_checker_);
-   rtc::scoped_refptr<FrameTransformerInterface> frame_transformer_
-       RTC_GUARDED_BY(network_sequence_checker_);
--  rtc::Thread* const network_thread_;
-+  TaskQueueBase* const network_thread_;
-   const uint32_t ssrc_;
- };
+@@ -341,6 +345,19 @@ void VideoCaptureModulePipeWire::OnStreamProcess(void* data) {
+   that->ProcessBuffers();
+ }
  
-diff --git a/video/rtp_video_stream_receiver2.cc b/video/rtp_video_stream_receiver2.cc
-index b6d8af8903..e28bb302fe 100644
---- a/video/rtp_video_stream_receiver2.cc
-+++ b/video/rtp_video_stream_receiver2.cc
-@@ -341,7 +341,7 @@ RtpVideoStreamReceiver2::RtpVideoStreamReceiver2(
-   if (frame_transformer) {
-     frame_transformer_delegate_ =
-         rtc::make_ref_counted<RtpVideoStreamReceiverFrameTransformerDelegate>(
--            this, std::move(frame_transformer), rtc::Thread::Current(),
-+            this, std::move(frame_transformer), TaskQueueBase::Current(),
-             config_.rtp.remote_ssrc);
-     frame_transformer_delegate_->Init();
-   }
--- 
-2.34.1
-
++static VideoRotation VideorotationFromPipeWireTransform(uint32_t transform) {
++  switch (transform) {
++    case SPA_META_TRANSFORMATION_90:
++      return kVideoRotation_90;
++    case SPA_META_TRANSFORMATION_180:
++      return kVideoRotation_180;
++    case SPA_META_TRANSFORMATION_270:
++      return kVideoRotation_270;
++    default:
++      return kVideoRotation_0;
++  }
++}
++
+ void VideoCaptureModulePipeWire::ProcessBuffers() {
+   RTC_CHECK_RUNS_SERIALIZED(&capture_checker_);
+ 
+@@ -349,6 +366,17 @@ void VideoCaptureModulePipeWire::ProcessBuffers() {
+     h = static_cast<struct spa_meta_header*>(
+         spa_buffer_find_meta_data(buffer->buffer, SPA_META_Header, sizeof(*h)));
+ 
++    struct spa_meta_videotransform* videotransform;
++    videotransform =
++        static_cast<struct spa_meta_videotransform*>(spa_buffer_find_meta_data(
++            buffer->buffer, SPA_META_VideoTransform, sizeof(*videotransform)));
++    if (videotransform) {
++      VideoRotation rotation =
++          VideorotationFromPipeWireTransform(videotransform->transform);
++      SetCaptureRotation(rotation);
++      SetApplyRotation(rotation != kVideoRotation_0);
++    }
++
+     if (h->flags & SPA_META_HEADER_FLAG_CORRUPTED) {
+       RTC_LOG(LS_INFO) << "Dropping corruped frame.";
+     } else {

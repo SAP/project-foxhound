@@ -179,8 +179,7 @@ void RemoteWorkerChild::ActorDestroy(ActorDestroyReason) {
     RefPtr<nsIRunnable> runnable =
         NewRunnableMethod("RequestWorkerCancellation", this,
                           &RemoteWorkerChild::RequestWorkerCancellation);
-    MOZ_ALWAYS_SUCCEEDS(
-        SchedulerGroup::Dispatch(TaskCategory::Other, runnable.forget()));
+    MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(runnable.forget()));
   }
 }
 
@@ -202,8 +201,7 @@ void RemoteWorkerChild::ExecWorker(const RemoteWorkerData& aData) {
         Unused << NS_WARN_IF(NS_FAILED(rv));
       });
 
-  MOZ_ALWAYS_SUCCEEDS(
-      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
+  MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
 }
 
 nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
@@ -265,6 +263,12 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
   info.mOriginAttributes =
       BasePrincipal::Cast(principal)->OriginAttributesRef();
   info.mShouldResistFingerprinting = aData.shouldResistFingerprinting();
+  Maybe<RFPTarget> overriddenFingerprintingSettings;
+  if (aData.overriddenFingerprintingSettings().isSome()) {
+    overriddenFingerprintingSettings.emplace(
+        RFPTarget(aData.overriddenFingerprintingSettings().ref()));
+  }
+  info.mOverriddenFingerprintingSettings = overriddenFingerprintingSettings;
   net::CookieJarSettings::Deserialize(aData.cookieJarSettings(),
                                       getter_AddRefs(info.mCookieJarSettings));
   info.mCookieJarSettingsArgs = aData.cookieJarSettings();
@@ -445,8 +449,7 @@ void RemoteWorkerChild::InitializeOnWorker() {
   nsCOMPtr<nsIRunnable> r =
       NewRunnableMethod("TransitionStateToRunning", this,
                         &RemoteWorkerChild::TransitionStateToRunning);
-  MOZ_ALWAYS_SUCCEEDS(
-      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
+  MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
 }
 
 RefPtr<GenericNonExclusivePromise> RemoteWorkerChild::GetTerminationPromise() {
@@ -837,8 +840,7 @@ class RemoteWorkerChild::SharedWorkerOp : public RemoteWorkerChild::Op {
           self->StartOnMainThread(owner);
         });
 
-    MOZ_ALWAYS_SUCCEEDS(
-        SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
+    MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
 
 #ifdef DEBUG
     mStarted = true;

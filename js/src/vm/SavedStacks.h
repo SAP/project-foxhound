@@ -164,8 +164,7 @@ class SavedStacks {
 
  public:
   SavedStacks()
-      : frames(),
-        bernoulliSeeded(false),
+      : bernoulliSeeded(false),
         bernoulli(1.0, 0x59fdad7f6b4cc573, 0x91adf38db96a9354),
         creatingSavedFrame(false) {}
 
@@ -194,7 +193,7 @@ class SavedStacks {
   // An alloction metadata builder that marks cells with the JavaScript stack
   // at which they were allocated.
   struct MetadataBuilder : public AllocationMetadataBuilder {
-    MetadataBuilder() : AllocationMetadataBuilder() {}
+    MetadataBuilder() = default;
     virtual JSObject* build(JSContext* cx, HandleObject obj,
                             AutoEnterOOMUnsafeRegion& oomUnsafe) const override;
   };

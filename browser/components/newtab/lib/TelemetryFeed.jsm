@@ -870,7 +870,7 @@ class TelemetryFeed {
       if (session) {
         Glean.topsites.impression.record({
           advertiser_name,
-          tile_id: tile_id.toString(),
+          tile_id,
           newtab_visit_id: session.session_id,
           is_sponsored: true,
           position,
@@ -886,7 +886,7 @@ class TelemetryFeed {
       if (session) {
         Glean.topsites.click.record({
           advertiser_name,
-          tile_id: tile_id.toString(),
+          tile_id,
           newtab_visit_id: session.session_id,
           is_sponsored: true,
           position,
@@ -971,20 +971,28 @@ class TelemetryFeed {
     const session = this.sessions.get(au.getPortIdOfSender(action));
     switch (action.data?.event) {
       case "CLICK":
+        const { card_type, topic, recommendation_id, tile_id, shim } =
+          action.data.value ?? {};
         if (
           action.data.source === "POPULAR_TOPICS" ||
-          action.data.value?.card_type === "topics_widget"
+          card_type === "topics_widget"
         ) {
           Glean.pocket.topicClick.record({
             newtab_visit_id: session.session_id,
-            topic: action.data.value?.topic,
+            topic,
           });
-        } else if (["spoc", "organic"].includes(action.data.value?.card_type)) {
+        } else if (["spoc", "organic"].includes(card_type)) {
           Glean.pocket.click.record({
             newtab_visit_id: session.session_id,
-            is_sponsored: action.data.value?.card_type === "spoc",
+            is_sponsored: card_type === "spoc",
             position: action.data.action_position,
+            recommendation_id,
+            tile_id,
           });
+          if (shim) {
+            Glean.pocket.shim.set(shim);
+            GleanPings.spoc.submit("click");
+          }
         }
         break;
       case "SAVE_TO_POCKET":
@@ -992,7 +1000,13 @@ class TelemetryFeed {
           newtab_visit_id: session.session_id,
           is_sponsored: action.data.value?.card_type === "spoc",
           position: action.data.action_position,
+          recommendation_id: action.data.value?.recommendation_id,
+          tile_id: action.data.value?.tile_id,
         });
+        if (action.data.value?.shim) {
+          Glean.pocket.shim.set(action.data.value.shim);
+          GleanPings.spoc.submit("save");
+        }
         break;
     }
   }
@@ -1175,6 +1189,53 @@ class TelemetryFeed {
       case at.UNINIT:
         this.uninit();
         break;
+      case at.ABOUT_SPONSORED_TOP_SITES:
+        this.handleAboutSponsoredTopSites(action);
+        break;
+      case at.BLOCK_URL:
+        this.handleBlockUrl(action);
+        break;
+    }
+  }
+
+  handleBlockUrl(action) {
+    const session = this.sessions.get(au.getPortIdOfSender(action));
+    // TODO: Do we want to not send this unless there's a newtab_visit_id?
+    if (!session) {
+      return;
+    }
+
+    // Despite the action name, this is actually a bulk dismiss action:
+    // it can be applied to multiple topsites simultaneously.
+    const { data } = action;
+    for (const datum of data) {
+      if (datum.is_pocket_card) {
+        // There is no instrumentation for Pocket dismissals (yet).
+        continue;
+      }
+      const { position, advertiser_name, tile_id, isSponsoredTopSite } = datum;
+      Glean.topsites.dismiss.record({
+        advertiser_name,
+        tile_id,
+        newtab_visit_id: session.session_id,
+        is_sponsored: !!isSponsoredTopSite,
+        position,
+      });
+    }
+  }
+
+  handleAboutSponsoredTopSites(action) {
+    const session = this.sessions.get(au.getPortIdOfSender(action));
+    const { data } = action;
+    const { position, advertiser_name, tile_id } = data;
+
+    if (session) {
+      Glean.topsites.showPrivacyClick.record({
+        advertiser_name,
+        tile_id,
+        newtab_visit_id: session.session_id,
+        position,
+      });
     }
   }
 
@@ -1215,7 +1276,13 @@ class TelemetryFeed {
         newtab_visit_id: session.session_id,
         is_sponsored: tile.type === "spoc",
         position: tile.pos,
+        recommendation_id: tile.recommendation_id,
+        tile_id: tile.id,
       });
+      if (tile.shim) {
+        Glean.pocket.shim.set(tile.shim);
+        GleanPings.spoc.submit("impression");
+      }
     });
     impressionSets[source] = impressions;
     session.impressionSets = impressionSets;
@@ -1319,7 +1386,7 @@ class TelemetryFeed {
       showSponsored: Glean.pocket.sponsoredStoriesEnabled,
       topSitesRows: Glean.topsites.rows,
     };
-    const setNewtabPrefMetrics = fullPrefName => {
+    const setNewtabPrefMetrics = (fullPrefName, isChanged) => {
       const pref = fullPrefName.slice(ACTIVITY_STREAM_PREF_BRANCH.length);
       if (!Object.hasOwn(NEWTAB_PING_PREFS, pref)) {
         return;
@@ -1334,14 +1401,25 @@ class TelemetryFeed {
           metric.set(Services.prefs.getIntPref(fullPrefName));
           break;
       }
+      if (isChanged) {
+        switch (fullPrefName) {
+          case `${ACTIVITY_STREAM_PREF_BRANCH}feeds.topsites`:
+          case `${ACTIVITY_STREAM_PREF_BRANCH}showSponsoredTopSites`:
+            Glean.topsites.prefChanged.record({
+              pref_name: fullPrefName,
+              new_value: Services.prefs.getBoolPref(fullPrefName),
+            });
+            break;
+        }
+      }
     };
     Services.prefs.addObserver(
       ACTIVITY_STREAM_PREF_BRANCH,
-      (subject, topic, data) => setNewtabPrefMetrics(data)
+      (subject, topic, data) => setNewtabPrefMetrics(data, true)
     );
     for (const pref of Object.keys(NEWTAB_PING_PREFS)) {
       const fullPrefName = ACTIVITY_STREAM_PREF_BRANCH + pref;
-      setNewtabPrefMetrics(fullPrefName);
+      setNewtabPrefMetrics(fullPrefName, false);
     }
     Glean.pocket.isSignedIn.set(lazy.pktApi.isUserLoggedIn());
 

@@ -209,7 +209,7 @@
 #include "frontend/Token.h"
 #include "frontend/TokenKind.h"
 #include "js/CharacterEncoding.h"  // JS::ConstUTF8CharsZ
-#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberZeroOrigin, JS::ColumnNumberZeroOrigin
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin, JS::ColumnNumberOneOrigin, JS::ColumnNumberUnsignedOffset
 #include "js/CompileOptions.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/HashTable.h"             // js::HashMap
@@ -510,21 +510,22 @@ enum class UnitsType : unsigned char {
 
 class ChunkInfo {
  private:
-  // Column number in UTF-16 code units (0-origin).
+  // Column number offset in UTF-16 code units.
   // Store everything in |unsigned char|s so everything packs.
-  unsigned char column_[sizeof(uint32_t)];
+  unsigned char columnOffset_[sizeof(uint32_t)];
   unsigned char unitsType_;
 
  public:
-  ChunkInfo(JS::ColumnNumberZeroOrigin col, UnitsType type)
+  ChunkInfo(JS::ColumnNumberUnsignedOffset offset, UnitsType type)
       : unitsType_(static_cast<unsigned char>(type)) {
-    memcpy(column_, col.addressOfValueForTranscode(), sizeof(col));
+    memcpy(columnOffset_, offset.addressOfValueForTranscode(), sizeof(offset));
   }
 
-  JS::ColumnNumberZeroOrigin column() const {
-    JS::ColumnNumberZeroOrigin col;
-    memcpy(col.addressOfValueForTranscode(), column_, sizeof(uint32_t));
-    return col;
+  JS::ColumnNumberUnsignedOffset columnOffset() const {
+    JS::ColumnNumberUnsignedOffset offset;
+    memcpy(offset.addressOfValueForTranscode(), columnOffset_,
+           sizeof(uint32_t));
+    return offset;
   }
 
   UnitsType unitsType() const {
@@ -580,7 +581,7 @@ class TokenStreamAnyChars : public TokenStreamShared {
   /**
    * A map of (line number => sequence of the column numbers at
    * |ColumnChunkLength|-unit boundaries rewound [if needed] to the nearest code
-   * point boundary).  (|TokenStreamAnyChars::computePartialColumn| is the sole
+   * point boundary).  (|TokenStreamAnyChars::computeColumnOffset| is the sole
    * user of |ColumnChunkLength| and therefore contains its definition.)
    *
    * Entries appear in this map only when a column computation of sufficient
@@ -626,10 +627,10 @@ class TokenStreamAnyChars : public TokenStreamShared {
   mutable uint32_t lastOffsetOfComputedColumn_ = UINT32_MAX;
 
   /**
-   * The column number for the offset (in code units) of the last column
-   * computation performed, relative to source start.
+   * The column number offset from the 1st column for the offset (in code units)
+   * of the last column computation performed, relative to source start.
    */
-  mutable JS::ColumnNumberZeroOrigin lastComputedColumn_;
+  mutable JS::ColumnNumberUnsignedOffset lastComputedColumnOffset_;
 
   // Intra-token fields.
 
@@ -907,15 +908,21 @@ class TokenStreamAnyChars : public TokenStreamShared {
 
  private:
   /**
-   * Compute the "partial" column number in UTF-16 code units of the absolute
-   * |offset| within source text on the line of |lineToken| (which must have
-   * been computed from |offset|).
+   * Compute the column number offset from the 1st code unit in the line in
+   * UTF-16 code units, for given absolute |offset| within source text on the
+   * line of |lineToken| (which must have been computed from |offset|).
    *
-   * A partial column number on a line that isn't the first line is just the
-   * actual column number.  But a partial column number on the first line is the
-   * column number *ignoring the initial line/column of the script*.  For
-   * example, consider this HTML with line/column number keys:
+   * A column number offset on a line that isn't the first line is just
+   * the actual column number in 0-origin.  But a column number offset
+   * on the first line is the column number offset from the initial
+   * line/column of the script.  For example, consider this HTML with
+   * line/column number keys:
    *
+   *     Column number in 1-origin
+   *                1         2            3
+   *       123456789012345678901234   567890
+   *
+   *     Column number in 0-origin, and the offset from 1st column
    *                 1         2            3
    *       0123456789012345678901234   567890
    *     ------------------------------------
@@ -928,17 +935,18 @@ class TokenStreamAnyChars : public TokenStreamShared {
    *   7 | </html>
    *
    * The script would be compiled specifying initial (line, column) of (3, 10)
-   * using |JS::ReadOnlyCompileOptions::{lineno,column}|.  And the column
-   * reported by |computeColumn| for the "v" of |var| would be 10.  But the
-   * partial column number of the "v" in |var|, that this function returns,
-   * would be 0.  On the other hand, the column reported by |computeColumn| and
-   * the partial column number returned by this function for the "c" in |const|
-   * would both be 0, because it's not in the first line of source text.
+   * using |JS::ReadOnlyCompileOptions::{lineno,column}|, which is 0-origin.
+   * And the column reported by |computeColumn| for the "v" of |var| would be
+   * 11 (in 1-origin).  But the column number offset of the "v" in |var|, that
+   * this function returns, would be 0.  On the other hand, the column reported
+   * by |computeColumn| would be 1 (in 1-origin) and the column number offset
+   * returned by this function for the "c" in |const| would be 0, because it's
+   * not in the first line of source text.
    *
-   * The partial column is with respect *only* to the JavaScript source text as
-   * SpiderMonkey sees it.  In the example, the "&lt;" is converted to "<" by
-   * the browser before SpiderMonkey would see it.  So the partial column of the
-   * "4" in the inequality would be 16, not 19.
+   * The column number offset is with respect *only* to the JavaScript source
+   * text as SpiderMonkey sees it.  In the example, the "&lt;" is converted to
+   * "<" by the browser before SpiderMonkey would see it.  So the column number
+   * offset of the "4" in the inequality would be 16, not 19.
    *
    * UTF-16 code units are not all equal length in UTF-8 source, so counting
    * requires *some* kind of linear-time counting from the start of the line.
@@ -954,12 +962,12 @@ class TokenStreamAnyChars : public TokenStreamShared {
    * And this is the best place to do that.
    */
   template <typename Unit>
-  JS::ColumnNumberZeroOrigin computePartialColumn(
+  JS::ColumnNumberUnsignedOffset computeColumnOffset(
       const LineToken lineToken, const uint32_t offset,
       const SourceUnits<Unit>& sourceUnits) const;
 
   template <typename Unit>
-  JS::ColumnNumberZeroOrigin computePartialColumnForUTF8(
+  JS::ColumnNumberUnsignedOffset computeColumnOffsetForUTF8(
       const LineToken lineToken, const uint32_t offset, const uint32_t start,
       const uint32_t offsetInLine, const SourceUnits<Unit>& sourceUnits) const;
 
@@ -1991,10 +1999,10 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
    * |offset| must be a code point boundary, preceded only by validly-encoded
    * source units.  (It doesn't have to be *followed* by valid source units.)
    */
-  JS::LimitedColumnNumberZeroOrigin computeColumn(LineToken lineToken,
-                                                  uint32_t offset) const;
+  JS::LimitedColumnNumberOneOrigin computeColumn(LineToken lineToken,
+                                                 uint32_t offset) const;
   void computeLineAndColumn(uint32_t offset, uint32_t* line,
-                            JS::LimitedColumnNumberZeroOrigin* column) const;
+                            JS::LimitedColumnNumberOneOrigin* column) const;
 
   /**
    * Fill in |err| completely, except for line-of-context information.
@@ -2005,9 +2013,9 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
   [[nodiscard]] bool fillExceptingContext(ErrorMetadata* err,
                                           uint32_t offset) const {
     if (anyCharsAccess().fillExceptingContext(err, offset)) {
-      JS::LimitedColumnNumberZeroOrigin columnNumber;
+      JS::LimitedColumnNumberOneOrigin columnNumber;
       computeLineAndColumn(offset, &err->lineNumber, &columnNumber);
-      err->columnNumber = JS::ColumnNumberZeroOrigin(columnNumber);
+      err->columnNumber = JS::ColumnNumberOneOrigin(columnNumber);
       return true;
     }
     return false;
@@ -2161,7 +2169,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
       end =
           this->sourceUnits.codeUnitPtrAt(anyChars.currentToken().pos.end - 2);
     } else {
-      // NO_SUBS_TEMPLATE is of the form   |`...`|   or   |}...`|
+      // NoSubsTemplate is of the form   |`...`|   or   |}...`|
       end =
           this->sourceUnits.codeUnitPtrAt(anyChars.currentToken().pos.end - 1);
     }
@@ -2546,7 +2554,7 @@ class MOZ_STACK_CLASS TokenStreamSpecific
     return anyChars.lineNumber(lineToken);
   }
 
-  JS::LimitedColumnNumberZeroOrigin columnAt(size_t offset) const final {
+  JS::LimitedColumnNumberOneOrigin columnAt(size_t offset) const final {
     return computeColumn(anyCharsAccess().lineToken(offset), offset);
   }
 

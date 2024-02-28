@@ -598,20 +598,50 @@ extern JS_PUBLIC_API JSObject* JS_GetFunctionObject(JSFunction* fun);
 
 /**
  * Return the function's identifier as a JSString, or null if fun is unnamed.
+ *
  * The returned string lives as long as fun, so you don't need to root a saved
  * reference to it if fun is well-connected or rooted, and provided you bound
  * the use of the saved reference by fun's lifetime.
+ *
+ * This function returns false if any error happens while generating the
+ * function name string for a function with lazy name.
  */
-extern JS_PUBLIC_API JSString* JS_GetFunctionId(JSFunction* fun);
+extern JS_PUBLIC_API bool JS_GetFunctionId(JSContext* cx,
+                                           JS::Handle<JSFunction*> fun,
+                                           JS::MutableHandle<JSString*> name);
 
 /**
- * Return a function's display name. This is the defined name if one was given
- * where the function was defined, or it could be an inferred name by the JS
- * engine in the case that the function was defined to be anonymous. This can
- * still return nullptr if a useful display name could not be inferred. The
- * same restrictions on rooting as those in JS_GetFunctionId apply.
+ * Almost same as JS_GetFunctionId.
+ *
+ * If the function has lazy name, this returns partial name, such as the
+ * function name without "get " or "set " prefix.
  */
-extern JS_PUBLIC_API JSString* JS_GetFunctionDisplayId(JSFunction* fun);
+extern JS_PUBLIC_API JSString* JS_GetMaybePartialFunctionId(JSFunction* fun);
+
+/**
+ * Return a function's display name as `name` out-parameter.
+ *
+ * This is the defined name if one was given where the function was defined, or
+ * it could be an inferred name by the JS engine in the case that the function
+ * was defined to be anonymous.
+ *
+ * This can still return nullptr as `name` out-parameter if a useful display
+ * name could not be inferred.
+ *
+ * This function returns false if any error happens while generating the
+ * function name string for a function with lazy name.
+ */
+extern JS_PUBLIC_API bool JS_GetFunctionDisplayId(
+    JSContext* cx, JS::Handle<JSFunction*> fun,
+    JS::MutableHandle<JSString*> name);
+
+/**
+ * Almost same as JS_GetFunctionDisplayId.
+ *
+ * If the function has lazy name, this returns partial name, such as the
+ * function name without "get " or "set " prefix.
+ */
+extern JS_PUBLIC_API JSString* JS_GetMaybePartialFunctionDisplayId(JSFunction*);
 
 /*
  * Return the arity of fun, which includes default parameters and rest
@@ -827,6 +857,8 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
   Register(INLINING_BYTECODE_MAX_LENGTH, "inlining.bytecode-max-length") \
   Register(BASELINE_INTERPRETER_ENABLE, "blinterp.enable") \
   Register(BASELINE_ENABLE, "baseline.enable") \
+  Register(PORTABLE_BASELINE_ENABLE, "pbl.enable") \
+  Register(PORTABLE_BASELINE_WARMUP_THRESHOLD, "pbl.warmup.threshold") \
   Register(OFFTHREAD_COMPILATION_ENABLE, "offthread-compilation.enable")  \
   Register(FULL_DEBUG_CHECKS, "jit.full-debug-checks") \
   Register(JUMP_THRESHOLD, "jump-threshold") \
@@ -936,7 +968,7 @@ class MOZ_RAII JS_PUBLIC_API AutoFilename {
  */
 extern JS_PUBLIC_API bool DescribeScriptedCaller(
     JSContext* cx, AutoFilename* filename = nullptr, uint32_t* lineno = nullptr,
-    JS::ColumnNumberZeroOrigin* column = nullptr);
+    JS::ColumnNumberOneOrigin* column = nullptr);
 
 extern JS_PUBLIC_API JSObject* GetScriptedCallerGlobal(JSContext* cx);
 

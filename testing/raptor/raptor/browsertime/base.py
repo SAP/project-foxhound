@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import sys
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
@@ -15,6 +16,7 @@ from copy import deepcopy
 import mozprocess
 import six
 from benchmark import Benchmark
+from cmdline import CHROME_ANDROID_APPS
 from logger.logger import RaptorLogger
 from manifestparser.util import evaluate_list_from_string
 from perftest import GECKO_PROFILER_APPS, TRACE_APPS, Perftest
@@ -38,12 +40,11 @@ class Browsertime(Perftest):
     def browsertime_args(self):
         pass
 
-    def __init__(self, app, binary, process_handler=None, **kwargs):
+    def __init__(self, app, binary, **kwargs):
         self.browsertime = True
         self.browsertime_failure = ""
         self.browsertime_user_args = []
 
-        self.process_handler = process_handler or mozprocess.ProcessHandler
         for key in list(kwargs):
             if key.startswith("browsertime_"):
                 value = kwargs.pop(key)
@@ -55,8 +56,17 @@ class Browsertime(Perftest):
             )
             return BrowsertimeResultsHandler(config, root_results_dir=root_results_dir)
 
+        profile_class = "firefox"
+        if app in CHROME_ANDROID_APPS:
+            # use the chrome-m profile class for both chrome-m and CaR-m
+            profile_class = "chrome-m"
+
         super(Browsertime, self).__init__(
-            app, binary, results_handler_class=klass, **kwargs
+            app,
+            binary,
+            profile_class=profile_class,
+            results_handler_class=klass,
+            **kwargs,
         )
         LOG.info("cwd: '{}'".format(os.getcwd()))
         self.config["browsertime"] = True
@@ -137,6 +147,7 @@ class Browsertime(Perftest):
             "chrome-m",
             "chromium",
             "custom-car",
+            "cstm-car-m",
         ):
             if (
                 not self.config.get("run_local", None)
@@ -154,7 +165,12 @@ class Browsertime(Perftest):
                     "windows": str(
                         pathlib.Path("{}chromedriver-win32", "chromedriver.exe")
                     ),
-                    "mac": str(pathlib.Path("{}chromedriver-mac-x64", "chromedriver")),
+                    "mac-x86_64": str(
+                        pathlib.Path("{}chromedriver-mac-x64", "chromedriver")
+                    ),
+                    "mac-arm": str(
+                        pathlib.Path("{}chromedriver-mac-arm64", "chromedriver")
+                    ),
                     "default": str(
                         pathlib.Path("{}chromedriver-linux64", "chromedriver")
                     ),
@@ -164,7 +180,10 @@ class Browsertime(Perftest):
                     if "mac" in self.config["platform"]:
                         self.browsertime_chromedriver = (
                             self.browsertime_chromedriver.replace(
-                                "{}chromedriver", cd_extracted_names_115["mac"]
+                                "{}chromedriver",
+                                cd_extracted_names_115[
+                                    f"mac-{self.config['processor']}"
+                                ],
                             )
                         )
                     elif "win" in self.config["platform"]:
@@ -219,16 +238,16 @@ class Browsertime(Perftest):
     def clean_up(self):
         super(Browsertime, self).clean_up()
 
-    def _expose_gecko_profiler(self, extra_profiler_run, test):
+    def _expose_browser_profiler(self, extra_profiler_run, test):
         """Use this method to check if we will use an exposed gecko profiler via browsertime.
-        The exposed gecko profiler let's us control the start/stop during tests.
-        At the moment we would only want this for the Firefox browser and for any test with the
-        `expose_gecko_profiler` field set true (e.g. benchmark tests).
+        The exposed browser profiler let's us control the start/stop during tests.
+        At the moment we would only want this for the Firefox or Chrome* applications and for
+        any test with the `expose_browser_profiler` field set true (e.g. benchmark tests).
         """
         return (
             extra_profiler_run
-            and test.get("expose_gecko_profiler")
-            and self.config["app"] in GECKO_PROFILER_APPS
+            and test.get("expose_browser_profiler")
+            and self.config["app"] in GECKO_PROFILER_APPS + TRACE_APPS
         )
 
     def _compose_cmd(self, test, timeout, extra_profiler_run=False):
@@ -363,7 +382,7 @@ class Browsertime(Perftest):
             os.environ.get("MOZ_FETCHES_DIR", "None"),
             "--browsertime.expose_profiler",
             "true"
-            if (self._expose_gecko_profiler(extra_profiler_run, test))
+            if self._expose_browser_profiler(extra_profiler_run, test)
             else "false",
         ]
 
@@ -417,7 +436,13 @@ class Browsertime(Perftest):
                     browsertime_options.extend(pairing)
 
         priority1_options = self.browsertime_args
-        if self.config["app"] in ("chrome", "chromium", "chrome-m", "custom-car"):
+        if self.config["app"] in (
+            "chrome",
+            "chromium",
+            "chrome-m",
+            "custom-car",
+            "cstm-car-m",
+        ):
             priority1_options.extend(self.setup_chrome_args(test))
 
         if self.debug_mode:
@@ -477,6 +502,7 @@ class Browsertime(Perftest):
                 "chrome-m",
                 "chrome",
                 "custom-car",
+                "cstm-car-m",
             ):
                 priority1_options.extend(
                     [
@@ -565,7 +591,7 @@ class Browsertime(Perftest):
         LOG.info("Composing Gecko Profiler commands")
         self._init_gecko_profiling(test)
         priority1_options.append("--firefox.geckoProfiler")
-        if self._expose_gecko_profiler(self.config.get("extra_profiler_run"), test):
+        if self._expose_browser_profiler(self.config.get("extra_profiler_run"), test):
             priority1_options.extend(
                 [
                     "--firefox.geckoProfilerRecordingType",
@@ -612,7 +638,10 @@ class Browsertime(Perftest):
 
         LOG.info("Composing Chrome Trace commands")
         self._init_chrome_trace(test)
+
         priority1_options.extend(["--chrome.trace"])
+        if self._expose_browser_profiler(self.config.get("extra_profiler_run"), test):
+            priority1_options.extend(["--chrome.timelineRecordingType", "custom"])
 
         # current categories to capture, we can modify this as needed in the future
         # reference:
@@ -765,9 +794,27 @@ class Browsertime(Perftest):
 
         return True
 
+    def kill(self, proc):
+        if "win" in self.config["platform"]:
+            proc.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+
     def run_extra_profiler_run(
         self, test, timeout, proc_timeout, output_timeout, line_handler, env
     ):
+        self.timed_out = False
+        self.output_timed_out = False
+
+        def timeout_handler(proc):
+            self.timed_out = True
+            self.kill(proc)
+
+        def output_timeout_handler(proc):
+            self.output_timed_out = True
+            self.kill(proc)
+
         try:
             LOG.info(
                 "Running browsertime with the profiler enabled after the main run."
@@ -777,18 +824,25 @@ class Browsertime(Perftest):
             LOG.info(
                 "browsertime profiling cmd: {}".format(" ".join([str(c) for c in cmd]))
             )
-            proc = self.process_handler(cmd, processOutputLine=line_handler, env=env)
-            proc.run(timeout=proc_timeout, outputTimeout=output_timeout)
-            proc.wait()
+            mozprocess.run_and_wait(
+                cmd,
+                output_line_handler=line_handler,
+                env=env,
+                timeout=proc_timeout,
+                timeout_handler=timeout_handler,
+                output_timeout=output_timeout,
+                output_timeout_handler=output_timeout_handler,
+                text=False,
+            )
 
             # Do not raise exception for the browsertime failure or timeout for this case.
             # Second profiler browsertime run is fallible.
-            if proc.outputTimedOut:
+            if self.output_timed_out:
                 LOG.info(
                     "Browsertime process for extra profiler run timed out after "
                     f"waiting {output_timeout} seconds for output"
                 )
-            if proc.timedOut:
+            if self.timed_out:
                 LOG.info(
                     "Browsertime process for extra profiler run timed out after "
                     f"{proc_timeout} seconds"
@@ -803,6 +857,17 @@ class Browsertime(Perftest):
             LOG.info("Failed during the extra profiler run: " + str(e))
 
     def run_test(self, test, timeout):
+        self.timed_out = False
+        self.output_timed_out = False
+
+        def timeout_handler(proc):
+            self.timed_out = True
+            self.kill(proc)
+
+        def output_timeout_handler(proc):
+            self.output_timed_out = True
+            self.kill(proc)
+
         self.run_test_setup(test)
         # timeout is a single page-load timeout value (ms) from the test INI
         # this will be used for btime --timeouts.pageLoad
@@ -837,9 +902,6 @@ class Browsertime(Perftest):
             ffmpeg_dir = os.path.dirname(os.path.abspath(self.browsertime_ffmpeg))
             old_path = env.setdefault("PATH", "")
             new_path = os.pathsep.join([ffmpeg_dir, old_path])
-            if isinstance(new_path, six.text_type):
-                # Python 2 doesn't like unicode in the environment.
-                new_path = new_path.encode("utf-8", "strict")
             env["PATH"] = new_path
 
         LOG.info("PATH: {}".format(env["PATH"]))
@@ -848,7 +910,7 @@ class Browsertime(Perftest):
             line_matcher = re.compile(r".*(\[.*\])\s+([a-zA-Z]+):\s+(.*)")
 
             def _create_line_handler(extra_profiler_run=False):
-                def _line_handler(line):
+                def _line_handler(proc, line):
                     """This function acts as a bridge between browsertime
                     and raptor. It reforms the lines to get rid of information
                     that is not needed, and outputs them appropriately based
@@ -918,18 +980,23 @@ class Browsertime(Perftest):
                 f"and output_timeout={output_timeout}"
             )
 
-            proc = self.process_handler(
-                cmd, processOutputLine=_create_line_handler(), env=env
+            mozprocess.run_and_wait(
+                cmd,
+                output_line_handler=_create_line_handler(),
+                env=env,
+                timeout=proc_timeout,
+                timeout_handler=timeout_handler,
+                output_timeout=output_timeout,
+                output_timeout_handler=output_timeout_handler,
+                text=False,
             )
-            proc.run(timeout=proc_timeout, outputTimeout=output_timeout)
-            proc.wait()
 
-            if proc.outputTimedOut:
+            if self.output_timed_out:
                 raise Exception(
                     f"Browsertime process timed out after waiting {output_timeout} seconds "
                     "for output"
                 )
-            if proc.timedOut:
+            if self.timed_out:
                 raise Exception(
                     f"Browsertime process timed out after {proc_timeout} seconds"
                 )

@@ -170,7 +170,6 @@
 
 #include "js/SliceBudget.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/AutoGlobalTimelineMarker.h"
 #include "mozilla/Likely.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MemoryReporting.h"
@@ -571,8 +570,7 @@ class PtrInfo final {
         mParticipant(aParticipant),
         mColor(grey),
         mInternalRefs(0),
-        mRefCount(kInitialRefCount),
-        mFirstChild() {
+        mRefCount(kInitialRefCount) {
     MOZ_ASSERT(aParticipant);
 
     // We initialize mRefCount to a large non-zero value so
@@ -2694,12 +2692,6 @@ void nsCycleCollector::ForgetSkippable(js::SliceBudget& aBudget,
     return;
   }
 
-  mozilla::Maybe<mozilla::AutoGlobalTimelineMarker> marker;
-  if (NS_IsMainThread()) {
-    marker.emplace("nsCycleCollector::ForgetSkippable",
-                   MarkerStackRequest::NO_STACK);
-  }
-
   // If we remove things from the purple buffer during graph building, we may
   // lose track of an object that was mutated during graph building.
   MOZ_ASSERT(IsIdle());
@@ -3402,8 +3394,8 @@ void nsCycleCollector::CleanupAfterCollection() {
 
   if (mCCJSRuntime) {
     mCCJSRuntime->FinalizeDeferredThings(
-        mResults.mAnyManual ? CycleCollectedJSContext::FinalizeNow
-                            : CycleCollectedJSContext::FinalizeIncrementally);
+        mResults.mAnyManual ? CycleCollectedJSRuntime::FinalizeNow
+                            : CycleCollectedJSRuntime::FinalizeIncrementally);
     mCCJSRuntime->EndCycleCollectionCallback(mResults);
     timeLog.Checkpoint("CleanupAfterCollection::EndCycleCollectionCallback()");
   }
@@ -3457,11 +3449,6 @@ bool nsCycleCollector::Collect(CCReason aReason, ccIsManual aIsManual,
   mActivelyCollecting = true;
 
   MOZ_ASSERT(!IsIncrementalGCInProgress());
-
-  mozilla::Maybe<mozilla::AutoGlobalTimelineMarker> marker;
-  if (NS_IsMainThread()) {
-    marker.emplace("nsCycleCollector::Collect", MarkerStackRequest::NO_STACK);
-  }
 
   bool startedIdle = IsIdle();
   bool collectedAny = false;
@@ -3836,6 +3823,19 @@ MOZ_NEVER_INLINE static void SuspectAfterShutdown(
 void NS_CycleCollectorSuspect3(void* aPtr, nsCycleCollectionParticipant* aCp,
                                nsCycleCollectingAutoRefCnt* aRefCnt,
                                bool* aShouldDelete) {
+  if ((
+#ifdef HAVE_64BIT_BUILD
+          aRefCnt->IsOnMainThread() ||
+#endif
+          NS_IsMainThread()) &&
+      gNurseryPurpleBufferEnabled) {
+    // The next time the object is passed to the purple buffer, we can do faster
+    // IsOnMainThread() check.
+    aRefCnt->SetIsOnMainThread();
+    SuspectUsingNurseryPurpleBuffer(aPtr, aCp, aRefCnt);
+    return;
+  }
+
   CollectorData* data = sCollectorData.get();
 
   // This assertion will happen if you AddRef or Release a cycle collected
@@ -3862,19 +3862,6 @@ void ClearNurseryPurpleBuffer() {
   MOZ_ASSERT(data);
   MOZ_ASSERT(data->mCollector);
   data->mCollector->SuspectNurseryEntries();
-}
-
-void NS_CycleCollectorSuspectUsingNursery(void* aPtr,
-                                          nsCycleCollectionParticipant* aCp,
-                                          nsCycleCollectingAutoRefCnt* aRefCnt,
-                                          bool* aShouldDelete) {
-  MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
-  if (!gNurseryPurpleBufferEnabled) {
-    NS_CycleCollectorSuspect3(aPtr, aCp, aRefCnt, aShouldDelete);
-    return;
-  }
-
-  SuspectUsingNurseryPurpleBuffer(aPtr, aCp, aRefCnt);
 }
 
 uint32_t nsCycleCollector_suspectedCount() {

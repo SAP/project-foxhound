@@ -47,9 +47,15 @@ module.exports = {
       {
         ignoreFunctions: [
           "light-dark" /* Used for color-scheme dependent colors */,
-          "-moz-image-rect" /* Used for cropping images */,
           "add" /* Used in mathml.css */,
         ],
+      },
+    ],
+
+    "max-nesting-depth": [
+      3,
+      {
+        ignore: ["blockless-at-rules"],
       },
     ],
 
@@ -237,23 +243,15 @@ module.exports = {
         ignorePseudoClasses: ["popover-open"],
       },
     ],
+    "selector-pseudo-element-no-unknown": [
+      true,
+      {
+        ignorePseudoElements: ["slider-track", "slider-fill", "slider-thumb"],
+      },
+    ],
   },
 
   overrides: [
-    {
-      // TODO: Bug 1851544: Re-enable the rule or change the rule set-up.
-      files: [
-        "browser/components/newtab/content-src/aboutwelcome/aboutwelcome.scss",
-        "browser/components/newtab/content-src/asrouter/components/ModalOverlay/_ModalOverlay.scss",
-        "browser/components/newtab/content-src/asrouter/templates/SimpleBelowSearchSnippet/_SimpleBelowSearchSnippet.scss",
-        "browser/components/newtab/content-src/components/CustomizeMenu/_CustomizeMenu.scss",
-        "browser/components/newtab/content-src/components/DiscoveryStreamComponents/CardGrid/_CardGrid.scss",
-        "browser/components/newtab/content-src/components/Search/_Search.scss",
-      ],
-      rules: {
-        "media-feature-range-notation": null,
-      },
-    },
     {
       files: "*.scss",
       customSyntax: "postcss-scss",
@@ -294,12 +292,6 @@ module.exports = {
         "function-url-no-scheme-relative": true,
         indentation: 2,
         "keyframes-name-pattern": null,
-        "max-nesting-depth": [
-          8,
-          {
-            ignore: ["blockless-at-rules", "pseudo-classes"],
-          },
-        ],
         "media-feature-name-no-vendor-prefix": null,
         "no-descending-specificity": null,
         "no-eol-whitespace": true,

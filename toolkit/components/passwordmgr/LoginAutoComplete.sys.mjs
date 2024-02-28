@@ -148,7 +148,7 @@ class LoginAutocompleteItem extends AutocompleteItem {
     this.value = hasBeenTypePassword ? login.password : login.username;
     this.comment = JSON.stringify({
       guid: login.guid,
-      login,
+      login, // We have to keep login here to satisfy Android
       isDuplicateUsername,
       isOriginMatched,
       comment:
@@ -156,6 +156,7 @@ class LoginAutocompleteItem extends AutocompleteItem {
           ? getLocalizedString("displaySameOrigin")
           : login.displayOrigin,
     });
+    this.image = `page-icon:${login.origin}`;
   }
 
   removeFromStorage() {
@@ -175,13 +176,12 @@ class GeneratedPasswordAutocompleteItem extends AutocompleteItem {
     super("generatedPassword");
 
     this.label = getLocalizedString("useASecurelyGeneratedPassword");
-
     this.value = generatedPassword;
-
     this.comment = JSON.stringify({
       generatedPassword,
       willAutoSaveGeneratedPassword,
     });
+    this.image = "chrome://browser/skin/login.svg";
   }
 }
 
@@ -229,7 +229,7 @@ class LoginsFooterAutocompleteItem extends AutocompleteItem {
   constructor(formHostname, telemetryEventData) {
     super("loginsFooter");
 
-    this.label = getLocalizedString("viewSavedLogins.label");
+    this.label = getLocalizedString("managePasswords.label");
 
     // The comment field of `loginsFooter` results have many additional pieces of
     // information for telemetry purposes. After bug 1555209, this information
@@ -337,7 +337,7 @@ export class LoginAutoCompleteResult {
           ...autocompleteItems.map(
             item =>
               new GenericAutocompleteItem(
-                item.icon,
+                item.image,
                 item.title,
                 item.subtitle,
                 item.fillMessageName,
@@ -367,7 +367,7 @@ export class LoginAutoCompleteResult {
         this.#rows.push(new ImportableLearnMoreAutocompleteItem());
       }
 
-      // If we have anything in autocomplete, then add "View Saved Logins"
+      // If we have anything in autocomplete, then add "Manage Passwords"
       this.#rows.push(
         new LoginsFooterAutocompleteItem(hostname, telemetryEventData)
       );
@@ -444,7 +444,7 @@ export class LoginAutoCompleteResult {
 
   getImageAt(index) {
     this.#throwOnBadIndex(index);
-    return "";
+    return this.#rows[index].image ?? "";
   }
 
   getFinalCompleteValueAt(index) {

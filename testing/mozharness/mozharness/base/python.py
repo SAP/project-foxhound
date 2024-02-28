@@ -470,7 +470,7 @@ class VirtualenvMixin(object):
                 / "python"
                 / "_venv"
                 / "wheels"
-                / "pip-23.0.1-py3-none-any.whl"
+                / "pip-23.2.1-py3-none-any.whl"
             )
             setuptools_wheel_path = (
                 src_dir
@@ -771,9 +771,6 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
         super(ResourceMonitoringMixin, self).__init__(*args, **kwargs)
 
         self.register_virtualenv_module("psutil>=5.9.0", method="pip", optional=True)
-        self.register_virtualenv_module(
-            "mozsystemmonitor==1.0.1", method="pip", optional=True
-        )
         self.register_virtualenv_module("jsonschema==2.5.1", method="pip")
         self._resource_monitor = None
 
@@ -798,7 +795,24 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
             from mozsystemmonitor.resourcemonitor import SystemResourceMonitor
 
             self.info("Starting resource monitoring.")
-            self._resource_monitor = SystemResourceMonitor(poll_interval=1.0)
+            metadata = {}
+            if "TASKCLUSTER_WORKER_TYPE" in os.environ:
+                metadata["device"] = os.environ["TASKCLUSTER_WORKER_TYPE"]
+            if "MOZHARNESS_TEST_PATHS" in os.environ:
+                metadata["product"] = " ".join(
+                    json.loads(os.environ["MOZHARNESS_TEST_PATHS"]).keys()
+                )
+            if "MOZ_SOURCE_CHANGESET" in os.environ and "MOZ_SOURCE_REPO" in os.environ:
+                metadata["sourceURL"] = (
+                    os.environ["MOZ_SOURCE_REPO"]
+                    + "/rev/"
+                    + os.environ["MOZ_SOURCE_CHANGESET"]
+                )
+            if "TASK_ID" in os.environ:
+                metadata["appBuildID"] = os.environ["TASK_ID"]
+            self._resource_monitor = SystemResourceMonitor(
+                poll_interval=0.1, metadata=metadata
+            )
             self._resource_monitor.start()
         except Exception:
             self.warning(
@@ -826,28 +840,28 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
         if not self._resource_monitor:
             return
 
-        # This should never raise an exception. This is a workaround until
-        # mozsystemmonitor is fixed. See bug 895388.
+        self._resource_monitor.stop()
+        self._log_resource_usage()
+
+        # Upload a JSON file containing the raw resource data.
         try:
-            self._resource_monitor.stop()
-            self._log_resource_usage()
-
-            # Upload a JSON file containing the raw resource data.
-            try:
-                upload_dir = self.query_abs_dirs()["abs_blob_upload_dir"]
-                if not os.path.exists(upload_dir):
-                    os.makedirs(upload_dir)
-                with open(os.path.join(upload_dir, "resource-usage.json"), "w") as fh:
-                    json.dump(
-                        self._resource_monitor.as_dict(), fh, sort_keys=True, indent=4
-                    )
-            except (AttributeError, KeyError):
-                self.exception("could not upload resource usage JSON", level=WARNING)
-
-        except Exception:
-            self.warning(
-                "Exception when reporting resource usage: %s" % traceback.format_exc()
-            )
+            upload_dir = self.query_abs_dirs()["abs_blob_upload_dir"]
+            if not os.path.exists(upload_dir):
+                os.makedirs(upload_dir)
+            with open(os.path.join(upload_dir, "resource-usage.json"), "w") as fh:
+                json.dump(
+                    self._resource_monitor.as_dict(), fh, sort_keys=True, indent=4
+                )
+            with open(
+                os.path.join(upload_dir, "profile_resource-usage.json"), "w"
+            ) as fh:
+                json.dump(
+                    self._resource_monitor.as_profile(),
+                    fh,
+                    separators=(",", ":"),
+                )
+        except (AttributeError, KeyError):
+            self.exception("could not upload resource usage JSON", level=WARNING)
 
     def _log_resource_usage(self):
         # Delay import because not available until virtualenv is populated.

@@ -339,31 +339,35 @@ export class WindowDimensions {
   #scrollY = null;
   #scrollMinX = null;
   #scrollMinY = null;
+  #devicePixelRatio = null;
 
   set dimensions(dimensions) {
-    if (dimensions.clientHeight) {
+    if (dimensions.clientHeight != null) {
       this.#clientHeight = dimensions.clientHeight;
     }
-    if (dimensions.clientWidth) {
+    if (dimensions.clientWidth != null) {
       this.#clientWidth = dimensions.clientWidth;
     }
-    if (dimensions.scrollHeight) {
+    if (dimensions.scrollHeight != null) {
       this.#scrollHeight = dimensions.scrollHeight;
     }
-    if (dimensions.scrollWidth) {
+    if (dimensions.scrollWidth != null) {
       this.#scrollWidth = dimensions.scrollWidth;
     }
-    if (dimensions.scrollX) {
+    if (dimensions.scrollX != null) {
       this.#scrollX = dimensions.scrollX;
     }
-    if (dimensions.scrollY) {
+    if (dimensions.scrollY != null) {
       this.#scrollY = dimensions.scrollY;
     }
-    if (dimensions.scrollMinX) {
+    if (dimensions.scrollMinX != null) {
       this.#scrollMinX = dimensions.scrollMinX;
     }
-    if (dimensions.scrollMinY) {
+    if (dimensions.scrollMinY != null) {
       this.#scrollMinY = dimensions.scrollMinY;
+    }
+    if (dimensions.devicePixelRatio != null) {
+      this.#devicePixelRatio = dimensions.devicePixelRatio;
     }
   }
 
@@ -377,6 +381,7 @@ export class WindowDimensions {
       scrollY: this.#scrollY,
       scrollMinX: this.#scrollMinX,
       scrollMinY: this.#scrollMinY,
+      devicePixelRatio: this.#devicePixelRatio,
     };
   }
 
@@ -410,5 +415,20 @@ export class WindowDimensions {
 
   get scrollMinY() {
     return this.#scrollMinY;
+  }
+
+  get devicePixelRatio() {
+    return this.#devicePixelRatio;
+  }
+
+  reset() {
+    this.#clientHeight = 0;
+    this.#clientWidth = 0;
+    this.#scrollHeight = 0;
+    this.#scrollWidth = 0;
+    this.#scrollX = 0;
+    this.#scrollY = 0;
+    this.#scrollMinX = 0;
+    this.#scrollMinY = 0;
   }
 }

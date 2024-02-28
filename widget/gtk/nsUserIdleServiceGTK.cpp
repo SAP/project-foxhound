@@ -76,8 +76,7 @@ class UserIdleServiceX11 : public UserIdleServiceImpl {
     return false;
   }
 
-  bool ProbeImplementation(
-      RefPtr<nsUserIdleServiceGTK> aUserIdleServiceGTK) override {
+  bool ProbeImplementation() override {
     MOZ_LOG(sIdleLog, LogLevel::Info,
             ("UserIdleServiceX11::UserIdleServiceX11()\n"));
 
@@ -116,11 +115,13 @@ class UserIdleServiceX11 : public UserIdleServiceImpl {
     }
 
     // UserIdleServiceX11 uses sync init, confirm it now.
-    aUserIdleServiceGTK->AcceptServiceCallback();
+    mUserIdleServiceGTK->AcceptServiceCallback();
     return true;
   }
 
- protected:
+  explicit UserIdleServiceX11(nsUserIdleServiceGTK* aUserIdleService)
+      : UserIdleServiceImpl(aUserIdleService){};
+
   ~UserIdleServiceX11() {
 #  ifdef MOZ_X11
     if (mXssInfo) {
@@ -151,49 +152,66 @@ class UserIdleServiceX11 : public UserIdleServiceImpl {
 class UserIdleServiceMutter : public UserIdleServiceImpl {
  public:
   bool PollIdleTime(uint32_t* aIdleTime) override {
-    MOZ_LOG(sIdleLog, LogLevel::Info,
-            ("UserIdleServiceMutter::PollIdleTime()\n"));
+    MOZ_LOG(sIdleLog, LogLevel::Info, ("PollIdleTime() request\n"));
 
-    MOZ_ASSERT(mProxy);
-    GUniquePtr<GError> error;
+    // We're not ready yet
+    if (!mProxy) {
+      return false;
+    }
 
-    RefPtr<GVariant> result = dont_AddRef(g_dbus_proxy_call_sync(
-        mProxy, "GetIdletime", nullptr, G_DBUS_CALL_FLAGS_NONE, -1,
-        mCancellable, getter_Transfers(error)));
-    if (!result) {
-      MOZ_LOG(sIdleLog, LogLevel::Info,
-              ("UserIdleServiceMutter::PollIdleTime() failed, message: %s\n",
-               error->message));
-      return false;
+    if (!mPollInProgress) {
+      mPollInProgress = true;
+      DBusProxyCall(mProxy, "GetIdletime", nullptr, G_DBUS_CALL_FLAGS_NONE, -1,
+                    mCancellable)
+          ->Then(
+              GetCurrentSerialEventTarget(), __func__,
+              // It's safe to capture this as we use mCancellable to stop
+              // listening.
+              [this](RefPtr<GVariant>&& aResult) {
+                if (!g_variant_is_of_type(aResult, G_VARIANT_TYPE_TUPLE) ||
+                    g_variant_n_children(aResult) != 1) {
+                  MOZ_LOG(sIdleLog, LogLevel::Info,
+                          ("PollIdleTime() Unexpected params type: %s\n",
+                           g_variant_get_type_string(aResult)));
+                  mLastIdleTime = 0;
+                  return;
+                }
+                RefPtr<GVariant> iTime =
+                    dont_AddRef(g_variant_get_child_value(aResult, 0));
+                if (!g_variant_is_of_type(iTime, G_VARIANT_TYPE_UINT64)) {
+                  MOZ_LOG(sIdleLog, LogLevel::Info,
+                          ("PollIdleTime() Unexpected params type: %s\n",
+                           g_variant_get_type_string(aResult)));
+                  mLastIdleTime = 0;
+                  return;
+                }
+                uint64_t idleTime = g_variant_get_uint64(iTime);
+                if (idleTime > std::numeric_limits<uint32_t>::max()) {
+                  idleTime = std::numeric_limits<uint32_t>::max();
+                }
+                mLastIdleTime = idleTime;
+                mPollInProgress = false;
+                MOZ_LOG(sIdleLog, LogLevel::Info,
+                        ("Async handler got %d\n", mLastIdleTime));
+              },
+              [this](GUniquePtr<GError>&& aError) {
+                mPollInProgress = false;
+                if (!IsCancelledGError(aError.get())) {
+                  MOZ_LOG(
+                      sIdleLog, LogLevel::Warning,
+                      ("Failed to call GetIdletime(): %s\n", aError->message));
+                  mUserIdleServiceGTK->RejectAndTryNextServiceCallback();
+                }
+              });
     }
-    if (!g_variant_is_of_type(result, G_VARIANT_TYPE_TUPLE) ||
-        g_variant_n_children(result) != 1) {
-      MOZ_LOG(
-          sIdleLog, LogLevel::Info,
-          ("UserIdleServiceMutter::PollIdleTime() Unexpected params type: %s\n",
-           g_variant_get_type_string(result)));
-      return false;
-    }
-    RefPtr<GVariant> iTime = dont_AddRef(g_variant_get_child_value(result, 0));
-    if (!g_variant_is_of_type(iTime, G_VARIANT_TYPE_UINT64)) {
-      MOZ_LOG(
-          sIdleLog, LogLevel::Info,
-          ("UserIdleServiceMutter::PollIdleTime() Unexpected params type: %s\n",
-           g_variant_get_type_string(result)));
-      return false;
-    }
-    uint64_t idleTime = g_variant_get_uint64(iTime);
-    if (idleTime > std::numeric_limits<uint32_t>::max()) {
-      idleTime = std::numeric_limits<uint32_t>::max();
-    }
-    *aIdleTime = idleTime;
+
+    *aIdleTime = mLastIdleTime;
     MOZ_LOG(sIdleLog, LogLevel::Info,
-            ("UserIdleServiceMutter::PollIdleTime() %d\n", *aIdleTime));
+            ("PollIdleTime() returns %d\n", *aIdleTime));
     return true;
   }
 
-  bool ProbeImplementation(
-      RefPtr<nsUserIdleServiceGTK> aUserIdleServiceGTK) override {
+  bool ProbeImplementation() override {
     MOZ_LOG(sIdleLog, LogLevel::Info,
             ("UserIdleServiceMutter::UserIdleServiceMutter()\n"));
 
@@ -207,19 +225,21 @@ class UserIdleServiceMutter : public UserIdleServiceImpl {
         mCancellable)
         ->Then(
             GetCurrentSerialEventTarget(), __func__,
-            [self = RefPtr{this}, service = RefPtr{aUserIdleServiceGTK}](
-                RefPtr<GDBusProxy>&& aProxy) {
-              self->mProxy = std::move(aProxy);
-              service->AcceptServiceCallback();
+            [this](RefPtr<GDBusProxy>&& aProxy) {
+              mProxy = std::move(aProxy);
+              mUserIdleServiceGTK->AcceptServiceCallback();
             },
-            [self = RefPtr{this}, service = RefPtr{aUserIdleServiceGTK}](
-                GUniquePtr<GError>&& aError) {
-              service->RejectAndTryNextServiceCallback();
+            [this](GUniquePtr<GError>&& aError) {
+              if (!IsCancelledGError(aError.get())) {
+                mUserIdleServiceGTK->RejectAndTryNextServiceCallback();
+              }
             });
     return true;
   }
 
- protected:
+  explicit UserIdleServiceMutter(nsUserIdleServiceGTK* aUserIdleService)
+      : UserIdleServiceImpl(aUserIdleService){};
+
   ~UserIdleServiceMutter() {
     if (mCancellable) {
       g_cancellable_cancel(mCancellable);
@@ -231,6 +251,8 @@ class UserIdleServiceMutter : public UserIdleServiceImpl {
  private:
   RefPtr<GDBusProxy> mProxy;
   RefPtr<GCancellable> mCancellable;
+  uint32_t mLastIdleTime = 0;
+  bool mPollInProgress = false;
 };
 #endif
 
@@ -243,19 +265,19 @@ void nsUserIdleServiceGTK::ProbeService() {
   switch (mIdleServiceType) {
 #ifdef MOZ_ENABLE_DBUS
     case IDLE_SERVICE_MUTTER:
-      mIdleService = new UserIdleServiceMutter();
+      mIdleService = MakeUnique<UserIdleServiceMutter>(this);
       break;
 #endif
 #ifdef MOZ_X11
     case IDLE_SERVICE_XSCREENSAVER:
-      mIdleService = new UserIdleServiceX11();
+      mIdleService = MakeUnique<UserIdleServiceX11>(this);
       break;
 #endif
     default:
       return;
   }
 
-  if (!mIdleService->ProbeImplementation(this)) {
+  if (!mIdleService->ProbeImplementation()) {
     RejectAndTryNextServiceCallback();
   }
 }
@@ -275,6 +297,7 @@ void nsUserIdleServiceGTK::RejectAndTryNextServiceCallback() {
   // Delete recent non-working service
   MOZ_ASSERT(mIdleService, "Nothing to reject?");
   mIdleService = nullptr;
+  mIdleServiceInitialized = false;
 
   mIdleServiceType++;
   if (mIdleServiceType < IDLE_SERVICE_NONE) {
@@ -283,7 +306,6 @@ void nsUserIdleServiceGTK::RejectAndTryNextServiceCallback() {
     ProbeService();
   } else {
     MOZ_LOG(sIdleLog, LogLevel::Info, ("nsUserIdleServiceGTK failed\n"));
-    mIdleServiceInitialized = false;
   }
 }
 

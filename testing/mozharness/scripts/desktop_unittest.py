@@ -12,7 +12,6 @@ author: Jordan Lund
 
 import copy
 import glob
-import imp
 import json
 import multiprocessing
 import os
@@ -25,6 +24,7 @@ from datetime import datetime, timedelta
 here = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(1, os.path.dirname(here))
 
+from mozfile import load_source
 from mozharness.base.errors import BaseErrorList
 from mozharness.base.log import INFO, WARNING
 from mozharness.base.script import PreScriptAction
@@ -527,6 +527,24 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 )
             )
 
+        if (
+            self._query_specified_suites("mochitest", "mochitest-browser-a11y")
+            is not None
+            and sys.platform == "win32"
+        ):
+            # Only Windows a11y browser tests need this.
+            requirements_files.append(
+                os.path.join(
+                    dirs["abs_mochitest_dir"],
+                    "browser",
+                    "accessible",
+                    "tests",
+                    "browser",
+                    "windows",
+                    "a11y_setup_requirements.txt",
+                )
+            )
+
         for requirements_file in requirements_files:
             self.register_virtualenv_module(
                 requirements=[requirements_file], two_pass=True
@@ -568,7 +586,10 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
         return self.symbols_url
 
     def _get_mozharness_test_paths(self, suite_category, suite):
+        # test_paths is the group name, confirm_paths can be the path+testname
+        # test_paths will always be the group name, unrelated to if confirm_paths is set or not.
         test_paths = json.loads(os.environ.get("MOZHARNESS_TEST_PATHS", '""'))
+        confirm_paths = json.loads(os.environ.get("MOZHARNESS_CONFIRM_PATHS", '""'))
 
         if "-coverage" in suite:
             suite = suite[: suite.index("-coverage")]
@@ -577,6 +598,8 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
             return None
 
         suite_test_paths = test_paths[suite]
+        if confirm_paths and suite in confirm_paths and confirm_paths[suite]:
+            suite_test_paths = confirm_paths[suite]
 
         if suite_category == "reftest":
             dirs = self.query_abs_dirs()
@@ -1180,7 +1203,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 )
 
                 if suite_category == "reftest":
-                    ref_formatter = imp.load_source(
+                    ref_formatter = load_source(
                         "ReftestFormatter",
                         os.path.abspath(
                             os.path.join(dirs["abs_reftest_dir"], "output.py")

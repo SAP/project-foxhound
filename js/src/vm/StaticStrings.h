@@ -97,7 +97,15 @@ class StaticStrings {
   }
 
   /* May not return atom, returns null on (reported) failure. */
+  inline JSLinearString* getUnitString(JSContext* cx, char16_t c);
+
+  /* May not return atom, returns null on (reported) failure. */
   inline JSLinearString* getUnitStringForElement(JSContext* cx, JSString* str,
+                                                 size_t index);
+
+  /* May not return atom, returns null on (reported) failure. */
+  inline JSLinearString* getUnitStringForElement(JSContext* cx,
+                                                 JSLinearString* str,
                                                  size_t index);
 
   template <typename CharT>

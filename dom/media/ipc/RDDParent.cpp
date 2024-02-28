@@ -44,6 +44,7 @@
 
 #include "mozilla/ipc/ProcessUtils.h"
 #include "nsDebugImpl.h"
+#include "nsIObserverService.h"
 #include "nsIXULRuntime.h"
 #include "nsThreadManager.h"
 
@@ -181,8 +182,10 @@ mozilla::ipc::IPCResult RDDParent::RecvInitProfiler(
 }
 
 mozilla::ipc::IPCResult RDDParent::RecvNewContentRemoteDecoderManager(
-    Endpoint<PRemoteDecoderManagerParent>&& aEndpoint) {
-  if (!RemoteDecoderManagerParent::CreateForContent(std::move(aEndpoint))) {
+    Endpoint<PRemoteDecoderManagerParent>&& aEndpoint,
+    const ContentParentId& aParentId) {
+  if (!RemoteDecoderManagerParent::CreateForContent(std::move(aEndpoint),
+                                                    aParentId)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();

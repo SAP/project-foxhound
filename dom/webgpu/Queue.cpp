@@ -29,7 +29,9 @@ GPU_IMPL_CYCLE_COLLECTION(Queue, mParent, mBridge)
 GPU_IMPL_JS_WRAP(Queue)
 
 Queue::Queue(Device* const aParent, WebGPUChild* aBridge, RawId aId)
-    : ChildOf(aParent), mBridge(aBridge), mId(aId) {}
+    : ChildOf(aParent), mBridge(aBridge), mId(aId) {
+  MOZ_RELEASE_ASSERT(aId);
+}
 
 Queue::~Queue() { Cleanup(); }
 
@@ -61,6 +63,12 @@ void Queue::WriteBuffer(const Buffer& aBuffer, uint64_t aBufferOffset,
                         uint64_t aDataOffset,
                         const dom::Optional<uint64_t>& aSize,
                         ErrorResult& aRv) {
+  if (!aBuffer.mId) {
+    // Invalid buffers are unknown to the parent -- don't try to write
+    // to them.
+    return;
+  }
+
   dom::ProcessTypedArraysFixed(aData, [&](const Span<const uint8_t>& aData) {
     uint64_t length = aData.Length();
     const auto checkedSize = aSize.WasPassed()

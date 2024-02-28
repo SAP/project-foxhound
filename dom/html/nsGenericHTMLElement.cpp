@@ -23,6 +23,7 @@
 #include "mozilla/TextEvents.h"
 #include "mozilla/StaticPrefs_html5.h"
 #include "mozilla/StaticPrefs_accessibility.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/FormData.h"
 #include "nscore.h"
 #include "nsGenericHTMLElement.h"
@@ -81,6 +82,8 @@
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/ToggleEvent.h"
 #include "mozilla/dom/TouchEvent.h"
+#include "mozilla/dom/InputEvent.h"
+#include "mozilla/dom/InvokeEvent.h"
 #include "mozilla/ErrorResult.h"
 #include "nsHTMLDocument.h"
 #include "nsGlobalWindowInner.h"
@@ -191,6 +194,41 @@ static const nsAttrValue::EnumTable kPopoverTable[] = {
 static const nsAttrValue::EnumTable* kPopoverTableInvalidValueDefault =
     &kPopoverTable[2];
 }  // namespace
+
+void nsGenericHTMLElement::GetFetchPriority(nsAString& aFetchPriority) const {
+  // <https://html.spec.whatwg.org/multipage/urls-and-fetching.html#fetch-priority-attributes>.
+  GetEnumAttr(nsGkAtoms::fetchpriority, kFetchPriorityAttributeValueAuto,
+              aFetchPriority);
+}
+
+/* static */
+FetchPriority nsGenericHTMLElement::ToFetchPriority(const nsAString& aValue) {
+  nsAttrValue attrValue;
+  ParseFetchPriority(aValue, attrValue);
+  MOZ_ASSERT(attrValue.Type() == nsAttrValue::eEnum);
+  return FetchPriority(attrValue.GetEnumValue());
+}
+
+namespace {
+// <https://html.spec.whatwg.org/multipage/urls-and-fetching.html#fetch-priority-attributes>.
+static const nsAttrValue::EnumTable kFetchPriorityEnumTable[] = {
+    {kFetchPriorityAttributeValueHigh, FetchPriority::High},
+    {kFetchPriorityAttributeValueLow, FetchPriority::Low},
+    {kFetchPriorityAttributeValueAuto, FetchPriority::Auto},
+    {nullptr, 0}};
+
+// <https://html.spec.whatwg.org/multipage/urls-and-fetching.html#fetch-priority-attributes>.
+static const nsAttrValue::EnumTable*
+    kFetchPriorityEnumTableInvalidValueDefault = &kFetchPriorityEnumTable[2];
+}  // namespace
+
+/* static */
+void nsGenericHTMLElement::ParseFetchPriority(const nsAString& aValue,
+                                              nsAttrValue& aResult) {
+  aResult.ParseEnumValue(aValue, kFetchPriorityEnumTable,
+                         false /* aCaseSensitive */,
+                         kFetchPriorityEnumTableInvalidValueDefault);
+}
 
 void nsGenericHTMLElement::AddToNameTable(nsAtom* aName) {
   MOZ_ASSERT(HasName(), "Node doesn't have name?");
@@ -661,45 +699,47 @@ constexpr PopoverAttributeState ToPopoverAttributeState(
 }  // namespace
 
 void nsGenericHTMLElement::AfterSetPopoverAttr() {
-  const nsAttrValue* newValue = GetParsedAttr(nsGkAtoms::popover);
-
-  const PopoverAttributeState newState = [&newValue]() {
-    if (newValue) {
-      MOZ_ASSERT(newValue->Type() == nsAttrValue::eEnum);
+  auto mapPopoverState = [](const nsAttrValue* value) -> PopoverAttributeState {
+    if (value) {
+      MOZ_ASSERT(value->Type() == nsAttrValue::eEnum);
       const auto popoverAttributeKeyword =
-          static_cast<PopoverAttributeKeyword>(newValue->GetEnumValue());
+          static_cast<PopoverAttributeKeyword>(value->GetEnumValue());
       return ToPopoverAttributeState(popoverAttributeKeyword);
     }
 
     // The missing value default is the no popover state, see
     // <https://html.spec.whatwg.org/multipage/popover.html#attr-popover>.
     return PopoverAttributeState::None;
-  }();
+  };
+
+  PopoverAttributeState newState =
+      mapPopoverState(GetParsedAttr(nsGkAtoms::popover));
 
   const PopoverAttributeState oldState = GetPopoverAttributeState();
 
   if (newState != oldState) {
-    EnsurePopoverData().SetPopoverAttributeState(newState);
+    PopoverPseudoStateUpdate(false, true);
 
-    HidePopoverInternal(/* aFocusPreviousElement = */ true,
-                        /* aFireEvents = */ true, IgnoreErrors());
+    if (IsPopoverOpen()) {
+      HidePopoverInternal(/* aFocusPreviousElement = */ true,
+                          /* aFireEvents = */ true, IgnoreErrors());
+      // Event handlers could have removed the popover attribute, or changed
+      // its value.
+      // https://github.com/whatwg/html/issues/9034
+      newState = mapPopoverState(GetParsedAttr(nsGkAtoms::popover));
+    }
 
-    // In case `HidePopoverInternal` changed the state, keep the corresponding
-    // changes and don't overwrite anything here.
-    if (newState == GetPopoverAttributeState()) {
-      if (newState == PopoverAttributeState::None) {
-        // `HidePopoverInternal` above didn't remove the element from the top
-        // layer, because in that call, the element's popover attribute state
-        // was already `None`. Revisit this, when the spec is corrected
-        // (bug 1835811).
+    if (newState == PopoverAttributeState::None) {
+      // HidePopoverInternal above could have removed the popover from the top
+      // layer.
+      if (GetPopoverData()) {
         OwnerDoc()->RemovePopoverFromTopLayer(*this);
-
-        ClearPopoverData();
-        RemoveStates(ElementState::POPOVER_OPEN);
-      } else {
-        // TODO: what if `HidePopoverInternal` called `ShowPopup()`?
-        PopoverPseudoStateUpdate(false, true);
       }
+      ClearPopoverData();
+      RemoveStates(ElementState::POPOVER_OPEN);
+    } else {
+      // TODO: what if `HidePopoverInternal` called `ShowPopup()`?
+      EnsurePopoverData().SetPopoverAttributeState(newState);
     }
   }
 }
@@ -1265,13 +1305,13 @@ static inline void MapLangAttributeInto(MappedDeclarationsBuilder& aBuilder) {
     const nsAtom* lang = langValue->GetAtomValue();
     if (nsStyleUtil::MatchesLanguagePrefix(lang, u"zh")) {
       aBuilder.SetKeywordValue(eCSSProperty_text_emphasis_position,
-                               StyleTextEmphasisPosition::UNDER.bits);
+                               StyleTextEmphasisPosition::UNDER._0);
     } else if (nsStyleUtil::MatchesLanguagePrefix(lang, u"ja") ||
                nsStyleUtil::MatchesLanguagePrefix(lang, u"mn")) {
       // This branch is currently no part of the spec.
       // See bug 1040668 comment 69 and comment 75.
       aBuilder.SetKeywordValue(eCSSProperty_text_emphasis_position,
-                               StyleTextEmphasisPosition::OVER.bits);
+                               StyleTextEmphasisPosition::OVER._0);
     }
   }
 }
@@ -2695,7 +2735,7 @@ bool nsGenericHTMLFormControlElement::DoesReadOnlyApply() const {
 void nsGenericHTMLFormControlElement::SetFormInternal(HTMLFormElement* aForm,
                                                       bool aBindToTree) {
   if (aForm) {
-    BeforeSetForm(aBindToTree);
+    BeforeSetForm(aForm, aBindToTree);
   }
 
   // keep a *weak* ref to the form here
@@ -2797,15 +2837,27 @@ nsGenericHTMLFormControlElementWithState::
 bool nsGenericHTMLFormControlElementWithState::ParseAttribute(
     int32_t aNamespaceID, nsAtom* aAttribute, const nsAString& aValue,
     nsIPrincipal* aMaybeScriptedPrincipal, nsAttrValue& aResult) {
-  if (aNamespaceID == kNameSpaceID_None &&
-      StaticPrefs::dom_element_popover_enabled()) {
-    if (aAttribute == nsGkAtoms::popovertargetaction) {
-      return aResult.ParseEnumValue(aValue, kPopoverTargetActionTable, false,
-                                    kPopoverTargetActionDefault);
+  if (aNamespaceID == kNameSpaceID_None) {
+    if (StaticPrefs::dom_element_popover_enabled()) {
+      if (aAttribute == nsGkAtoms::popovertargetaction) {
+        return aResult.ParseEnumValue(aValue, kPopoverTargetActionTable, false,
+                                      kPopoverTargetActionDefault);
+      }
+      if (aAttribute == nsGkAtoms::popovertarget) {
+        aResult.ParseAtom(aValue);
+        return true;
+      }
     }
-    if (aAttribute == nsGkAtoms::popovertarget) {
-      aResult.ParseAtom(aValue);
-      return true;
+
+    if (StaticPrefs::dom_element_invokers_enabled()) {
+      if (aAttribute == nsGkAtoms::invokeaction) {
+        aResult.ParseAtom(aValue);
+        return true;
+      }
+      if (aAttribute == nsGkAtoms::invoketarget) {
+        aResult.ParseAtom(aValue);
+        return true;
+      }
     }
   }
 
@@ -2846,6 +2898,69 @@ void nsGenericHTMLFormControlElementWithState::HandlePopoverTargetAction() {
   } else if (canShow && !target->IsPopoverOpen()) {
     target->ShowPopoverInternal(this, IgnoreErrors());
   }
+}
+
+void nsGenericHTMLFormControlElementWithState::GetInvokeAction(
+    nsAString& aValue) const {
+  GetInvokeAction()->ToString(aValue);
+}
+
+nsAtom* nsGenericHTMLFormControlElementWithState::GetInvokeAction() const {
+  const nsAttrValue* attr = GetParsedAttr(nsGkAtoms::invokeaction);
+  if (attr && attr->GetAtomValue() != nsGkAtoms::_empty) {
+    return attr->GetAtomValue();
+  }
+  return nsGkAtoms::_auto;
+}
+
+mozilla::dom::Element*
+nsGenericHTMLFormControlElementWithState::GetInvokeTargetElement() const {
+  if (StaticPrefs::dom_element_invokers_enabled()) {
+    return GetAttrAssociatedElement(nsGkAtoms::invoketarget);
+  }
+  return nullptr;
+}
+
+void nsGenericHTMLFormControlElementWithState::SetInvokeTargetElement(
+    mozilla::dom::Element* aElement) {
+  ExplicitlySetAttrElement(nsGkAtoms::invoketarget, aElement);
+}
+
+void nsGenericHTMLFormControlElementWithState::HandleInvokeTargetAction() {
+  // 1. Let invokee be node's invoke target element.
+  RefPtr<Element> invokee = GetInvokeTargetElement();
+
+  // 2. If invokee is null, then return.
+  if (!invokee) {
+    return;
+  }
+
+  // 3. Let action be node's invokeaction attribute
+  // 4. If action is null or empty, then let action be the string "auto".
+  RefPtr<nsAtom> aAction = GetInvokeAction();
+  MOZ_ASSERT(!aAction->IsEmpty(), "Action should not be empty");
+
+  // 5. Let notCancelled be the result of firing an event named invoke at
+  // invokee with its action set to action, its invoker set to node,
+  // and its cancelable attribute initialized to true.
+  InvokeEventInit init;
+  aAction->ToString(init.mAction);
+  init.mInvoker = this;
+  init.mCancelable = true;
+  init.mComposed = true;
+  RefPtr<Event> event = InvokeEvent::Constructor(this, u"invoke"_ns, init);
+  event->SetTrusted(true);
+  event->SetTarget(invokee);
+
+  EventDispatcher::DispatchDOMEvent(invokee, nullptr, event, nullptr, nullptr);
+
+  // 6. If notCancelled is true and invokee has an associated invocation action
+  // algorithm then run the invokee's invocation action algorithm given action.
+  if (event->DefaultPrevented()) {
+    return;
+  }
+
+  invokee->HandleInvokeInternal(aAction, IgnoreErrors());
 }
 
 void nsGenericHTMLFormControlElementWithState::GenerateStateKey() {
@@ -3191,17 +3306,12 @@ bool nsGenericHTMLElement::PopoverOpen() const {
 bool nsGenericHTMLElement::CheckPopoverValidity(
     PopoverVisibilityState aExpectedState, Document* aExpectedDocument,
     ErrorResult& aRv) {
-  const PopoverData* data = GetPopoverData();
-  if (!data ||
-      data->GetPopoverAttributeState() == PopoverAttributeState::None) {
-    MOZ_ASSERT(!HasAttr(nsGkAtoms::popover));
+  if (GetPopoverAttributeState() == PopoverAttributeState::None) {
     aRv.ThrowNotSupportedError("Element is in the no popover state");
     return false;
   }
 
-  MOZ_ASSERT(HasAttr(nsGkAtoms::popover));
-
-  if (data->GetPopoverVisibilityState() != aExpectedState) {
+  if (GetPopoverData()->GetPopoverVisibilityState() != aExpectedState) {
     return false;
   }
 
@@ -3239,27 +3349,32 @@ void nsGenericHTMLElement::PopoverPseudoStateUpdate(bool aOpen, bool aNotify) {
   SetStates(ElementState::POPOVER_OPEN, aOpen, aNotify);
 }
 
+already_AddRefed<ToggleEvent> nsGenericHTMLElement::CreateToggleEvent(
+    const nsAString& aEventType, const nsAString& aOldState,
+    const nsAString& aNewState, Cancelable aCancelable) {
+  ToggleEventInit init;
+  init.mBubbles = false;
+  init.mOldState = aOldState;
+  init.mNewState = aNewState;
+  init.mCancelable = aCancelable == Cancelable::eYes;
+  RefPtr<ToggleEvent> event = ToggleEvent::Constructor(this, aEventType, init);
+  event->SetTrusted(true);
+  event->SetTarget(this);
+  return event.forget();
+}
+
 bool nsGenericHTMLElement::FireToggleEvent(PopoverVisibilityState aOldState,
                                            PopoverVisibilityState aNewState,
                                            const nsAString& aType) {
   auto stringForState = [](PopoverVisibilityState state) {
     return state == PopoverVisibilityState::Hidden ? u"closed"_ns : u"open"_ns;
   };
-
-  ToggleEventInit init;
-  init.mBubbles = false;
-  init.mOldState = stringForState(aOldState);
-  init.mNewState = stringForState(aNewState);
-  if (aType == u"beforetoggle"_ns &&
-      aNewState == PopoverVisibilityState::Showing) {
-    init.mCancelable = true;
-  } else {
-    init.mCancelable = false;
-  }
-  RefPtr<ToggleEvent> event = ToggleEvent::Constructor(this, aType, init);
-  event->SetTrusted(true);
-  event->SetTarget(this);
-
+  const auto cancelable = aType == u"beforetoggle"_ns &&
+                                  aNewState == PopoverVisibilityState::Showing
+                              ? Cancelable::eYes
+                              : Cancelable::eNo;
+  RefPtr event = CreateToggleEvent(aType, stringForState(aOldState),
+                                   stringForState(aNewState), cancelable);
   EventDispatcher::DispatchDOMEvent(this, nullptr, event, nullptr, nullptr);
   return event->DefaultPrevented();
 }
@@ -3277,8 +3392,7 @@ void nsGenericHTMLElement::QueuePopoverEventTask(
   auto task =
       MakeRefPtr<PopoverToggleEventTask>(do_GetWeakReference(this), aOldState);
   data->SetToggleEventTask(task);
-
-  OwnerDoc()->Dispatch(TaskCategory::UI, task.forget());
+  OwnerDoc()->Dispatch(task.forget());
 }
 
 void nsGenericHTMLElement::RunPopoverToggleEventTask(
@@ -3419,10 +3533,18 @@ void nsGenericHTMLElement::FocusPreviousElementAfterHidingPopover() {
     return;
   }
 
-  // Run the focusing steps for previouslyFocusedElement.
-  FocusOptions options;
-  options.mPreventScroll = true;
-  control->Focus(options, CallerType::NonSystem, IgnoreErrors());
+  // Step 14.2 at
+  // https://html.spec.whatwg.org/multipage/popover.html#hide-popover-algorithm
+  // If focusPreviousElement is true and document's focused area of the
+  // document's DOM anchor is a shadow-including inclusive descendant of
+  // element, then run the focusing steps for previouslyFocusedElement;
+  nsIContent* currentFocus = OwnerDoc()->GetUnretargetedFocusedContent();
+  if (currentFocus &&
+      currentFocus->IsShadowIncludingInclusiveDescendantOf(this)) {
+    FocusOptions options;
+    options.mPreventScroll = true;
+    control->Focus(options, CallerType::NonSystem, IgnoreErrors());
+  }
 }
 
 // https://html.spec.whatwg.org/multipage/popover.html#dom-togglepopover
@@ -3452,25 +3574,23 @@ void nsGenericHTMLElement::FocusPopover() {
     doc->FlushPendingNotifications(FlushType::Frames);
   }
 
-  // This diverges from the spec a bit,
-  // see https://github.com/whatwg/html/pull/8998
-  RefPtr<Element> control =
-      GetBoolAttr(nsGkAtoms::autofocus)
-          ? this
-          : GetFocusDelegate(false /* aWithMouse */, true /* aAutofocusOnly */);
+  RefPtr<Element> control = GetBoolAttr(nsGkAtoms::autofocus)
+                                ? this
+                                : GetAutofocusDelegate(false /* aWithMouse */);
+
   if (!control) {
     return;
   }
-  FocusCandidate(*control, false /* aClearUpFocus */);
+  FocusCandidate(control, false /* aClearUpFocus */);
 }
 
-void nsGenericHTMLElement::FocusCandidate(Element& aControl,
+void nsGenericHTMLElement::FocusCandidate(Element* aControl,
                                           bool aClearUpFocus) {
   // 1) Run the focusing steps given control.
   IgnoredErrorResult rv;
-  nsIFrame* frame = aControl.GetPrimaryFrame();
-  if (frame && frame->IsFocusable()) {
-    aControl.Focus(FocusOptions(), CallerType::NonSystem, rv);
+  if (RefPtr<Element> elementToFocus = nsFocusManager::GetTheFocusableArea(
+          aControl, nsFocusManager::ProgrammaticFocusFlags(FocusOptions()))) {
+    elementToFocus->Focus(FocusOptions(), CallerType::NonSystem, rv);
     if (rv.Failed()) {
       return;
     }
@@ -3486,7 +3606,7 @@ void nsGenericHTMLElement::FocusCandidate(Element& aControl,
   // browsing context's top-level browsing context.
   // 3) If control's node document's origin is not the same as the origin of
   // topDocument, then return.
-  BrowsingContext* bc = aControl.OwnerDoc()->GetBrowsingContext();
+  BrowsingContext* bc = aControl->OwnerDoc()->GetBrowsingContext();
   if (bc && bc->IsInProcess() && bc->SameOriginWithTop()) {
     if (nsCOMPtr<nsIDocShell> docShell = bc->Top()->GetDocShell()) {
       if (Document* topDocument = docShell->GetExtantDocument()) {

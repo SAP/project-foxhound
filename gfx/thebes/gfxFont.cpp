@@ -840,10 +840,11 @@ bool gfxShapedText::FilterIfIgnorable(uint32_t aIndex, uint32_t aCh) {
   return false;
 }
 
-void gfxShapedText::AdjustAdvancesForSyntheticBold(float aSynBoldOffset,
-                                                   uint32_t aOffset,
-                                                   uint32_t aLength) {
-  uint32_t synAppUnitOffset = aSynBoldOffset * mAppUnitsPerDevUnit;
+void gfxShapedText::ApplyTrackingToClusters(gfxFloat aTrackingAdjustment,
+                                            uint32_t aOffset,
+                                            uint32_t aLength) {
+  int32_t appUnitAdjustment =
+      NS_round(aTrackingAdjustment * gfxFloat(mAppUnitsPerDevUnit));
   CompressedGlyph* charGlyphs = GetCharacterGlyphs();
   for (uint32_t i = aOffset; i < aOffset + aLength; ++i) {
     CompressedGlyph* glyphData = charGlyphs + i;
@@ -851,7 +852,7 @@ void gfxShapedText::AdjustAdvancesForSyntheticBold(float aSynBoldOffset,
       // simple glyphs ==> just add the advance
       int32_t advance = glyphData->GetSimpleAdvance();
       if (advance > 0) {
-        advance += synAppUnitOffset;
+        advance = std::max(0, advance + appUnitAdjustment);
         if (CompressedGlyph::IsSimpleAdvance(advance)) {
           glyphData->SetSimpleGlyph(advance, glyphData->GetSimpleGlyph());
         } else {
@@ -872,14 +873,10 @@ void gfxShapedText::AdjustAdvancesForSyntheticBold(float aSynBoldOffset,
         if (!details) {
           continue;
         }
-        if (IsRightToLeft()) {
-          if (details[0].mAdvance > 0) {
-            details[0].mAdvance += synAppUnitOffset;
-          }
-        } else {
-          if (details[detailedLength - 1].mAdvance > 0) {
-            details[detailedLength - 1].mAdvance += synAppUnitOffset;
-          }
+        auto& advance = IsRightToLeft() ? details[0].mAdvance
+                                        : details[detailedLength - 1].mAdvance;
+        if (advance > 0) {
+          advance = std::max(0, advance + appUnitAdjustment);
         }
       }
     }
@@ -1719,7 +1716,6 @@ bool gfxFont::HasFeatureSet(uint32_t aFeature, bool& aFeatureOn) {
 already_AddRefed<mozilla::gfx::ScaledFont> gfxFont::GetScaledFont(
     mozilla::gfx::DrawTarget* aDrawTarget) {
   TextRunDrawParams params;
-  params.dt = aDrawTarget;
   return GetScaledFont(params);
 }
 
@@ -3332,16 +3328,30 @@ bool gfxFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
     if (GetFontEntry()->HasTrackingTable()) {
       // Convert font size from device pixels back to CSS px
       // to use in selecting tracking value
-      float trackSize = GetAdjustedSize() *
-                        aShapedText->GetAppUnitsPerDevUnit() /
-                        AppUnitsPerCSSPixel();
-      float tracking =
-          GetFontEntry()->TrackingForCSSPx(trackSize) * mFUnitsConvFactor;
-      // Applying tracking is a lot like the adjustment we do for
-      // synthetic bold: we want to apply between clusters, not to
-      // non-spacing glyphs within a cluster. So we can reuse that
-      // helper here.
-      aShapedText->AdjustAdvancesForSyntheticBold(tracking, aOffset, aLength);
+      gfxFloat trackSize = GetAdjustedSize() *
+                           aShapedText->GetAppUnitsPerDevUnit() /
+                           AppUnitsPerCSSPixel();
+      // Usually, a given font will be used with the same appunit scale, so we
+      // can cache the tracking value rather than recompute it every time.
+      {
+        AutoReadLock lock(mLock);
+        if (trackSize == mCachedTrackingSize) {
+          // Applying tracking is a lot like the adjustment we do for
+          // synthetic bold: we want to apply between clusters, not to
+          // non-spacing glyphs within a cluster. So we can reuse that
+          // helper here.
+          aShapedText->ApplyTrackingToClusters(mTracking, aOffset, aLength);
+          return true;
+        }
+      }
+      // We didn't have the appropriate tracking value cached yet.
+      AutoWriteLock lock(mLock);
+      if (trackSize != mCachedTrackingSize) {
+        mCachedTrackingSize = trackSize;
+        mTracking =
+            GetFontEntry()->TrackingForCSSPx(trackSize) * mFUnitsConvFactor;
+      }
+      aShapedText->ApplyTrackingToClusters(mTracking, aOffset, aLength);
     }
     return true;
   }
@@ -3357,8 +3367,8 @@ void gfxFont::PostShapingFixup(DrawTarget* aDrawTarget, const char16_t* aText,
     const Metrics& metrics = GetMetrics(aVertical ? nsFontMetrics::eVertical
                                                   : nsFontMetrics::eHorizontal);
     if (metrics.maxAdvance > metrics.aveCharWidth) {
-      aShapedText->AdjustAdvancesForSyntheticBold(GetSyntheticBoldOffset(),
-                                                  aOffset, aLength);
+      aShapedText->ApplyTrackingToClusters(GetSyntheticBoldOffset(), aOffset,
+                                           aLength);
     }
   }
 }
@@ -3812,6 +3822,37 @@ bool gfxFont::InitFakeSmallCapsRun(
               origString, convertedString, Some(globalTransform), maskChar,
               /* aCaseTransformsOnly = */ false, aLanguage, charsToMergeArray,
               deletedCharsArray);
+
+          // Check whether the font supports the uppercased characters needed;
+          // if not, we're not going to be able to simulate small-caps.
+          bool failed = false;
+          char16_t highSurrogate = 0;
+          for (const char16_t* cp = convertedString.BeginReading();
+               cp != convertedString.EndReading(); ++cp) {
+            if (NS_IS_HIGH_SURROGATE(*cp)) {
+              highSurrogate = *cp;
+              continue;
+            }
+            uint32_t ch = *cp;
+            if (NS_IS_LOW_SURROGATE(*cp) && highSurrogate) {
+              ch = SURROGATE_TO_UCS4(highSurrogate, *cp);
+            }
+            highSurrogate = 0;
+            if (!f->HasCharacter(ch)) {
+              if (IsDefaultIgnorable(ch)) {
+                continue;
+              }
+              failed = true;
+              break;
+            }
+          }
+          // Required uppercase letter(s) missing from the font. Just use the
+          // original text with the original font, no fake small caps!
+          if (failed) {
+            convertedString = origString;
+            mergeNeeded = false;
+            f = this;
+          }
 
           if (mergeNeeded) {
             // This is the hard case: the transformation caused chars
@@ -4583,7 +4624,6 @@ gfxFontStyle::gfxFontStyle()
       sizeAdjust(0.0f),
       baselineOffset(0.0f),
       languageOverride(NO_FONT_LANGUAGE_OVERRIDE),
-      fontSmoothingBackgroundColor(NS_RGBA(0, 0, 0, 0)),
       weight(FontWeight::NORMAL),
       stretch(FontStretch::NORMAL),
       style(FontSlantStyle::NORMAL),
@@ -4610,7 +4650,6 @@ gfxFontStyle::gfxFontStyle(FontSlantStyle aStyle, FontWeight aWeight,
     : size(aSize),
       baselineOffset(0.0f),
       languageOverride(aLanguageOverride),
-      fontSmoothingBackgroundColor(NS_RGBA(0, 0, 0, 0)),
       weight(aWeight),
       stretch(aStretch),
       style(aStyle),

@@ -57,7 +57,7 @@ enum : int {
 
 class MockSendPacketObserver : public SendPacketObserver {
  public:
-  MOCK_METHOD(void, OnSendPacket, (uint16_t, int64_t, uint32_t), (override));
+  MOCK_METHOD(void, OnSendPacket, (uint16_t, Timestamp, uint32_t), (override));
 };
 
 class MockTransportFeedbackObserver : public TransportFeedbackObserver {
@@ -419,9 +419,9 @@ TEST_F(RtpSenderEgressTest, OnSendPacketUpdated) {
                                    TransportSequenceNumber::Uri());
 
   const uint16_t kTransportSequenceNumber = 1;
-  EXPECT_CALL(send_packet_observer_,
-              OnSendPacket(kTransportSequenceNumber,
-                           clock_->TimeInMilliseconds(), kSsrc));
+  EXPECT_CALL(
+      send_packet_observer_,
+      OnSendPacket(kTransportSequenceNumber, clock_->CurrentTime(), kSsrc));
   std::unique_ptr<RtpPacketToSend> packet = BuildRtpPacket();
   packet->SetExtension<TransportSequenceNumber>(kTransportSequenceNumber);
   sender->SendPacket(std::move(packet), PacedPacketInfo());
@@ -465,7 +465,9 @@ TEST_F(RtpSenderEgressTest, ReportsFecRate) {
   }
 
   EXPECT_NEAR(
-      (sender->GetSendRates()[RtpPacketMediaType::kForwardErrorCorrection])
+      (sender->GetSendRates(
+           time_controller_.GetClock()
+               ->CurrentTime())[RtpPacketMediaType::kForwardErrorCorrection])
           .bps(),
       (total_fec_data_sent / (kTimeBetweenPackets * kNumPackets)).bps(), 500);
 }
@@ -852,7 +854,7 @@ TEST_F(RtpSenderEgressTest, SendPacketUpdatesStats) {
   header_extensions_.RegisterByUri(kTransportSequenceNumberExtensionId,
                                    TransportSequenceNumber::Uri());
 
-  const int64_t capture_time_ms = clock_->TimeInMilliseconds();
+  const Timestamp capture_time = clock_->CurrentTime();
 
   std::unique_ptr<RtpPacketToSend> video_packet = BuildRtpPacket();
   video_packet->set_packet_type(RtpPacketMediaType::kVideo);
@@ -880,7 +882,7 @@ TEST_F(RtpSenderEgressTest, SendPacketUpdatesStats) {
   EXPECT_CALL(send_side_delay_observer,
               SendSideDelayUpdated(kDiffMs, kDiffMs, kFlexFecSsrc));
 
-  EXPECT_CALL(send_packet_observer_, OnSendPacket(1, capture_time_ms, kSsrc));
+  EXPECT_CALL(send_packet_observer_, OnSendPacket(1, capture_time, kSsrc));
 
   sender->SendPacket(std::move(video_packet), PacedPacketInfo());
 
@@ -889,7 +891,7 @@ TEST_F(RtpSenderEgressTest, SendPacketUpdatesStats) {
   sender->SendPacket(std::move(rtx_packet), PacedPacketInfo());
 
   EXPECT_CALL(send_packet_observer_,
-              OnSendPacket(3, capture_time_ms, kFlexFecSsrc));
+              OnSendPacket(3, capture_time, kFlexFecSsrc));
   sender->SendPacket(std::move(fec_packet), PacedPacketInfo());
 
   time_controller_.AdvanceTime(TimeDelta::Zero());

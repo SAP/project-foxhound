@@ -28,7 +28,7 @@ namespace {
 class MockGraphImpl : public MediaTrackGraphImpl {
  public:
   MockGraphImpl(TrackRate aRate, uint32_t aChannels)
-      : MediaTrackGraphImpl(OFFLINE_THREAD_DRIVER, DIRECT_DRIVER, aRate,
+      : MediaTrackGraphImpl(OFFLINE_THREAD_DRIVER, DIRECT_DRIVER, 0, aRate,
                             aChannels, nullptr, NS_GetCurrentThread()) {
     ON_CALL(*this, OnGraphThread).WillByDefault(Return(true));
     // We have to call `Destroy()` manually in order to break the reference.
@@ -39,7 +39,7 @@ class MockGraphImpl : public MediaTrackGraphImpl {
   }
 
   MOCK_CONST_METHOD0(OnGraphThread, bool());
-  MOCK_METHOD1(AppendMessage, void(UniquePtr<ControlMessage>));
+  MOCK_METHOD1(AppendMessage, void(UniquePtr<ControlMessageInterface>));
 
  protected:
   ~MockGraphImpl() = default;
@@ -118,16 +118,16 @@ TEST_F(TestDeviceInputTrack, DeviceInputConsumerTrack) {
     TestAudioDataListener(uint32_t aChannelCount, bool aIsVoice)
         : mChannelCount(aChannelCount), mIsVoice(aIsVoice) {}
     // Graph thread APIs: AudioDataListenerInterface implementations.
-    uint32_t RequestedInputChannelCount(MediaTrackGraphImpl* aGraph) override {
-      MOZ_ASSERT(aGraph->OnGraphThread());
+    uint32_t RequestedInputChannelCount(MediaTrackGraph* aGraph) override {
+      aGraph->AssertOnGraphThread();
       return mChannelCount;
     }
-    bool IsVoiceInput(MediaTrackGraphImpl* aGraph) const override {
+    bool IsVoiceInput(MediaTrackGraph* aGraph) const override {
       return mIsVoice;
     };
-    void DeviceChanged(MediaTrackGraphImpl* aGraph) override { /* Ignored */
+    void DeviceChanged(MediaTrackGraph* aGraph) override { /* Ignored */
     }
-    void Disconnect(MediaTrackGraphImpl* aGraph) override{/* Ignored */};
+    void Disconnect(MediaTrackGraph* aGraph) override{/* Ignored */};
 
    private:
     ~TestAudioDataListener() = default;
@@ -246,7 +246,6 @@ TEST_F(TestDeviceInputTrack, StartAndStop) {
   const PrincipalHandle testPrincipal =
       MakePrincipalHandle(nsContentUtils::GetSystemPrincipal());
   const TrackRate rate = 48000;
-  const uint32_t bufferingMs = StaticPrefs::media_clockdrift_buffering();
 
   // Setup: Create a NonNativeInputTrack and add it to mGraph.
   RefPtr<NonNativeInputTrack> track =
@@ -273,7 +272,7 @@ TEST_F(TestDeviceInputTrack, StartAndStop) {
     DispatchFunction([&] {
       track->StartAudio(MakeRefPtr<AudioInputSource>(
           std::move(listener), sourceId, deviceId, channels, true /* voice */,
-          testPrincipal, rate, mGraph->GraphRate(), bufferingMs));
+          testPrincipal, rate, mGraph->GraphRate()));
     });
 
     // Wait for stream creation.
@@ -315,7 +314,7 @@ TEST_F(TestDeviceInputTrack, StartAndStop) {
     DispatchFunction([&] {
       track->StartAudio(MakeRefPtr<AudioInputSource>(
           std::move(listener), sourceId, deviceId, channels, true,
-          testPrincipal, rate, mGraph->GraphRate(), bufferingMs));
+          testPrincipal, rate, mGraph->GraphRate()));
     });
 
     // Wait for stream creation.
@@ -355,8 +354,6 @@ TEST_F(TestDeviceInputTrack, NonNativeInputTrackData) {
   const PrincipalHandle testPrincipal =
       MakePrincipalHandle(nsContentUtils::GetSystemPrincipal());
   const TrackRate rate = 48000;
-  const uint32_t bufferingMs =
-      static_cast<uint32_t>(StaticPrefs::media_clockdrift_buffering());
 
   // Setup: Create a NonNativeInputTrack and add it to mGraph.
   RefPtr<NonNativeInputTrack> track =
@@ -395,7 +392,7 @@ TEST_F(TestDeviceInputTrack, NonNativeInputTrackData) {
   DispatchFunction([&] {
     track->StartAudio(MakeRefPtr<AudioInputSource>(
         std::move(listener), sourceId, deviceId, channels, true, testPrincipal,
-        rate, mGraph->GraphRate(), bufferingMs));
+        rate, mGraph->GraphRate()));
   });
   RefPtr<SmartMockCubebStream> stream = WaitFor(cubeb->StreamInitEvent());
   EXPECT_TRUE(stream->mHasInput);
@@ -449,7 +446,6 @@ TEST_F(TestDeviceInputTrack, NonNativeDeviceChangedCallback) {
   const PrincipalHandle testPrincipal =
       MakePrincipalHandle(nsContentUtils::GetSystemPrincipal());
   const TrackRate rate = 48000;
-  const uint32_t bufferingMs = StaticPrefs::media_clockdrift_buffering();
 
   // Setup: Create a NonNativeInputTrack and add it to mGraph.
   RefPtr<NonNativeInputTrack> track =
@@ -472,7 +468,7 @@ TEST_F(TestDeviceInputTrack, NonNativeDeviceChangedCallback) {
   DispatchFunction([&] {
     track->StartAudio(MakeRefPtr<AudioInputSource>(
         std::move(listener), sourceId, deviceId, channels, true, testPrincipal,
-        rate, mGraph->GraphRate(), bufferingMs));
+        rate, mGraph->GraphRate()));
   });
   RefPtr<SmartMockCubebStream> stream = WaitFor(cubeb->StreamInitEvent());
   EXPECT_TRUE(stream->mHasInput);
@@ -508,7 +504,6 @@ TEST_F(TestDeviceInputTrack, NonNativeErrorCallback) {
   const PrincipalHandle testPrincipal =
       MakePrincipalHandle(nsContentUtils::GetSystemPrincipal());
   const TrackRate rate = 48000;
-  const uint32_t bufferingMs = StaticPrefs::media_clockdrift_buffering();
 
   // Setup: Create a NonNativeInputTrack and add it to mGraph.
   RefPtr<NonNativeInputTrack> track =
@@ -533,7 +528,7 @@ TEST_F(TestDeviceInputTrack, NonNativeErrorCallback) {
   DispatchFunction([&] {
     track->StartAudio(MakeRefPtr<AudioInputSource>(
         std::move(listener), sourceId, deviceId, channels, true, testPrincipal,
-        rate, mGraph->GraphRate(), bufferingMs));
+        rate, mGraph->GraphRate()));
   });
   RefPtr<SmartMockCubebStream> stream = WaitFor(cubeb->StreamInitEvent());
   EXPECT_TRUE(stream->mHasInput);

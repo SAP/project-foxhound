@@ -5,7 +5,6 @@
 package org.mozilla.geckoview;
 
 import android.annotation.SuppressLint;
-import android.os.Build;
 import android.util.Log;
 import android.util.SparseArray;
 import androidx.annotation.AnyThread;
@@ -400,6 +399,16 @@ public class WebExtensionController {
     @UiThread
     default void onInstallationFailed(
         final @Nullable WebExtension extension, final @NonNull InstallException installException) {}
+
+    /**
+     * Called whenever an extension startup has been completed (and relative urls to assets packaged
+     * with the extension can be resolved into a full moz-extension url, e.g. optionsPageUrl is
+     * going to be empty until the extension has reached this callback).
+     *
+     * @param extension The {@link WebExtension} that has been fully started.
+     */
+    @UiThread
+    default void onReady(final @NonNull WebExtension extension) {}
   }
 
   /** This delegate is used to notify of extension process state changes. */
@@ -487,7 +496,8 @@ public class WebExtensionController {
               "GeckoView:WebExtension:OnUninstalled",
               "GeckoView:WebExtension:OnInstalling",
               "GeckoView:WebExtension:OnInstallationFailed",
-              "GeckoView:WebExtension:OnInstalled");
+              "GeckoView:WebExtension:OnInstalled",
+              "GeckoView:WebExtension:OnReady");
     } else if (delegate != null && mAddonManagerDelegate == null) {
       EventDispatcher.getInstance()
           .registerUiThreadListener(
@@ -500,7 +510,8 @@ public class WebExtensionController {
               "GeckoView:WebExtension:OnUninstalled",
               "GeckoView:WebExtension:OnInstalling",
               "GeckoView:WebExtension:OnInstallationFailed",
-              "GeckoView:WebExtension:OnInstalled");
+              "GeckoView:WebExtension:OnInstalled",
+              "GeckoView:WebExtension:OnReady");
     }
 
     mAddonManagerDelegate = delegate;
@@ -540,6 +551,21 @@ public class WebExtensionController {
   @AnyThread
   public void enableExtensionProcessSpawning() {
     EventDispatcher.getInstance().dispatch("GeckoView:WebExtension:EnableProcessSpawning", null);
+  }
+
+  /**
+   * Disable extension process spawning.
+   *
+   * <p>Extension process spawning can be re-enabled with {@link
+   * WebExtensionController#enableExtensionProcessSpawning()}. This method does the opposite and
+   * stops the extension process. This method can be called when we no longer want to run extensions
+   * for the rest of the session.
+   *
+   * @see ExtensionProcessDelegate#onDisabledProcessSpawning()
+   */
+  @AnyThread
+  public void disableExtensionProcessSpawning() {
+    EventDispatcher.getInstance().dispatch("GeckoView:WebExtension:DisableProcessSpawning", null);
   }
 
   private static class InstallCanceller implements GeckoResult.CancellationDelegate {
@@ -920,6 +946,9 @@ public class WebExtensionController {
     } else if ("GeckoView:WebExtension:OnInstallationFailed".equals(event)) {
       onInstallationFailed(bundle);
       return;
+    } else if ("GeckoView:WebExtension:OnReady".equals(event)) {
+      onReady(bundle);
+      return;
     }
 
     extensionFromBundle(bundle)
@@ -1209,6 +1238,17 @@ public class WebExtensionController {
     final GeckoBundle extensionBundle = bundle.getBundle("extension");
     final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
     mAddonManagerDelegate.onInstalled(extension);
+  }
+
+  private void onReady(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onReady(extension);
   }
 
   private void onDisabledProcessSpawning() {
@@ -1510,11 +1550,7 @@ public class WebExtensionController {
     }
 
     private static boolean equals(final Object a, final Object b) {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-        return Objects.equals(a, b);
-      }
-
-      return (a == b) || (a != null && a.equals(b));
+      return Objects.equals(a, b);
     }
 
     @Override

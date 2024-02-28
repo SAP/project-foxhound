@@ -40,7 +40,7 @@ impl Default for PrecomputedHasher {
 ///
 /// We can avoid selector-matching those global rules for all elements without
 /// these pseudo-class states.
-const RARE_PSEUDO_CLASS_STATES: ElementState = ElementState::from_bits_truncate(
+const RARE_PSEUDO_CLASS_STATES: ElementState = ElementState::from_bits_retain(
     ElementState::FULLSCREEN.bits() |
         ElementState::VISITED_OR_UNVISITED.bits() |
         ElementState::URLTARGET.bits() |
@@ -153,7 +153,7 @@ impl<T> SelectorMap<T> {
             namespace_hash: HashMap::default(),
             rare_pseudo_classes: SmallVec::new(),
             other: SmallVec::new(),
-            bucket_attributes: static_prefs::pref!("layout.css.bucket-attribute-names.enabled"),
+            bucket_attributes: true,
             count: 0,
         }
     }

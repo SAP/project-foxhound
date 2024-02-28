@@ -241,7 +241,7 @@ describe("ASRouter", () => {
       return features;
     }, {});
     globals.set({
-      // Testing framework doesn't know how to `defineLazyModuleGetter` so we're
+      // Testing framework doesn't know how to `defineLazyModuleGetters` so we're
       // importing these modules into the global scope ourselves.
       GroupsConfigurationProvider: { getMessages: () => Promise.resolve([]) },
       ASRouterPreferences,
@@ -2035,33 +2035,35 @@ describe("ASRouter", () => {
   });
 
   describe("forceAttribution", () => {
-    let setReferrerUrl;
+    let setAttributionString;
     beforeEach(() => {
-      setReferrerUrl = sinon.spy();
-      global.Cc["@mozilla.org/mac-attribution;1"] = {
-        getService: () => ({ setReferrerUrl }),
-      };
-
+      setAttributionString = sandbox.spy(Router, "setAttributionString");
       sandbox.stub(global.Services.env, "set");
+    });
+    afterEach(() => {
+      sandbox.reset();
     });
     it("should double encode on windows", async () => {
       sandbox.stub(fakeAttributionCode, "writeAttributionFile");
 
       Router.forceAttribution({ foo: "FOO!", eh: "NOPE", bar: "BAR?" });
 
-      assert.notCalled(setReferrerUrl);
+      assert.notCalled(setAttributionString);
       assert.calledWithMatch(
         fakeAttributionCode.writeAttributionFile,
         "foo%3DFOO!%26bar%3DBAR%253F"
       );
     });
-    it("should set referrer on mac", async () => {
+    it("should set attribution string on mac", async () => {
       sandbox.stub(global.AppConstants, "platform").value("macosx");
 
       Router.forceAttribution({ foo: "FOO!", eh: "NOPE", bar: "BAR?" });
 
-      assert.calledOnce(setReferrerUrl);
-      assert.calledWithMatch(setReferrerUrl, "", "?foo=FOO!&bar=BAR%3F");
+      assert.calledOnce(setAttributionString);
+      assert.calledWithMatch(
+        setAttributionString,
+        "foo%3DFOO!%26bar%3DBAR%253F"
+      );
     });
   });
 
@@ -3034,6 +3036,47 @@ describe("ASRouter", () => {
       assert.calledWithExactly(Router._storage.set, "groupImpressions", {
         1: [],
         2: [],
+      });
+    });
+  });
+  describe("#resetScreenImpressions", () => {
+    it("should reset all screen impressions", async () => {
+      await Router.setState({ screenImpressions: { 1: 1, 2: 2 } });
+      let impressions = Object.values(Router.state.screenImpressions);
+      assert.equal(impressions.filter(i => i).length, 2); // Both screens have impressions
+
+      Router.resetScreenImpressions();
+      impressions = Object.values(Router.state.screenImpressions);
+
+      assert.isEmpty(impressions.filter(i => i)); // Both screens now have zero impressions
+      assert.calledWithExactly(Router._storage.set, "screenImpressions", {});
+    });
+  });
+  describe("#editState", () => {
+    it("should update message impressions", async () => {
+      sandbox.stub(ASRouterPreferences, "devtoolsEnabled").get(() => true);
+      await Router.setState({ messages: [{ id: "1" }, { id: "2" }] });
+      await Router.setState({
+        messageImpressions: { 1: [0, 1, 2], 2: [0, 1, 2] },
+      });
+      let impressions = Object.values(Router.state.messageImpressions);
+      assert.equal(impressions.filter(i => i.length).length, 2); // Both messages have impressions
+
+      Router.editState("messageImpressions", {
+        1: [],
+        2: [],
+        3: [0, 1, 2],
+      });
+
+      // The original messages now have zero impressions
+      assert.isEmpty(Router.state.messageImpressions["1"]);
+      assert.isEmpty(Router.state.messageImpressions["2"]);
+      // A new impression array was added for the new message
+      assert.equal(Router.state.messageImpressions["3"].length, 3);
+      assert.calledWithExactly(Router._storage.set, "messageImpressions", {
+        1: [],
+        2: [],
+        3: [0, 1, 2],
       });
     });
   });

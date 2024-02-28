@@ -577,6 +577,17 @@ class TaggedSlotOffset {
   }
 };
 
+enum class CanReuseShape {
+  // The Shape can be reused. This implies CanReusePropMap.
+  CanReuseShape,
+
+  // Only the PropMap can be reused.
+  CanReusePropMap,
+
+  // Neither the PropMap nor Shape can be reused.
+  NoReuse,
+};
+
 /*
  * [SMDOC] NativeObject layout
  *
@@ -693,33 +704,36 @@ class NativeObject : public JSObject {
   void setShapeAndRemoveLastSlot(JSContext* cx, SharedShape* newShape,
                                  uint32_t slot);
 
-  MOZ_ALWAYS_INLINE bool canReuseShapeForNewProperties(
-      NativeShape* newShape) const {
+  MOZ_ALWAYS_INLINE CanReuseShape
+  canReuseShapeForNewProperties(NativeShape* newShape) const {
     NativeShape* oldShape = shape();
     MOZ_ASSERT(oldShape->propMapLength() == 0,
                "object must have no properties");
     MOZ_ASSERT(newShape->propMapLength() > 0,
                "new shape must have at least one property");
-    if (oldShape->numFixedSlots() != newShape->numFixedSlots()) {
-      return false;
-    }
     if (oldShape->isDictionary() || newShape->isDictionary()) {
-      return false;
+      return CanReuseShape::NoReuse;
     }
-    if (oldShape->base() != newShape->base()) {
-      return false;
-    }
-    MOZ_ASSERT(oldShape->getObjectClass() == newShape->getObjectClass());
-    MOZ_ASSERT(oldShape->proto() == newShape->proto());
-    MOZ_ASSERT(oldShape->realm() == newShape->realm());
     // We only handle the common case where the old shape has no object flags
     // (expected because it's an empty object) and the new shape has just the
     // HasEnumerable flag that we can copy safely.
     if (!oldShape->objectFlags().isEmpty()) {
-      return false;
+      return CanReuseShape::NoReuse;
     }
     MOZ_ASSERT(newShape->hasObjectFlag(ObjectFlag::HasEnumerable));
-    return newShape->objectFlags() == ObjectFlags({ObjectFlag::HasEnumerable});
+    if (newShape->objectFlags() != ObjectFlags({ObjectFlag::HasEnumerable})) {
+      return CanReuseShape::NoReuse;
+    }
+    // If the number of fixed slots or the BaseShape is different, we can't
+    // reuse the Shape but we can still reuse the PropMap.
+    if (oldShape->numFixedSlots() != newShape->numFixedSlots() ||
+        oldShape->base() != newShape->base()) {
+      return CanReuseShape::CanReusePropMap;
+    }
+    MOZ_ASSERT(oldShape->getObjectClass() == newShape->getObjectClass());
+    MOZ_ASSERT(oldShape->proto() == newShape->proto());
+    MOZ_ASSERT(oldShape->realm() == newShape->realm());
+    return CanReuseShape::CanReuseShape;
   }
 
   // Newly-created TypedArrays that map a SharedArrayBuffer are
@@ -735,6 +749,14 @@ class NativeObject : public JSObject {
   static inline NativeObject* create(JSContext* cx, gc::AllocKind kind,
                                      gc::Heap heap, Handle<SharedShape*> shape,
                                      gc::AllocSite* site = nullptr);
+
+  template <typename T>
+  static inline T* create(JSContext* cx, gc::AllocKind kind, gc::Heap heap,
+                          Handle<SharedShape*> shape,
+                          gc::AllocSite* site = nullptr) {
+    NativeObject* nobj = create(cx, kind, heap, shape, site);
+    return nobj ? &nobj->as<T>() : nullptr;
+  }
 
 #ifdef DEBUG
   static void enableShapeConsistencyChecks();
@@ -1125,6 +1147,8 @@ class NativeObject : public JSObject {
     }
     return slots_ + (slot - fixed);
   }
+
+  HeapSlot* getSlotsUnchecked() { return slots_; }
 
   HeapSlot* getSlotAddress(uint32_t slot) {
     /*

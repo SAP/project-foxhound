@@ -14,6 +14,11 @@ prefs = [
 
 ["browser_UrlbarInput_formatValue.js"]
 
+["browser_UrlbarInput_formatValue_strikeout.js"]
+support-files = [
+  "mixed_active.html",
+]
+
 ["browser_UrlbarInput_formatValue_detachedTab.js"]
 skip-if = [
   "apple_catalina", # Bug 1756585
@@ -43,6 +48,7 @@ skip-if = [
 ["browser_UrlbarInput_searchTerms_searchBar.js"]
 
 ["browser_UrlbarInput_searchTerms_searchMode.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_UrlbarInput_searchTerms_switch_tab.js"]
 
@@ -64,6 +70,7 @@ skip-if = [
 ]
 
 ["browser_acknowledgeFeedbackAndDismissal.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_action_searchengine.js"]
 skip-if = [
@@ -118,6 +125,7 @@ support-files = [
   "searchSuggestionEngine.xml",
   "searchSuggestionEngine.sjs",
 ]
+skip-if = ["a11y_checks"] # Test times out (bug 1854660)
 
 ["browser_autocomplete_autoselect.js"]
 
@@ -140,6 +148,8 @@ skip-if = ["os != 'mac'"] # Mac only feature
 ["browser_blanking.js"]
 support-files = ["file_blank_but_not_blank.html"]
 
+["browser_blobIcons.js"]
+
 ["browser_bufferer_onQueryResults.js"]
 
 ["browser_calculator.js"]
@@ -158,6 +168,7 @@ support-files = [
 ["browser_clipboard.js"]
 
 ["browser_closePanelOnClick.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_content_opener.js"]
 
@@ -168,7 +179,11 @@ support-files = ["slow-page.sjs"]
 
 ["browser_copying.js"]
 https_first_disabled = true
-support-files = ["authenticate.sjs"]
+support-files = [
+  "authenticate.sjs",
+  "file_copying_home.html",
+  "wait-a-bit.sjs",
+]
 
 ["browser_customizeMode.js"]
 
@@ -212,12 +227,11 @@ support-files = [
   "searchSuggestionEngine.xml",
   "searchSuggestionEngine.sjs",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked moz-input-box may not be labeled
 
 ["browser_handleCommand_fallback.js"]
 
 ["browser_hashChangeProxyState.js"]
-
-["browser_helpUrl.js"]
 
 ["browser_heuristicNotAddedFirst.js"]
 
@@ -231,6 +245,7 @@ support-files = [
   "searchSuggestionEngine.xml",
   "searchSuggestionEngine.sjs",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_inputHistory_autofill.js"]
 
@@ -268,14 +283,19 @@ support-files = [
 
 ["browser_locationBarCommand.js"]
 https_first_disabled = true
-skip-if = ["os == 'linux' && bits == 64 && !debug"] # Bug 1787020
+skip-if = [
+  "os == 'linux' && bits == 64 && !debug", # Bug 1787020
+  "a11y_checks", # Bugs 1858041 and 1854661 to investigate intermittent a11y_checks results
+]
 
 ["browser_locationBarExternalLoad.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_locationchange_urlbar_edit_dos.js"]
 support-files = ["file_urlbar_edit_dos.html"]
 
 ["browser_middleClick.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_move_tab_to_new_window.js"]
 
@@ -286,6 +306,7 @@ support-files = [
   "searchSuggestionEngine.xml",
   "searchSuggestionEngine.sjs",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_oneOffs_contextMenu.js"]
 support-files = [
@@ -294,13 +315,17 @@ support-files = [
 ]
 
 ["browser_oneOffs_heuristicRestyle.js"]
-skip-if = ["os == 'linux' && bits == 64 && !debug"] # Bug 1775811
+skip-if = [
+  "os == 'linux' && bits == 64 && !debug", # Bug 1775811
+  "a11y_checks", # Bugs 1858041 and 1854661 to investigate intermittent a11y_checks results
+]
 
 ["browser_oneOffs_keyModifiers.js"]
 support-files = [
   "searchSuggestionEngine.xml",
   "searchSuggestionEngine.sjs",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_oneOffs_searchSuggestions.js"]
 support-files = [
@@ -308,6 +333,7 @@ support-files = [
   "searchSuggestionEngine.sjs",
   "searchSuggestionEngine2.xml",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_oneOffs_settings.js"]
 
@@ -328,6 +354,7 @@ support-files = [
   "searchSuggestionEngine2.xml",
   "searchSuggestionEngine.sjs",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_populateAfterPushState.js"]
 
@@ -338,14 +365,19 @@ support-files = [
 ["browser_queryContextCache.js"]
 
 ["browser_quickactions.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_quickactions_devtools.js"]
 
 ["browser_quickactions_screenshot.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_quickactions_tab_refocus.js"]
 
 ["browser_raceWithTabs.js"]
+
+["browser_recentsearches.js"]
+support-files = ["search-engines"]
 
 ["browser_redirect_error.js"]
 support-files = ["redirect_error.sjs"]
@@ -358,6 +390,7 @@ https_first_disabled = true
 ["browser_removeUnsafeProtocolsFromURLBarPaste.js"]
 
 ["browser_remove_match.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_restoreEmptyInput.js"]
 
@@ -365,7 +398,11 @@ https_first_disabled = true
 
 ["browser_result_menu.js"]
 
+["browser_result_menu_general.js"]
+
 ["browser_result_onSelection.js"]
+
+["browser_results_format_displayValue.js"]
 
 ["browser_retainedResultsOnFocus.js"]
 
@@ -380,19 +417,25 @@ support-files = [
   "searchSuggestionEngine.xml",
   "searchSuggestionEngine.sjs",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_autofill.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_clickLink.js"]
 https_first_disabled = true
 support-files = ["dummy_page.html"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_engineRemoval.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_excludeResults.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_heuristic.js"]
 https_first_disabled = true
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_indicator.js"]
 https_first_disabled = true
@@ -400,8 +443,10 @@ support-files = [
   "searchSuggestionEngine.xml",
   "searchSuggestionEngine.sjs",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_indicator_clickthrough.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_localOneOffs_actionText.js"]
 support-files = [
@@ -414,18 +459,27 @@ support-files = [
 ["browser_searchMode_no_results.js"]
 
 ["browser_searchMode_oneOffButton.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_pickResult.js"]
 https_first_disabled = true
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_preview.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_sessionStore.js"]
 https_first_disabled = true
-skip-if = ["os == 'mac' && debug && verify"] # bug 1671045
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
+skip-if = [
+  "os == 'mac' && debug", # Bug 1671045, Bug 1849098
+  "os == 'linux' && (debug || tsan || asan)", # Bug 1849098
+  "os == 'win' && debug", # Bug 1849098
+]
 
 ["browser_searchMode_setURI.js"]
 https_first_disabled = true
+fail-if = ["a11y_checks"] # Bug 1854660 clicked button.searchbar-engine-one-off-item may not be focusable
 
 ["browser_searchMode_suggestions.js"]
 support-files = [
@@ -433,10 +487,13 @@ support-files = [
   "searchSuggestionEngine.sjs",
   "searchSuggestionEngineMany.xml",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchMode_switchTabs.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchSettings.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_searchSingleWordNotification.js"]
 https_first_disabled = true
@@ -491,6 +548,9 @@ support-files = [
   "add_search_engine_0.xml",
   "add_search_engine_1.xml",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
+
+["browser_slow_heuristic.js"]
 
 ["browser_speculative_connect.js"]
 support-files = [
@@ -514,11 +574,15 @@ support-files = ["slow-page.sjs"]
 
 ["browser_strip_on_share.js"]
 
+["browser_strip_on_share_telemetry.js"]
+
 ["browser_suggestedIndex.js"]
 
 ["browser_suppressFocusBorder.js"]
 
 ["browser_switchTab_closesUrlbarPopup.js"]
+
+["browser_switchTab_currentTab.js"]
 
 ["browser_switchTab_decodeuri.js"]
 
@@ -529,12 +593,14 @@ support-files = ["slow-page.sjs"]
 ["browser_switchToTabHavingURI_aOpenParams.js"]
 
 ["browser_switchToTab_chiclet.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_switchToTab_closes_newtab.js"]
 
 ["browser_switchToTab_fullUrl_repeatedKeydown.js"]
 
 ["browser_tabKeyBehavior.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_tabMatchesInAwesomebar.js"]
 support-files = ["moz.png"]
@@ -546,9 +612,11 @@ support-files = ["moz.png"]
 ["browser_textruns.js"]
 
 ["browser_tokenAlias.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_top_sites.js"]
 https_first_disabled = true
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_top_sites_private.js"]
 https_first_disabled = true
@@ -563,26 +631,6 @@ https_first_disabled = true
 ["browser_urlbar_annotation.js"]
 support-files = ["redirect_to.sjs"]
 
-["browser_urlbar_event_telemetry_abandonment.js"]
-support-files = [
-  "searchSuggestionEngine.xml",
-  "searchSuggestionEngine.sjs",
-]
-
-["browser_urlbar_event_telemetry_engagement.js"]
-https_first_disabled = true
-skip-if = [
-  "apple_catalina", # Bug 1625690
-  "apple_silicon", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
-  "os == 'linux'", # Bug 1748986, bug 1775824
-]
-support-files = [
-  "searchSuggestionEngine.xml",
-  "searchSuggestionEngine.sjs",
-]
-
-["browser_urlbar_event_telemetry_noEvent.js"]
-
 ["browser_urlbar_selection.js"]
 skip-if = ["(os == 'mac')"] # bug 1570474
 
@@ -592,6 +640,7 @@ support-files = [
   "urlbarTelemetrySearchSuggestions.sjs",
   "urlbarTelemetrySearchSuggestions.xml",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_urlbar_telemetry_autofill.js"]
 tags = "search-telemetry"
@@ -625,6 +674,7 @@ support-files = [
   "urlbarTelemetrySearchSuggestions.sjs",
   "urlbarTelemetrySearchSuggestions.xml",
 ]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_urlbar_telemetry_tabtosearch.js"]
 tags = "search-telemetry"
@@ -655,13 +705,12 @@ support-files = [
 ]
 
 ["browser_view_selectionByMouse.js"]
+fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 skip-if = ["os == 'linux' && asan"] # Bug 1789051
 
-["browser_waitForLoadOrTimeout.js"]
+["browser_waitForLoadStartOrTimeout.js"]
 https_first_disabled = true
-skip-if = [
-  "tsan", # Bug 1683730
-  "os == 'linux' && bits == 64 && !debug", # Bug 1666092
-]
 
 ["browser_whereToOpen.js"]
+
+["browser_observers_for_strip_on_share.js"]

@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(this, {
 
 add_setup(async function () {
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
-    remoteSettingsResults: [
+    remoteSettingsRecords: [
       {
         type: "weather",
         weather: MerinoTestUtils.WEATHER_RS_DATA,
@@ -21,6 +21,32 @@ add_setup(async function () {
     ],
   });
   await MerinoTestUtils.initWeather();
+});
+
+// Basic checks of the row DOM.
+add_task(async function dom() {
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: MerinoTestUtils.WEATHER_KEYWORD,
+  });
+
+  let resultIndex = 1;
+  let details = await UrlbarTestUtils.getDetailsOfResultAt(window, resultIndex);
+  Assert.equal(
+    details.result.providerName,
+    UrlbarProviderWeather.name,
+    "Weather row should be present at expected index"
+  );
+  let { row } = details.element;
+
+  Assert.ok(
+    BrowserTestUtils.is_visible(
+      row.querySelector(".urlbarView-title-separator")
+    ),
+    "The title separator should be visible"
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window);
 });
 
 // This test ensures the browser navigates to the weather webpage after
@@ -59,7 +85,7 @@ add_task(async function test_weather_result_selection() {
 // repeats both steps until the min keyword length cap is reached.
 add_task(async function showLessFrequentlyCapReached_manySearches() {
   // Set up a min keyword length and cap.
-  await QuickSuggestTestUtils.setRemoteSettingsResults([
+  await QuickSuggestTestUtils.setRemoteSettingsRecords([
     {
       type: "weather",
       weather: {
@@ -146,7 +172,7 @@ add_task(async function showLessFrequentlyCapReached_manySearches() {
   gURLBar.view.resultMenu.hidePopup(true);
 
   await UrlbarTestUtils.promisePopupClose(window);
-  await QuickSuggestTestUtils.setRemoteSettingsResults([
+  await QuickSuggestTestUtils.setRemoteSettingsRecords([
     {
       type: "weather",
       weather: MerinoTestUtils.WEATHER_RS_DATA,
@@ -159,7 +185,7 @@ add_task(async function showLessFrequentlyCapReached_manySearches() {
 // a single search until the min keyword length cap is reached.
 add_task(async function showLessFrequentlyCapReached_oneSearch() {
   // Set up a min keyword length and cap.
-  await QuickSuggestTestUtils.setRemoteSettingsResults([
+  await QuickSuggestTestUtils.setRemoteSettingsRecords([
     {
       type: "weather",
       weather: {
@@ -219,7 +245,7 @@ add_task(async function showLessFrequentlyCapReached_oneSearch() {
 
   gURLBar.view.resultMenu.hidePopup(true);
   await UrlbarTestUtils.promisePopupClose(window);
-  await QuickSuggestTestUtils.setRemoteSettingsResults([
+  await QuickSuggestTestUtils.setRemoteSettingsRecords([
     {
       type: "weather",
       weather: MerinoTestUtils.WEATHER_RS_DATA,
@@ -328,6 +354,9 @@ async function doDismissTest(command) {
   info("Waiting for weather fetch after re-enabling the suggestion");
   await fetchPromise;
   info("Got weather fetch");
+
+  // Wait for keywords to be re-synced from remote settings.
+  await QuickSuggestTestUtils.forceSync();
 }
 
 // Tests the "Report inaccurate location" result menu command immediately

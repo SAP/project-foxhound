@@ -70,6 +70,9 @@ var gExceptionPaths = [
 
   // Localization file added programatically in FeatureCallout.sys.mjs
   "resource://app/localization/en-US/browser/featureCallout.ftl",
+
+  // CSS files are referenced inside JS in an html template
+  "chrome://browser/content/aboutlogins/components/",
 ];
 
 // These are not part of the omni.ja file, so we find them only when running
@@ -99,10 +102,6 @@ if (AppConstants.NIGHTLY_BUILD) {
 // referencing the listed file in a way that the test can't detect, or a
 // bug number to remove or use the file if it is indeed currently unreferenced.
 var allowlist = [
-  // toolkit/components/pdfjs/content/PdfStreamConverter.sys.mjs
-  { file: "chrome://pdf.js/locale/chrome.properties" },
-  { file: "chrome://pdf.js/locale/viewer.properties" },
-
   // security/manager/pki/resources/content/device_manager.js
   { file: "chrome://pippki/content/load_device.xhtml" },
 
@@ -198,7 +197,7 @@ var allowlist = [
   },
 
   // Files from upstream library
-  { file: "resource://pdf.js/web/debugger.js" },
+  { file: "resource://pdf.js/web/debugger.mjs" },
   { file: "resource://pdf.js/web/debugger.css" },
 
   // Starting from here, files in the allowlist are bugs that need fixing.
@@ -252,10 +251,22 @@ var allowlist = [
   {
     file: "resource://gre/localization/en-US/toolkit/updates/backgroundupdate.ftl",
   },
+  // toolkit/mozapps/defaultagent/Notification.cpp
+  // toolkit/mozapps/defaultagent/ScheduledTask.cpp
+  // Bug 1854425 - referenced by default browser agent which is not detected
+  {
+    file: "resource://app/localization/en-US/browser/backgroundtasks/defaultagent.ftl",
+  },
+
   // Bug 1713242 - referenced by aboutThirdParty.html which is only for Windows
   {
     file: "resource://gre/localization/en-US/toolkit/about/aboutThirdParty.ftl",
     platforms: ["linux", "macosx"],
+  },
+  // Bug 1854618 - referenced by aboutWebauthn.html which is only for Linux and Mac
+  {
+    file: "resource://gre/localization/en-US/toolkit/about/aboutWebauthn.ftl",
+    platforms: ["win", "android"],
   },
   // Bug 1973834 - referenced by aboutWindowsMessages.html which is only for Windows
   {
@@ -275,10 +286,6 @@ var allowlist = [
   { file: "chrome://browser/content/screenshots/copy.svg" },
   { file: "chrome://browser/content/screenshots/download.svg" },
   { file: "chrome://browser/content/screenshots/download-white.svg" },
-
-  // Bug 1851255: RustSuggest.sys.mjs is currently unused while pending
-  // integration into urlbar.
-  { file: "resource://gre/modules/RustSuggest.sys.mjs" },
 ];
 
 if (AppConstants.NIGHTLY_BUILD && AppConstants.platform != "win") {
@@ -360,7 +367,6 @@ if (AppConstants.MOZ_CODE_COVERAGE) {
 }
 
 const gInterestingCategories = new Set([
-  "agent-style-sheets",
   "addon-provider-module",
   "webextension-modules",
   "webextension-scripts",

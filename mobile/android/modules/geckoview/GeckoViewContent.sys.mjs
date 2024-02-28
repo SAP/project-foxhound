@@ -3,7 +3,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { GeckoViewModule } from "resource://gre/modules/GeckoViewModule.sys.mjs";
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -24,6 +23,8 @@ export class GeckoViewContent extends GeckoViewModule {
       "GeckoView:RequestCreateAnalysis",
       "GeckoView:RequestAnalysisCreationStatus",
       "GeckoView:PollForAnalysisCompleted",
+      "GeckoView:SendClickAttributionEvent",
+      "GeckoView:SendImpressionAttributionEvent",
       "GeckoView:RequestAnalysis",
       "GeckoView:RequestRecommendations",
       "GeckoView:ScrollBy",
@@ -130,6 +131,39 @@ export class GeckoViewContent extends GeckoViewModule {
     }
   }
 
+  #sendDOMFullScreenEventToAllChildren(aEvent) {
+    let { browsingContext } = this.actor;
+
+    while (browsingContext) {
+      if (!browsingContext.currentWindowGlobal) {
+        break;
+      }
+
+      const currentPid = browsingContext.currentWindowGlobal.osPid;
+      const parentPid = browsingContext.parent?.currentWindowGlobal.osPid;
+
+      if (currentPid != parentPid) {
+        if (!browsingContext.parent) {
+          // Top level browsing context. Use origin actor (Bug 1505916).
+          const chromeBC = browsingContext.topChromeWindow?.browsingContext;
+          const requestOrigin = chromeBC?.fullscreenRequestOrigin?.get();
+          if (requestOrigin) {
+            requestOrigin.browsingContext.currentWindowGlobal
+              .getActor("GeckoViewContent")
+              .sendAsyncMessage(aEvent, {});
+            delete chromeBC.fullscreenRequestOrigin;
+            return;
+          }
+        }
+        const actor =
+          browsingContext.currentWindowGlobal.getActor("GeckoViewContent");
+        actor.sendAsyncMessage(aEvent, {});
+      }
+
+      browsingContext = browsingContext.parent;
+    }
+  }
+
   // Bundle event handler.
   onEvent(aEvent, aData, aCallback) {
     debug`onEvent: event=${aEvent}, data=${aData}`;
@@ -213,6 +247,12 @@ export class GeckoViewContent extends GeckoViewModule {
       case "GeckoView:PollForAnalysisCompleted":
         this._pollForAnalysisCompleted(aData, aCallback);
         break;
+      case "GeckoView:SendClickAttributionEvent":
+        this._sendAttributionEvent("click", aData, aCallback);
+        break;
+      case "GeckoView:SendImpressionAttributionEvent":
+        this._sendAttributionEvent("impression", aData, aCallback);
+        break;
       case "GeckoView:RequestRecommendations":
         this._requestRecommendations(aData, aCallback);
         break;
@@ -245,11 +285,15 @@ export class GeckoViewContent extends GeckoViewModule {
       case "MozDOMFullscreen:Entered":
         if (this.browser == aEvent.target) {
           // Remote browser; dispatch to content process.
-          this.sendToAllChildren("GeckoView:DOMFullscreenEntered");
+          this.#sendDOMFullScreenEventToAllChildren(
+            "GeckoView:DOMFullscreenEntered"
+          );
         }
         break;
       case "MozDOMFullscreen:Exited":
-        this.sendToAllChildren("GeckoView:DOMFullscreenExited");
+        this.#sendDOMFullScreenEventToAllChildren(
+          "GeckoView:DOMFullscreenExited"
+        );
         break;
       case "pagetitlechanged":
         this.eventDispatcher.sendRequest({
@@ -333,10 +377,6 @@ export class GeckoViewContent extends GeckoViewModule {
   }
 
   async _requestAnalysis(aData, aCallback) {
-    if (!AppConstants.NIGHTLY_BUILD) {
-      aCallback.onError(`This API enabled for Nightly builds only.`);
-      return;
-    }
     const url = Services.io.newURI(aData.url);
     if (!lazy.isProductURL(url)) {
       aCallback.onError(`Cannot requestAnalysis on a non-product url.`);
@@ -352,10 +392,6 @@ export class GeckoViewContent extends GeckoViewModule {
   }
 
   async _requestCreateAnalysis(aData, aCallback) {
-    if (!AppConstants.NIGHTLY_BUILD) {
-      aCallback.onError(`This API enabled for Nightly builds only.`);
-      return;
-    }
     const url = Services.io.newURI(aData.url);
     if (!lazy.isProductURL(url)) {
       aCallback.onError(`Cannot requestCreateAnalysis on a non-product url.`);
@@ -371,10 +407,6 @@ export class GeckoViewContent extends GeckoViewModule {
   }
 
   async _requestAnalysisCreationStatus(aData, aCallback) {
-    if (!AppConstants.NIGHTLY_BUILD) {
-      aCallback.onError(`This API enabled for Nightly builds only.`);
-      return;
-    }
     const url = Services.io.newURI(aData.url);
     if (!lazy.isProductURL(url)) {
       aCallback.onError(
@@ -394,10 +426,6 @@ export class GeckoViewContent extends GeckoViewModule {
   }
 
   async _pollForAnalysisCompleted(aData, aCallback) {
-    if (!AppConstants.NIGHTLY_BUILD) {
-      aCallback.onError(`This API enabled for Nightly builds only.`);
-      return;
-    }
     const url = Services.io.newURI(aData.url);
     if (!lazy.isProductURL(url)) {
       aCallback.onError(
@@ -416,11 +444,25 @@ export class GeckoViewContent extends GeckoViewModule {
     }
   }
 
-  async _requestRecommendations(aData, aCallback) {
-    if (!AppConstants.NIGHTLY_BUILD) {
-      aCallback.onError(`This API enabled for Nightly builds only.`);
+  async _sendAttributionEvent(aEvent, aData, aCallback) {
+    let result;
+    if (Services.prefs.getBoolPref("geckoview.shopping.test_response", true)) {
+      result = { TEST_AID: "TEST_AID_RESPONSE" };
+    } else {
+      result = await lazy.ShoppingProduct.sendAttributionEvent(
+        aEvent,
+        aData.aid,
+        "geckoview_android"
+      );
+    }
+    if (!result || !(aData.aid in result) || !result[aData.aid]) {
+      aCallback.onSuccess(false);
       return;
     }
+    aCallback.onSuccess(true);
+  }
+
+  async _requestRecommendations(aData, aCallback) {
     const url = Services.io.newURI(aData.url);
     if (!lazy.isProductURL(url)) {
       aCallback.onError(`Cannot requestRecommendations on a non-product url.`);

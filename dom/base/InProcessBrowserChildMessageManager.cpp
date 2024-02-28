@@ -66,7 +66,7 @@ class nsAsyncMessageToParent : public nsSameProcessAsyncMessageBase,
  public:
   explicit nsAsyncMessageToParent(
       InProcessBrowserChildMessageManager* aBrowserChild)
-      : nsSameProcessAsyncMessageBase(), mBrowserChild(aBrowserChild) {}
+      : mBrowserChild(aBrowserChild) {}
 
   virtual nsresult HandleMessage() override {
     RefPtr<nsFrameLoader> fl = mBrowserChild->GetFrameLoader();
@@ -154,7 +154,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(InProcessBrowserChildMessageManager)
   NS_INTERFACE_MAP_ENTRY(nsIMessageSender)
   NS_INTERFACE_MAP_ENTRY(nsIInProcessContentFrameMessageManager)
-  NS_INTERFACE_MAP_ENTRY(ContentFrameMessageManager)
+  NS_INTERFACE_MAP_ENTRY_CONCRETE(ContentFrameMessageManager)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 

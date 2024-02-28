@@ -11,7 +11,7 @@
 #include "ErrorList.h"
 #include "TypedArray.h"
 #include "js/ArrayBuffer.h"
-#include "js/ColumnNumber.h"  // JS::ColumnNumberZeroOrigin
+#include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
 #include "js/JSON.h"
 #include "js/Utility.h"
 #include "js/experimental/TypedData.h"
@@ -30,6 +30,7 @@
 #include "mozilla/Span.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TextUtils.h"
+#include "mozilla/Try.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/dom/BindingUtils.h"
@@ -292,7 +293,7 @@ static bool AssertParentProcessWithCallerLocationImpl(GlobalObject& aGlobal,
 
   JS::AutoFilename scriptFilename;
   uint32_t lineNo = 0;
-  JS::ColumnNumberZeroOrigin colNo;
+  JS::ColumnNumberOneOrigin colNo;
 
   NS_ENSURE_TRUE(
       JS::DescribeScriptedCaller(cx, &scriptFilename, &lineNo, &colNo), false);

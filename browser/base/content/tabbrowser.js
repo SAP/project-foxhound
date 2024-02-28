@@ -98,6 +98,18 @@
           true
         );
       });
+      XPCOMUtils.defineLazyPreferenceGetter(
+        this,
+        "_shouldExposeContentTitle",
+        "privacy.exposeContentTitleInWindow",
+        true
+      );
+      XPCOMUtils.defineLazyPreferenceGetter(
+        this,
+        "_shouldExposeContentTitlePbm",
+        "privacy.exposeContentTitleInWindow.pbm",
+        true
+      );
 
       if (AppConstants.MOZ_CRASHREPORTER) {
         ChromeUtils.defineESModuleGetters(this, {
@@ -1028,6 +1040,19 @@
     getWindowTitleForBrowser(aBrowser) {
       let docElement = document.documentElement;
       let title = "";
+      let dataSuffix =
+        docElement.getAttribute("privatebrowsingmode") == "temporary"
+          ? "Private"
+          : "Default";
+      let defaultTitle = docElement.dataset["title" + dataSuffix];
+
+      if (
+        !this._shouldExposeContentTitle ||
+        (PrivateBrowsingUtils.isWindowPrivate(window) &&
+          !this._shouldExposeContentTitlePbm)
+      ) {
+        return defaultTitle;
+      }
 
       // If location bar is hidden and the URL type supports a host,
       // add the scheme and host to the title to prevent spoofing.
@@ -1065,10 +1090,6 @@
         title += tab.getAttribute("label").replace(/\0/g, "");
       }
 
-      let dataSuffix =
-        docElement.getAttribute("privatebrowsingmode") == "temporary"
-          ? "Private"
-          : "Default";
       if (title) {
         // We're using a function rather than just using `title` as the
         // new substring to avoid `$$`, `$'` etc. having a special
@@ -1081,7 +1102,7 @@
         );
       }
 
-      return docElement.dataset["title" + dataSuffix];
+      return defaultTitle;
     },
 
     updateTitlebar() {
@@ -2590,6 +2611,7 @@
         insertTab = true,
         globalHistoryOptions,
         triggeringRemoteType,
+        wasSchemelessInput,
       } = {}
     ) {
       // all callers of addTab that pass a params object need to pass
@@ -2779,6 +2801,7 @@
           csp,
           globalHistoryOptions,
           triggeringRemoteType,
+          wasSchemelessInput,
         });
       }
 
@@ -3020,6 +3043,7 @@
         csp,
         globalHistoryOptions,
         triggeringRemoteType,
+        wasSchemelessInput,
       }
     ) {
       if (
@@ -3083,6 +3107,7 @@
             csp,
             globalHistoryOptions,
             triggeringRemoteType,
+            wasSchemelessInput,
           });
         } catch (ex) {
           console.error(ex);
@@ -3554,28 +3579,44 @@
     },
 
     /**
-     * In a multi-select context, all unpinned and unselected tabs are removed.
-     * Otherwise all unpinned tabs except aTab are removed.
+     * Remove all tabs but aTab. By default, in a multi-select context, all
+     * unpinned and unselected tabs are removed. Otherwise all unpinned tabs
+     * except aTab are removed. This behavior can be changed using the the bool
+     * flags below.
      *
-     * @param   aTab
-     *          The tab we will skip removing
-     * @param   aParams
-     *          An optional set of parameters that will be passed to the
+     * @param   aTab The tab we will skip removing
+     * @param   aParams An optional set of parameters that will be passed to the
      *          removeTabs function.
+     * @param   {boolean} [aParams.skipWarnAboutClosingTabs=false] Skip showing
+     *          the tab close warning prompt.
+     * @param   {boolean} [aParams.skipPinnedOrSelectedTabs=true] Skip closing
+     *          tabs that are selected or pinned.
      */
-    removeAllTabsBut(aTab, aParams) {
-      let tabsToRemove = [];
-      if (aTab && aTab.multiselected) {
-        tabsToRemove = this.visibleTabs.filter(
-          tab => !tab.multiselected && !tab.pinned
-        );
+    removeAllTabsBut(aTab, aParams = {}) {
+      let {
+        skipWarnAboutClosingTabs = false,
+        skipPinnedOrSelectedTabs = true,
+      } = aParams;
+
+      let filterFn;
+
+      // If enabled also filter by selected or pinned state.
+      if (skipPinnedOrSelectedTabs) {
+        if (aTab?.multiselected) {
+          filterFn = tab => !tab.multiselected && !tab.pinned;
+        } else {
+          filterFn = tab => tab != aTab && !tab.pinned;
+        }
       } else {
-        tabsToRemove = this.visibleTabs.filter(
-          tab => tab != aTab && !tab.pinned
-        );
+        // Exclude just aTab from being removed.
+        filterFn = tab => tab != aTab;
       }
 
+      let tabsToRemove = this.visibleTabs.filter(filterFn);
+
+      // If enabled show the tab close warning.
       if (
+        !skipWarnAboutClosingTabs &&
         !this.warnAboutClosingTabs(
           tabsToRemove.length,
           this.closingTabsEnum.OTHER
@@ -3628,11 +3669,19 @@
      *   using it in tandem with `runBeforeUnloadForTabs`.
      * @param {boolean} options.skipRemoves
      *   Skips actually removing the tabs. The beforeunload handlers still run.
+     * @param {boolean} options.skipSessionStore
+     *   If true, don't record the closed tabs in SessionStore.
      * @returns {_startRemoveTabsReturnValue}
      */
     _startRemoveTabs(
       tabs,
-      { animate, suppressWarnAboutClosingWindow, skipPermitUnload, skipRemoves }
+      {
+        animate,
+        suppressWarnAboutClosingWindow,
+        skipPermitUnload,
+        skipRemoves,
+        skipSessionStore,
+      }
     ) {
       // Note: if you change any of the unload algorithm, consider also
       // changing `runBeforeUnloadForTabs` above.
@@ -3678,6 +3727,7 @@
                       animate,
                       prewarmed: true,
                       skipPermitUnload: true,
+                      skipSessionStore,
                     });
                   }
                 } else {
@@ -3710,6 +3760,7 @@
             animate,
             prewarmed: true,
             skipPermitUnload,
+            skipSessionStore,
           });
         }
       }
@@ -3779,6 +3830,8 @@
      * @param {boolean} [options.skipPermitUnload]
      *   Skips the before unload checks for the tabs. Only set this to true when
      *   using it in tandem with `runBeforeUnloadForTabs`.
+     * @param {boolean}  [options.skipSessionStore]
+     *   If true, don't record the closed tabs in SessionStore.
      */
     removeTabs(
       tabs,
@@ -3786,6 +3839,7 @@
         animate = true,
         suppressWarnAboutClosingWindow = false,
         skipPermitUnload = false,
+        skipSessionStore = false,
       } = {}
     ) {
       // When 'closeWindowWithLastTab' pref is enabled, closing all tabs
@@ -3813,6 +3867,7 @@
             suppressWarnAboutClosingWindow,
             skipPermitUnload,
             skipRemoves: false,
+            skipSessionStore,
           });
 
         // Wait for all the beforeunload events to have been processed by content processes.
@@ -3835,6 +3890,7 @@
           animate,
           prewarmed: true,
           skipPermitUnload,
+          skipSessionStore,
         };
 
         // Now run again sequentially the beforeunload listeners that will result in a prompt.
@@ -3879,6 +3935,7 @@
         skipPermitUnload,
         closeWindowWithLastTab,
         prewarmed,
+        skipSessionStore,
       } = {}
     ) {
       if (UserInteraction.running("browser.tabs.opening", window)) {
@@ -3917,6 +3974,7 @@
           skipPermitUnload,
           closeWindowWithLastTab,
           prewarmed,
+          skipSessionStore,
         })
       ) {
         TelemetryStopwatch.cancel("FX_TAB_CLOSE_TIME_ANIM_MS", aTab);
@@ -3997,6 +4055,7 @@
         closeWindowFastpath,
         skipPermitUnload,
         prewarmed,
+        skipSessionStore = false,
       } = {}
     ) {
       if (aTab.closing || this._windowIsClosing) {
@@ -4142,7 +4201,7 @@
       // inspect the tab that's about to close.
       let evt = new CustomEvent("TabClose", {
         bubbles: true,
-        detail: { adoptedBy: adoptedByTab },
+        detail: { adoptedBy: adoptedByTab, skipSessionStore },
       });
       aTab.dispatchEvent(evt);
 

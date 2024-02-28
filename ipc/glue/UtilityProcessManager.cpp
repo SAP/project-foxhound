@@ -24,6 +24,7 @@
 
 #ifdef XP_WIN
 #  include "mozilla/dom/WindowsUtilsParent.h"
+#  include "mozilla/widget/filedialog/WinFileDialogParent.h"
 #endif
 
 #include "mozilla/GeckoArgs.h"
@@ -310,7 +311,8 @@ RefPtr<GenericNonExclusivePromise> UtilityProcessManager::StartUtility(
 
 RefPtr<UtilityProcessManager::StartRemoteDecodingUtilityPromise>
 UtilityProcessManager::StartProcessForRemoteMediaDecoding(
-    base::ProcessId aOtherProcess, SandboxingKind aSandbox) {
+    base::ProcessId aOtherProcess, dom::ContentParentId aChildId,
+    SandboxingKind aSandbox) {
   // Not supported kinds.
   if (aSandbox != SandboxingKind::GENERIC_UTILITY
 #ifdef MOZ_APPLEMEDIA
@@ -335,7 +337,8 @@ UtilityProcessManager::StartProcessForRemoteMediaDecoding(
   return StartUtility(uadc, aSandbox)
       ->Then(
           GetMainThreadSerialEventTarget(), __func__,
-          [self, uadc, aOtherProcess, aSandbox, remoteDecodingStart]() {
+          [self, uadc, aOtherProcess, aChildId, aSandbox,
+           remoteDecodingStart]() {
             RefPtr<UtilityProcessParent> parent =
                 self->GetProcessParent(aSandbox);
             if (!parent) {
@@ -362,8 +365,8 @@ UtilityProcessManager::StartProcessForRemoteMediaDecoding(
                   rv, __func__);
             }
 
-            if (!uadc->SendNewContentRemoteDecoderManager(
-                    std::move(parentPipe))) {
+            if (!uadc->SendNewContentRemoteDecoderManager(std::move(parentPipe),
+                                                          aChildId)) {
               MOZ_ASSERT(false, "SendNewContentRemoteDecoderManager failure");
               return StartRemoteDecodingUtilityPromise::CreateAndReject(
                   NS_ERROR_FAILURE, __func__);
@@ -448,6 +451,45 @@ UtilityProcessManager::GetWindowsUtilsPromise() {
 }
 
 void UtilityProcessManager::ReleaseWindowsUtils() { mWindowsUtils = nullptr; }
+
+RefPtr<UtilityProcessManager::WinFileDialogPromise>
+UtilityProcessManager::CreateWinFileDialogAsync() {
+  using Promise = WinFileDialogPromise;
+  TimeStamp startTime = TimeStamp::Now();
+  auto wfdp = MakeRefPtr<widget::filedialog::WinFileDialogParent>();
+
+  return StartUtility(wfdp, SandboxingKind::WINDOWS_FILE_DIALOG)
+      ->Then(
+          GetMainThreadSerialEventTarget(), __PRETTY_FUNCTION__,
+          [wfdp, startTime]() mutable {
+            LOGD("CreateWinFileDialogAsync() resolve: wfdp = [%p]", wfdp.get());
+            if (!wfdp->CanSend()) {
+              MOZ_ASSERT(false, "WinFileDialogParent can't send");
+              return Promise::CreateAndReject(NS_ERROR_FAILURE,
+                                              __PRETTY_FUNCTION__);
+            }
+            PROFILER_MARKER_TEXT(
+                "UtilityProcessManager::CreateWinFileDialogAsync", OTHER,
+                MarkerOptions(MarkerTiming::IntervalUntilNowFrom(startTime)),
+                "Resolve"_ns);
+
+            return Promise::CreateAndResolve(
+                widget::filedialog::ProcessProxy(std::move(wfdp)),
+                __PRETTY_FUNCTION__);
+          },
+          [self = RefPtr(this), startTime](nsresult error) {
+            LOGD("CreateWinFileDialogAsync() reject");
+            if (!self->IsShutdown()) {
+              MOZ_ASSERT_UNREACHABLE("failure when starting file-dialog actor");
+            }
+            PROFILER_MARKER_TEXT(
+                "UtilityProcessManager::CreateWinFileDialogAsync", OTHER,
+                MarkerOptions(MarkerTiming::IntervalUntilNowFrom(startTime)),
+                "Reject"_ns);
+
+            return Promise::CreateAndReject(error, __PRETTY_FUNCTION__);
+          });
+}
 
 #endif  // XP_WIN
 

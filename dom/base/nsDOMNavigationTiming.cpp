@@ -57,6 +57,7 @@ void nsDOMNavigationTiming::Clear() {
   mDOMContentLoadedEventEnd = TimeStamp();
   mDOMComplete = TimeStamp();
   mContentfulComposite = TimeStamp();
+  mLargestContentfulRender = TimeStamp();
   mNonBlankPaint = TimeStamp();
 
   mDocShellHasBeenActiveSinceNavigationStart = false;
@@ -478,6 +479,16 @@ void nsDOMNavigationTiming::NotifyContentfulCompositeForRootContentDocument(
   }
 }
 
+void nsDOMNavigationTiming::NotifyLargestContentfulRenderForRootContentDocument(
+    const DOMHighResTimeStamp& aRenderTime) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!mNavigationStart.IsNull());
+
+  // This can get called multiple times and updates over time.
+  mLargestContentfulRender =
+      mNavigationStart + TimeDuration::FromMilliseconds(aRenderTime);
+}
+
 void nsDOMNavigationTiming::NotifyDOMContentFlushedForRootContentDocument() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!mNavigationStart.IsNull());
@@ -513,6 +524,34 @@ void nsDOMNavigationTiming::NotifyDocShellStateChanged(
     DocShellState aDocShellState) {
   mDocShellHasBeenActiveSinceNavigationStart &=
       (aDocShellState == DocShellState::eActive);
+}
+
+void nsDOMNavigationTiming::MaybeAddLCPProfilerMarker(
+    MarkerInnerWindowId aInnerWindowID) {
+  // This method might get called from outside of the main thread, so can't
+  // check `profiler_thread_is_being_profiled_for_markers()` here.
+  if (!profiler_is_active_and_unpaused()) {
+    return;
+  }
+
+  TimeStamp navStartTime = GetNavigationStartTimeStamp();
+  TimeStamp lcpTime = GetLargestContentfulRenderTimeStamp();
+
+  if (!navStartTime || !lcpTime) {
+    return;
+  }
+
+  TimeDuration elapsed = lcpTime - navStartTime;
+  nsPrintfCString marker("Largest contentful paint after %dms",
+                         int(elapsed.ToMilliseconds()));
+  PROFILER_MARKER_TEXT(
+      "LargestContentfulPaint", DOM,
+      // Putting this marker to the main thread even if it's called from another
+      // one.
+      MarkerOptions(MarkerThreadId::MainThread(),
+                    MarkerTiming::Interval(navStartTime, lcpTime),
+                    std::move(aInnerWindowID)),
+      marker);
 }
 
 mozilla::TimeStamp nsDOMNavigationTiming::GetUnloadEventStartTimeStamp() const {

@@ -472,22 +472,26 @@ static bool ProcessTryNotesBaseline(JSContext* cx, const JSJitFrameIter& frame,
         script->resetWarmUpCounterToDelayIonCompilation();
 
         // Resume at the start of the catch block.
-        const BaselineInterpreter& interp =
-            cx->runtime()->jitRuntime()->baselineInterpreter();
         frame.baselineFrame()->setInterpreterFields(*pc);
         rfe->kind = ExceptionResumeKind::Catch;
-        rfe->target = interp.interpretOpAddr().value;
+        if (IsBaselineInterpreterEnabled()) {
+          const BaselineInterpreter& interp =
+              cx->runtime()->jitRuntime()->baselineInterpreter();
+          rfe->target = interp.interpretOpAddr().value;
+        }
         return true;
       }
 
       case TryNoteKind::Finally: {
         SettleOnTryNote(cx, tn, frame, ei, rfe, pc);
 
-        const BaselineInterpreter& interp =
-            cx->runtime()->jitRuntime()->baselineInterpreter();
         frame.baselineFrame()->setInterpreterFields(*pc);
         rfe->kind = ExceptionResumeKind::Finally;
-        rfe->target = interp.interpretOpAddr().value;
+        if (IsBaselineInterpreterEnabled()) {
+          const BaselineInterpreter& interp =
+              cx->runtime()->jitRuntime()->baselineInterpreter();
+          rfe->target = interp.interpretOpAddr().value;
+        }
 
         // Drop the exception instead of leaking cross compartment data.
         if (!cx->getPendingException(
@@ -667,7 +671,9 @@ void HandleException(ResumeFromException* rfe) {
   JSContext* cx = TlsContext.get();
 
 #ifdef DEBUG
-  cx->runtime()->jitRuntime()->clearDisallowArbitraryCode();
+  if (!IsPortableBaselineInterpreterEnabled()) {
+    cx->runtime()->jitRuntime()->clearDisallowArbitraryCode();
+  }
 
   // Reset the counter when we bailed after MDebugEnterGCUnsafeRegion, but
   // before the matching MDebugLeaveGCUnsafeRegion.
@@ -677,9 +683,11 @@ void HandleException(ResumeFromException* rfe) {
 #endif
 
   auto resetProfilerFrame = mozilla::MakeScopeExit([=] {
-    if (!cx->runtime()->jitRuntime()->isProfilerInstrumentationEnabled(
-            cx->runtime())) {
-      return;
+    if (!IsPortableBaselineInterpreterEnabled()) {
+      if (!cx->runtime()->jitRuntime()->isProfilerInstrumentationEnabled(
+              cx->runtime())) {
+        return;
+      }
     }
 
     MOZ_ASSERT(cx->jitActivation == cx->profilingActivation());
@@ -872,6 +880,13 @@ uintptr_t* JitFrameLayout::slotRef(SafepointSlotEntry where) {
   }
   return (uintptr_t*)((uint8_t*)thisAndActualArgs() + where.slot);
 }
+
+#ifdef DEBUG
+void ExitFooterFrame::assertValidVMFunctionId() const {
+  MOZ_ASSERT(data_ >= uintptr_t(ExitFrameType::VMFunction));
+  MOZ_ASSERT(data_ - uintptr_t(ExitFrameType::VMFunction) < NumVMFunctions());
+}
+#endif
 
 #ifdef JS_NUNBOX32
 static inline uintptr_t ReadAllocation(const JSJitFrameIter& frame,
@@ -1122,10 +1137,12 @@ static void TraceBaselineStubFrame(JSTracer* trc, const JSJitFrameIter& frame) {
       MOZ_ASSERT(stub->toCacheIRStub()->makesGCCalls());
       stub->toCacheIRStub()->trace(trc);
 
+#ifndef ENABLE_PORTABLE_BASELINE_INTERP
       for (int i = 0; i < stub->jitCode()->localTracingSlots(); ++i) {
         TraceRoot(trc, layout->locallyTracedValuePtr(i),
                   "baseline-local-tracing-slot");
       }
+#endif
     }
   }
 }
@@ -1270,13 +1287,12 @@ static void TraceJitExitFrame(JSTracer* trc, const JSJitFrameIter& frame) {
 
   MOZ_ASSERT(frame.exitFrame()->isWrapperExit());
 
-  const VMFunctionData* f = footer->function();
-  MOZ_ASSERT(f);
+  const VMFunctionData& f = GetVMFunction(footer->functionId());
 
   // Trace arguments of the VM wrapper.
   uint8_t* argBase = frame.exitFrame()->argBase();
-  for (uint32_t explicitArg = 0; explicitArg < f->explicitArgs; explicitArg++) {
-    switch (f->argRootType(explicitArg)) {
+  for (uint32_t explicitArg = 0; explicitArg < f.explicitArgs; explicitArg++) {
+    switch (f.argRootType(explicitArg)) {
       case VMFunctionData::RootNone:
         break;
       case VMFunctionData::RootObject: {
@@ -1305,7 +1321,7 @@ static void TraceJitExitFrame(JSTracer* trc, const JSJitFrameIter& frame) {
         break;
     }
 
-    switch (f->argProperties(explicitArg)) {
+    switch (f.argProperties(explicitArg)) {
       case VMFunctionData::WordByValue:
       case VMFunctionData::WordByRef:
         argBase += sizeof(void*);
@@ -1317,8 +1333,8 @@ static void TraceJitExitFrame(JSTracer* trc, const JSJitFrameIter& frame) {
     }
   }
 
-  if (f->outParam == Type_Handle) {
-    switch (f->outParamRootType) {
+  if (f.outParam == Type_Handle) {
+    switch (f.outParamRootType) {
       case VMFunctionData::RootNone:
         MOZ_CRASH("Handle outparam must have root type");
       case VMFunctionData::RootObject:
@@ -1343,7 +1359,7 @@ static void TraceJitExitFrame(JSTracer* trc, const JSJitFrameIter& frame) {
     }
   }
 
-  TraceJitExitFrameCopiedArguments(trc, f, footer);
+  TraceJitExitFrameCopiedArguments(trc, &f, footer);
 }
 
 static void TraceBaselineInterpreterEntryFrame(JSTracer* trc,
@@ -2129,11 +2145,7 @@ Value SnapshotIterator::maybeReadAllocByIndex(size_t index) {
 
 InlineFrameIterator::InlineFrameIterator(JSContext* cx,
                                          const JSJitFrameIter* iter)
-    : calleeTemplate_(cx),
-      calleeRVA_(),
-      script_(cx),
-      pc_(nullptr),
-      numActualArgs_(0) {
+    : calleeTemplate_(cx), script_(cx), pc_(nullptr), numActualArgs_(0) {
   resetOn(iter);
 }
 
@@ -2143,7 +2155,6 @@ InlineFrameIterator::InlineFrameIterator(JSContext* cx,
       framesRead_(0),
       frameCount_(iter ? iter->frameCount_ : UINT32_MAX),
       calleeTemplate_(cx),
-      calleeRVA_(),
       script_(cx),
       pc_(nullptr),
       numActualArgs_(0) {

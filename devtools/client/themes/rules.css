@@ -5,23 +5,29 @@
 /* CSS Variables specific to this panel that aren't defined by the themes */
 :root {
   --rule-highlight-background-color: var(--theme-highlight-yellow);
+  --rule-highlight-propertyname: var(--blue-60);
+  --rule-highlight-propertyvalue: var(--magenta-70);
+  --rule-highlight-unmatched-unused-color: var(--grey-55);
   --rule-header-background-color: var(--theme-toolbar-background);
-  --rule-pseudo-class-text-color: var(--yellow-70) ;
-  --rule-unused-name-text-color: var(--grey-50);
-  --rule-unused-value-text-color: var(--grey-45);
-  --rule-overridden-name-text-color: var(--grey-50);
-  --rule-overridden-value-text-color: var(--grey-45);
+  --rule-computed-margin-inline-start: 35px;
+  --rule-enableproperty-size: 12px;
+  --rule-enableproperty-margin-inline-start: 3px;
+  --rule-enableproperty-margin-inline-end: 9px;
+
+  &:is([platform="win"], [platform="linux"]) {
+    --rule-enableproperty-size: 14px;
+    /* it's important to keep the px unit here as this is used in a `calc()` */
+    --rule-enableproperty-margin-inline-start: 0px;
+    --rule-enableproperty-margin-inline-end: 10px;
+  }
 }
 
 :root.theme-dark {
   --rule-highlight-background-color: #521C76;
+  --rule-highlight-propertyname: var(--theme-highlight-blue);
+  --rule-highlight-propertyvalue: var(--theme-highlight-red);
+  --rule-highlight-unmatched-unused-color: var(--grey-40);
   --rule-header-background-color: #222225;
-  --rule-pseudo-class-text-color: var(--yellow-50);
-
-  --rule-unused-name-text-color: var(--grey-45);
-  --rule-unused-value-text-color: #787878;
-  --rule-overridden-name-text-color: var(--grey-45);
-  --rule-overridden-value-text-color: #787878;
 }
 
 /* Rule View Tabpanel */
@@ -137,6 +143,8 @@
   overflow: auto;
   flex: auto;
   height: 100%;
+  /* Adjust outline so it's visible */
+  outline-offset: -2px;
 }
 
 /* This extra wrapper only serves as a way to get the content of the view focusable.
@@ -169,7 +177,12 @@
 
 .ruleview-namecontainer {
   cursor: text;
-  margin-left: -35px;
+}
+
+.ruleview-computed {
+  margin-inline-start: var(--rule-computed-margin-inline-start);
+  /* Add a small indent for wrapping lines */
+  text-indent: 1em hanging;
 }
 
 .ruleview-computed > .ruleview-namecontainer {
@@ -326,14 +339,6 @@
   border-bottom-color: transparent;
 }
 
-.ruleview-property.unused .ruleview-propertyname {
-  color: var(--rule-unused-name-text-color);
-}
-
-.ruleview-property.unused .ruleview-propertyvalue {
-  color: var(--rule-unused-value-text-color);
-}
-
 .ruleview-overridden-rule-filter {
   display: inline-block;
   width: 14px;
@@ -401,35 +406,33 @@
   margin-bottom: 0;
 }
 
-:root[platform="mac"] .ruleview-enableproperty {
-  left: -29px;
+.ruleview-enableproperty {
   box-sizing: border-box;
-  margin-inline-start: 3px;
-  margin-inline-end: 9px;
-  width: 12px;
-  height: 12px;
-}
+  margin-inline-start: var(--rule-enableproperty-margin-inline-start);
+  margin-inline-end: var(--rule-enableproperty-margin-inline-end);
+  width: var(--rule-enableproperty-size);
+  height: var(--rule-enableproperty-size);
 
-/* The SVG checkbox on Windows and Linux */
-:root[platform="win"] .ruleview-enableproperty,
-:root[platform="linux"] .ruleview-enableproperty {
-  appearance: none;
-  float: left;
-  left: -27px;
-  box-sizing: content-box;
-  margin-inline-start: 0;
-  margin-inline-end: 10px;
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 0;
-  padding: 0;
-  outline: none;
-  background: url("chrome://devtools/skin/images/checkbox.svg") center no-repeat content-box;
-  /* Using fill to paint the border, and stroke for the tick */
-  -moz-context-properties: fill, stroke;
-  fill: rgba(0,0,0,.3);
-  stroke: transparent;
+  /* The SVG checkbox on Windows and Linux */
+  :root:is([platform="win"], [platform="linux"]) & {
+    appearance: none;
+    float: left;
+    box-sizing: content-box;
+    display: inline-block;
+    border: 0;
+    padding: 0;
+    outline: none;
+    background: url("chrome://devtools/skin/images/checkbox.svg") center no-repeat content-box;
+    /* Using fill to paint the border, and stroke for the tick */
+    -moz-context-properties: fill, stroke;
+    fill: rgba(0,0,0,.3);
+    stroke: transparent;
+  }
+
+  :root[platform="mac"] & {
+    appearance: auto;
+    -moz-default-appearance: checkbox;
+  }
 }
 
 :root[platform="win"].theme-dark .ruleview-enableproperty,
@@ -445,11 +448,6 @@
 :root[platform="win"].theme-dark .ruleview-enableproperty:checked,
 :root[platform="linux"].theme-dark .ruleview-enableproperty:checked {
   stroke: rgba(255,255,255,.8);
-}
-
-:root[platform="mac"] .ruleview-enableproperty {
-  appearance: auto;
-  -moz-default-appearance: checkbox;
 }
 
 .ruleview-warning,
@@ -506,7 +504,13 @@
 }
 
 .ruleview-newproperty {
-  margin-inline-start: -10px;
+  /* As we don't have the checkbox displayed before the input, we need to align it
+     with the property name above it. */
+  margin-inline-start: calc(
+    var(--rule-enableproperty-size) +
+    var(--rule-enableproperty-margin-inline-start) +
+    var(--rule-enableproperty-margin-inline-end)
+  );
 }
 
 .ruleview-namecontainer,
@@ -522,7 +526,6 @@
 }
 
 .ruleview-overridden-items {
-  margin-inline-start: -25px;
   margin-block: 0;
   list-style: none;
   line-height: 1.5em;
@@ -651,6 +654,9 @@
 .ruleview-swatch.ruleview-colorswatch {
   border: none;
   padding: 0;
+  /* Adjust outline so it doesn't conflate with the color swatch, which could have a similar background
+     color as the outline */
+  outline-offset: 2px;
 }
 
 .ruleview-bezierswatch {
@@ -673,14 +679,6 @@
   text-decoration: line-through solid var(--theme-text-color-alt);
 }
 
-.ruleview-property.ruleview-overridden .ruleview-propertyname {
-  color: var(--rule-overridden-name-text-color);
-}
-
-.ruleview-property.ruleview-overridden .ruleview-propertyvalue {
-  color: var(--rule-overridden-value-text-color);
-}
-
 /**
  * Hide swatches (tool icons) from properties that are overwritten by higher specificity * rules.
  * .ruleview-swatch is a base class for many tool swatches (shapes, color, bezier curves)
@@ -698,16 +696,24 @@
 }
 
 .styleinspector-propertyeditor {
-  border: 1px solid #CCC;
   padding: 0;
-  margin: -1px -3px -1px -1px;
+  margin-block: -1px;
+  border: none;
+  outline-offset: 1px;
+  &:focus-visible {
+    /* Unset the outline box shadow to prevent overlapping previous/next properties.
+       This is safe since those input won't be this part of the UI won't get */
+    --theme-outline-box-shadow: initial;
+  }
 }
 
 .ruleview-property {
   border-left: 3px solid transparent;
   clear: both;
-  padding-left: 28px;
   overflow-wrap: break-word;
+  /* When the text of the property wraps, we want the wrapping lines to have an indent so
+     they don't go under the checkbox */
+  text-indent: var(--rule-computed-margin-inline-start) hanging;
 }
 
 .ruleview-propertycontainer  > * {
@@ -719,13 +725,35 @@
   border-left-color: var(--theme-highlight-green);
 }
 
-.ruleview-highlight > .ruleview-expander,
-.ruleview-highlight > .ruleview-namecontainer,
-.ruleview-highlight > .ruleview-propertyvaluecontainer,
-.ruleview-highlight > .ruleview-rule-source-label,
-.ruleview-highlight > .ruleview-selector,
-.ruleview-rule-ancestor-data .ruleview-highlight {
+.ruleview-highlight {
+  /*
+   * If we'd rely solely on background color change for highlighted element, we would need
+   * to pick a color that would bring at least 3:1 ratio (see 1.4.11 Non-text Contrast).
+   * As this would be too disturbing for the user, we need to indicate impacted element
+   * with another graphical mean.
+   * So here we'll use a bottom box-shadow (not a border to avoid impacting the layout)
+   * which will match the style we have in Debugger for search results.
+   */
   background-color: var(--rule-highlight-background-color);
+  /* Put the box-shadow inside the element so it's still visible when sibling elements are highlighted  */
+  box-shadow: inset 0px -1px 0px 0px var(--theme-contrast-border);
+
+
+  /* property name and value and unmatched/inactive colors need to be adjusted
+     in order to have enough contrast against the highlighted background */
+  & .ruleview-propertyname {
+    color: var(--rule-highlight-propertyname);
+  }
+
+  & .ruleview-propertyvalue {
+    color: var(--rule-highlight-propertyvalue);
+  }
+
+  &.ruleview-selector.unmatched,
+  & .ruleview-unmatched-variable,
+  .ruleview-property:is(.unused, .ruleview-overridden) & :is(.ruleview-propertyname, .ruleview-propertyvalue) {
+    color: var(--rule-highlight-unmatched-unused-color);
+  }
 }
 
 .ruleview-namecontainer > .ruleview-propertyname,
@@ -767,27 +795,77 @@
   margin-inline: 1ch 0;
 }
 
-.ruleview-selectorcontainer {
+.ruleview-selectors-container {
   word-wrap: break-word;
   cursor: text;
 }
 
 .ruleview-selector-separator,
-.ruleview-selector-unmatched,
-.ruleview-unmatched-variable {
-  color: #888;
+.ruleview-selector.unmatched,
+.ruleview-unmatched-variable,
+.ruleview-property:is(.unused, .ruleview-overridden) :is(.ruleview-propertyname,.ruleview-propertyvalue) {
+  color: var(--theme-text-color-alt);
 }
 
-.ruleview-selector-matched > .ruleview-selector-attribute {
+/* We use a dimmer color for those unmatching element, but we can't convey state change
+    only with colors, so let's add a line-through line */
+:is(
+  .ruleview-selector.unmatched,
+  .ruleview-unmatched-variable
+):not(
+  /* don't show the strike through when the element is hovered so it's more legible */
+  :hover
+) {
+  text-decoration: line-through solid currentColor;
+}
+
+.ruleview-selector.matched > .ruleview-selector-attribute {
   /* TODO: Bug 1178535 Awaiting UX feedback on highlight colors */
 }
 
-.ruleview-selector-matched > .ruleview-selector-pseudo-class {
+.ruleview-selector.matched > .ruleview-selector-pseudo-class {
   /* TODO: Bug 1178535 Awaiting UX feedback on highlight colors */
 }
 
-.ruleview-selector-matched > .ruleview-selector-pseudo-class-lock {
-  color: var(--rule-pseudo-class-text-color);
+.ruleview-selector.matched > .ruleview-selector-pseudo-class-lock {
+  color: var(--pseudo-class-text-color);
+}
+
+.ruleview-selector-warnings {
+  display: inline-block;
+  width: 16px;
+  height: 12px;
+  margin-inline-start: 2px;
+  vertical-align: text-top;
+  border-radius: 2px;
+
+  border: 1px solid var(--theme-warning-border);
+  background-color: var(--theme-warning-background);
+  background-repeat: no-repeat;
+  background-position: center;
+  fill: var(--theme-warning-color);
+  -moz-context-properties: fill;
+
+  /* Default warning icon */
+  background-image: url(chrome://devtools/skin/images/alert-small.svg);
+  background-size: 10px;
+
+  &.slow {
+    background-image: url(chrome://devtools/content/netmonitor/src/assets/icons/turtle.svg);
+    background-size: 12px;
+  }
+}
+
+/* When hovering the selector warnings icon, highlight the selector it applies to */
+.ruleview-selector:has(.ruleview-selector-warnings:hover) {
+  background-color: var(--theme-warning-background);
+  /* We're not using --theme-warning-border to make it more visible */
+  outline: 1px solid var(--theme-warning-color);
+
+  & .ruleview-selector-warnings {
+    /* In such case, hide the icon border to make it cleaner */
+    border-color: transparent;
+  }
 }
 
 .ruleview-selectorhighlighter {

@@ -68,6 +68,7 @@
 #include "jit/MacroAssembler-inl.h"
 #include "jit/SafepointIndex-inl.h"
 #include "vm/GeckoProfiler-inl.h"
+#include "vm/JSContext-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/Realm-inl.h"
 
@@ -539,7 +540,7 @@ void JitZone::traceWeak(JSTracer* trc, Zone* zone) {
 
 void JitZone::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                                      JS::CodeSizes* code, size_t* jitZone,
-                                     size_t* baselineStubsOptimized) const {
+                                     size_t* cacheIRStubs) const {
   *jitZone += mallocSizeOf(this);
   *jitZone +=
       baselineCacheIRStubCodes_.shallowSizeOfExcludingThis(mallocSizeOf);
@@ -547,8 +548,7 @@ void JitZone::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
 
   execAlloc().addSizeOfCode(code);
 
-  *baselineStubsOptimized +=
-      optimizedStubSpace_.sizeOfExcludingThis(mallocSizeOf);
+  *cacheIRStubs += stubSpace_.sizeOfExcludingThis(mallocSizeOf);
 }
 
 void JitCodeHeader::init(JitCode* jitCode) {

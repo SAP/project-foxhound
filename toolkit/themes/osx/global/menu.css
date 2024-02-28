@@ -12,7 +12,7 @@
 .menu-iconic-text,
 .menu-accel,
 .menu-iconic-accel {
-  margin: 0 !important;
+  margin: 0;
 }
 
 .menu-iconic-icon {
@@ -55,10 +55,8 @@ menubar > menu[_moz-menuactive="true"] {
 }
 
 menubar > menu[_moz-menuactive="true"][open="true"] {
-  appearance: auto;
-  -moz-default-appearance: menuitem;
-  -moz-font-smoothing-background-color: -moz-mac-active-menuitem;
   color: -moz-menuhovertext;
+  background-color: -moz-menuhover;
 }
 
 /* Internal content  */
@@ -68,7 +66,7 @@ menubar > menu[_moz-menuactive="true"][open="true"] {
 }
 
 .menubar-text {
-  margin: 0 1px !important;
+  margin: 0 1px;
 }
 
 /* menu/menuitems in popups */
@@ -77,10 +75,6 @@ menupopup > menu,
 menupopup > menuitem,
 menupopup > menucaption {
   max-width: 42em;
-}
-
-menuitem[customoptionstyling="true"] {
-  appearance: none;
 }
 
 /* menu/menuitems in menulist popups */
@@ -98,28 +92,23 @@ menulist > menupopup > menu {
 
 /* checked menuitems */
 
-:not(menulist) > menupopup > menuitem:is([checked="true"], [selected="true"]) {
-  appearance: auto;
-  -moz-default-appearance: checkmenuitem;
-}
-
-menulist > menupopup > menuitem {
+menupopup > menuitem {
   padding-inline: 0;
+
+  /* We only show the ::before pseudo-element, but we'd like the spacing to be
+   * symmetric, so we render an invisible checkmark on both sides in order to
+   * reserve the right amount of space. */
+  &::before,
+  &::after {
+    content: '\2713'; /* a checkmark */
+    display: inline-block;
+    vertical-align: middle;
+    line-height: 0;
+    visibility: hidden;
+    padding-inline: 4px;
+  }
 }
 
-/* We only show the ::before pseudo-element, but we'd like the spacing to be
- * symmetric, so we render an invisible checkmark on both sides in order to
- * reserve the right amount of space. */
-menulist > menupopup > menuitem::after,
-menulist > menupopup > menuitem::before {
-  content: '\2713'; /* a checkmark */
-  display: inline-block;
-  vertical-align: middle;
-  line-height: 0;
-  visibility: hidden;
-  padding-inline: 4px;
-}
-
-menulist > menupopup > menuitem:is([checked="true"], [selected="true"])::before {
+menupopup > menuitem:is([checked="true"], [selected="true"])::before {
   visibility: inherit;
 }

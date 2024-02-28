@@ -40,6 +40,7 @@
 #include "mozilla/dom/NotifyPaintEvent.h"
 #include "mozilla/dom/PageTransitionEvent.h"
 #include "mozilla/dom/PerformanceEventTiming.h"
+#include "mozilla/dom/PerformanceMainThread.h"
 #include "mozilla/dom/PointerEvent.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScrollAreaEvent.h"
@@ -811,7 +812,7 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
                                    nsEventStatus* aEventStatus,
                                    EventDispatchingCallback* aCallback,
                                    nsTArray<EventTarget*>* aTargets) {
-  AUTO_PROFILER_LABEL("EventDispatcher::Dispatch", OTHER);
+  AUTO_PROFILER_LABEL_HOT("EventDispatcher::Dispatch", OTHER);
 
   NS_ASSERTION(aEvent, "Trying to dispatch without WidgetEvent!");
   NS_ENSURE_TRUE(!aEvent->mFlags.mIsBeingDispatched,
@@ -838,6 +839,14 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
   if (aPresContext && !aPresContext->IsPrintingOrPrintPreview()) {
     eventTimingEntry =
         PerformanceEventTiming::TryGenerateEventTiming(target, aEvent);
+
+    if (aEvent->IsTrusted() && aEvent->mMessage == eScroll) {
+      if (auto* perf = aPresContext->GetPerformanceMainThread()) {
+        if (!perf->HasDispatchedScrollEvent()) {
+          perf->SetHasDispatchedScrollEvent();
+        }
+      }
+    }
   }
 
   bool retargeted = false;
@@ -995,7 +1004,6 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
   if (preVisitor.mWantsActivationBehavior) {
     MOZ_ASSERT(&chain[0] == targetEtci);
     activationTargetItemIndex.emplace(0);
-    preVisitor.mEvent->mFlags.mMultiplePreActionsPrevented = true;
   }
 
   if (!preVisitor.mCanHandle) {
@@ -1065,7 +1073,6 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
           activationTargetItemIndex.isNothing() && aEvent->mFlags.mBubbles) {
         MOZ_ASSERT(&chain.LastElement() == parentEtci);
         activationTargetItemIndex.emplace(chain.Length() - 1);
-        preVisitor.mEvent->mFlags.mMultiplePreActionsPrevented = true;
       }
 
       if (preVisitor.mCanHandle) {

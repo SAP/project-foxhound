@@ -20,6 +20,7 @@ import subprocess
 import sys
 
 import six
+from mozsystemmonitor.resourcemonitor import SystemResourceMonitor
 
 import mozharness
 from mozharness.base.config import parse_config_file
@@ -111,6 +112,20 @@ class TalosOutputParser(OutputParser):
             self.critical(" %s" % line)
             self.update_worst_log_and_tbpl_levels(CRITICAL, TBPL_RETRY)
             return  # skip base parse_single_line
+
+        if line.startswith("SUITE-START "):
+            SystemResourceMonitor.begin_marker("suite", "")
+        elif line.startswith("SUITE-END "):
+            SystemResourceMonitor.end_marker("suite", "")
+        elif line.startswith("TEST-"):
+            part = line.split(" | ")
+            if part[0] == "TEST-START":
+                SystemResourceMonitor.begin_marker("test", part[1])
+            elif part[0] in ("TEST-OK", "TEST-UNEXPECTED-ERROR"):
+                SystemResourceMonitor.end_marker("test", part[1])
+        elif line.startswith("Running cycle ") or line.startswith("PROCESS-CRASH "):
+            SystemResourceMonitor.record_event(line)
+
         super(TalosOutputParser, self).parse_single_line(line)
 
 
@@ -203,6 +218,14 @@ class Talos(
                 },
             ],
             [
+                ["--gecko-profile-extra-threads"],
+                {
+                    "dest": "gecko_profile_extra_threads",
+                    "type": "str",
+                    "help": "Comma-separated list of extra threads to add to the default list of threads to profile.",
+                },
+            ],
+            [
                 ["--disable-e10s"],
                 {
                     "dest": "e10s",
@@ -246,6 +269,15 @@ class Talos(
                     "dest": "skip_preflight",
                     "default": False,
                     "help": "skip preflight commands to prepare machine.",
+                },
+            ],
+            [
+                ["--screenshot-on-failure"],
+                {
+                    "action": "store_true",
+                    "dest": "screenshot_on_failure",
+                    "default": False,
+                    "help": "Take a screenshot when the test fails.",
                 },
             ],
         ]
@@ -544,6 +576,11 @@ class Talos(
             options += self.config["talos_extra_options"]
         if self.config.get("code_coverage", False):
             options.extend(["--code-coverage"])
+        if (
+            self.config.get("--screenshot-on-failure", False)
+            or os.environ.get("MOZ_AUTOMATION", None) is not None
+        ):
+            options.extend(["--screenshot-on-failure"])
 
         # Add extra_prefs defined by individual test suites in talos.json
         extra_prefs = self.query_suite_extra_prefs()
@@ -701,6 +738,7 @@ class Talos(
         # Use in-tree wptserve for Python 3.10 compatibility
         extract_dirs = [
             "tools/wptserve/*",
+            "tools/wpt_third_party/h2/*",
             "tools/wpt_third_party/pywebsocket3/*",
         ]
         return super(Talos, self).download_and_extract(

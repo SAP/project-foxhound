@@ -11,9 +11,9 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Maybe.h"
 
-#include "gc/Allocator.h"
 #include "gc/GCProbes.h"
 #include "gc/Pretenuring.h"
+#include "gc/ZoneAllocator.h"  // AddCellMemory
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/Probes.h"
@@ -23,6 +23,22 @@
 #include "wasm/WasmValType.h"
 
 using js::wasm::FieldType;
+
+namespace js::wasm {
+
+// For trailer blocks whose owning Wasm{Struct,Array}Objects make it into the
+// tenured heap, we have to tell the tenured heap how big those trailers are
+// in order to get major GCs to happen sufficiently frequently.  In an attempt
+// to make the numbers more accurate, for each block we overstate the size by
+// the following amount, on the assumption that:
+//
+// * mozjemalloc has an overhead of at least one word per block
+//
+// * the malloc-cache mechanism rounds up small block sizes to the nearest 16;
+//   hence the average increase is 16 / 2.
+static const size_t TrailerBlockOverhead = (16 / 2) + (1 * sizeof(void*));
+
+}  // namespace js::wasm
 
 namespace js {
 
@@ -383,130 +399,5 @@ inline bool JSObject::is<js::WasmStructObject>() const {
   return class_ == &js::WasmStructObject::classInline_ ||
          class_ == &js::WasmStructObject::classOutline_;
 }
-
-//=========================================================================
-// WasmStructObject inlineable allocation methods
-
-namespace js {
-
-/* static */
-template <bool ZeroFields>
-MOZ_ALWAYS_INLINE WasmStructObject* WasmStructObject::createStructIL(
-    JSContext* cx, wasm::TypeDefInstanceData* typeDefData,
-    js::gc::Heap initialHeap) {
-  // It is up to our caller to ensure that `typeDefData` refers to a type that
-  // doesn't need OOL storage.
-
-  MOZ_ASSERT(IsWasmGcObjectClass(typeDefData->clasp));
-  MOZ_ASSERT(!typeDefData->clasp->isNativeObject());
-  debugCheckNewObject(typeDefData->shape, typeDefData->allocKind, initialHeap);
-
-  mozilla::DebugOnly<const wasm::TypeDef*> typeDef = typeDefData->typeDef;
-  MOZ_ASSERT(typeDef->kind() == wasm::TypeDefKind::Struct);
-
-  // This doesn't need to be rooted, since all we do with it prior to
-  // return is to zero out the fields (and then only if ZeroFields is true).
-  WasmStructObject* structObj = (WasmStructObject*)cx->newCell<WasmGcObject>(
-      typeDefData->allocKind, initialHeap, typeDefData->clasp,
-      &typeDefData->allocSite);
-  if (MOZ_UNLIKELY(!structObj)) {
-    ReportOutOfMemory(cx);
-    return nullptr;
-  }
-
-  MOZ_ASSERT((uintptr_t(&(structObj->inlineData_[0])) % sizeof(uintptr_t)) ==
-             0);
-  structObj->initShape(typeDefData->shape);
-  structObj->superTypeVector_ = typeDefData->superTypeVector;
-  structObj->outlineData_ = nullptr;
-  if constexpr (ZeroFields) {
-    uint32_t totalBytes = typeDefData->structTypeSize;
-    MOZ_ASSERT(totalBytes == typeDef->structType().size_);
-    MOZ_ASSERT(totalBytes <= WasmStructObject_MaxInlineBytes);
-    MOZ_ASSERT((totalBytes % sizeof(uintptr_t)) == 0);
-    memset(&(structObj->inlineData_[0]), 0, totalBytes);
-  }
-
-  js::gc::gcprobes::CreateObject(structObj);
-  probes::CreateObject(cx, structObj);
-
-  return structObj;
-}
-
-/* static */
-template <bool ZeroFields>
-MOZ_ALWAYS_INLINE WasmStructObject* WasmStructObject::createStructOOL(
-    JSContext* cx, wasm::TypeDefInstanceData* typeDefData,
-    js::gc::Heap initialHeap) {
-  // It is up to our caller to ensure that `typeDefData` refers to a type that
-  // needs OOL storage.
-
-  MOZ_ASSERT(IsWasmGcObjectClass(typeDefData->clasp));
-  MOZ_ASSERT(!typeDefData->clasp->isNativeObject());
-  debugCheckNewObject(typeDefData->shape, typeDefData->allocKind, initialHeap);
-
-  mozilla::DebugOnly<const wasm::TypeDef*> typeDef = typeDefData->typeDef;
-  MOZ_ASSERT(typeDef->kind() == wasm::TypeDefKind::Struct);
-
-  uint32_t totalBytes = typeDefData->structTypeSize;
-  MOZ_ASSERT(totalBytes == typeDef->structType().size_);
-  MOZ_ASSERT(totalBytes > WasmStructObject_MaxInlineBytes);
-  MOZ_ASSERT((totalBytes % sizeof(uintptr_t)) == 0);
-
-  uint32_t inlineBytes, outlineBytes;
-  WasmStructObject::getDataByteSizes(totalBytes, &inlineBytes, &outlineBytes);
-  MOZ_ASSERT(inlineBytes == WasmStructObject_MaxInlineBytes);
-  MOZ_ASSERT(outlineBytes > 0);
-
-  // Allocate the outline data area before allocating the object so that we can
-  // infallibly initialize the outline data area.
-  Nursery& nursery = cx->nursery();
-  PointerAndUint7 outlineData =
-      nursery.mallocedBlockCache().alloc(outlineBytes);
-  if (MOZ_UNLIKELY(!outlineData.pointer())) {
-    ReportOutOfMemory(cx);
-    return nullptr;
-  }
-
-  // See corresponding comment in WasmArrayObject::createArray.
-  Rooted<WasmStructObject*> structObj(cx);
-  structObj = (WasmStructObject*)cx->newCell<WasmGcObject>(
-      typeDefData->allocKind, initialHeap, typeDefData->clasp,
-      &typeDefData->allocSite);
-  if (MOZ_UNLIKELY(!structObj)) {
-    ReportOutOfMemory(cx);
-    if (outlineData.pointer()) {
-      nursery.mallocedBlockCache().free(outlineData);
-    }
-    return nullptr;
-  }
-
-  MOZ_ASSERT((uintptr_t(&(structObj->inlineData_[0])) % sizeof(uintptr_t)) ==
-             0);
-  structObj->initShape(typeDefData->shape);
-  structObj->superTypeVector_ = typeDefData->superTypeVector;
-
-  // Initialize the outline data fields
-  structObj->outlineData_ = (uint8_t*)outlineData.pointer();
-  if constexpr (ZeroFields) {
-    memset(&(structObj->inlineData_[0]), 0, inlineBytes);
-    memset(outlineData.pointer(), 0, outlineBytes);
-  }
-  if (MOZ_LIKELY(js::gc::IsInsideNursery(structObj))) {
-    // See corresponding comment in WasmArrayObject::createArray.
-    if (MOZ_UNLIKELY(!nursery.registerTrailer(outlineData, outlineBytes))) {
-      nursery.mallocedBlockCache().free(outlineData);
-      ReportOutOfMemory(cx);
-      return nullptr;
-    }
-  }
-
-  js::gc::gcprobes::CreateObject(structObj);
-  probes::CreateObject(cx, structObj);
-
-  return structObj;
-}
-
-}  // namespace js
 
 #endif /* wasm_WasmGcObject_h */

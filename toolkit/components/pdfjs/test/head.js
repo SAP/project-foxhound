@@ -95,6 +95,39 @@ async function waitForPdfJSSandbox(browser) {
   return loadPromise;
 }
 
+async function waitForSelector(browser, selector, message) {
+  return SpecialPowers.spawn(
+    browser,
+    [selector, message],
+    async function (sel, msg) {
+      const { ContentTaskUtils } = ChromeUtils.importESModule(
+        "resource://testing-common/ContentTaskUtils.sys.mjs"
+      );
+      const { document } = content;
+
+      await ContentTaskUtils.waitForCondition(
+        () => !!document.querySelector(sel),
+        `${sel} must be displayed`
+      );
+
+      await ContentTaskUtils.waitForCondition(
+        () => ContentTaskUtils.is_visible(document.querySelector(sel)),
+        msg
+      );
+    }
+  );
+}
+
+async function click(browser, selector) {
+  await SpecialPowers.spawn(browser, [selector], async function (sel) {
+    const el = content.document.querySelector(sel);
+    await new Promise(r => {
+      el.addEventListener("click", r, { once: true });
+      el.click();
+    });
+  });
+}
+
 /**
  * Enable an editor (Ink, FreeText, ...).
  * @param {Object} browser
@@ -115,10 +148,7 @@ async function enableEditor(browser, name) {
     null,
     true
   );
-  await SpecialPowers.spawn(browser, [name], async name => {
-    const button = content.document.querySelector(`#editor${name}`);
-    button.click();
-  });
+  await clickOn(browser, `#editor${name}`);
   await editingModePromise;
   await editingStatePromise;
   await TestUtils.waitForTick();
@@ -209,11 +239,16 @@ async function clickAt(browser, x, y) {
  * @param {string} selector
  */
 async function clickOn(browser, selector) {
+  await waitForSelector(browser, selector);
   const [x, y] = await SpecialPowers.spawn(
     browser,
     [selector],
     async selector => {
       const element = content.document.querySelector(selector);
+      Assert.ok(
+        !!element,
+        `Element "${selector}" must be available in order to be clicked`
+      );
       const { x, y, width, height } = element.getBoundingClientRect();
       return [x + width / 2, y + height / 2];
     }

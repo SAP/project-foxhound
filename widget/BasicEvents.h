@@ -99,8 +99,6 @@ struct BaseEventFlags {
   // the first <label> element is clicked, that one may set this true.
   // Then, the second <label> element won't handle the event.
   bool mMultipleActionsPrevented : 1;
-  // Similar to above but expected to be used during PreHandleEvent phase.
-  bool mMultiplePreActionsPrevented : 1;
   // If mIsBeingDispatched is true, the DOM event created from the event is
   // dispatching into the DOM tree and not completed.
   bool mIsBeingDispatched : 1;
@@ -510,9 +508,7 @@ class WidgetEvent : public WidgetEventTime {
     SetDefaultComposedInNativeAnonymousContent();
   }
 
-  WidgetEvent() : WidgetEventTime(), mPath(nullptr) {
-    MOZ_COUNT_CTOR(WidgetEvent);
-  }
+  WidgetEvent() : mPath(nullptr) { MOZ_COUNT_CTOR(WidgetEvent); }
 
  public:
   WidgetEvent(bool aIsTrusted, EventMessage aMessage,
@@ -521,7 +517,7 @@ class WidgetEvent : public WidgetEventTime {
 
   MOZ_COUNTED_DTOR_VIRTUAL(WidgetEvent)
 
-  WidgetEvent(const WidgetEvent& aOther) : WidgetEventTime() {
+  WidgetEvent(const WidgetEvent& aOther) : WidgetEventTime(aOther) {
     MOZ_COUNT_CTOR(WidgetEvent);
     *this = aOther;
   }

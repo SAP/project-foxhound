@@ -42,7 +42,8 @@ bool KeySystemConfig::Supports(const nsAString& aKeySystem) {
   }
 #endif
 #if MOZ_WMF_CDM
-  if (IsPlayReadyKeySystemAndSupported(aKeySystem) &&
+  if ((IsPlayReadyKeySystemAndSupported(aKeySystem) ||
+       IsWidevineExperimentKeySystemAndSupported(aKeySystem)) &&
       WMFCDMImpl::Supports(aKeySystem)) {
     return true;
   }
@@ -189,7 +190,8 @@ bool KeySystemConfig::CreateKeySystemConfigs(
     return true;
   }
 #ifdef MOZ_WMF_CDM
-  if (IsPlayReadyKeySystemAndSupported(aKeySystem)) {
+  if (IsPlayReadyKeySystemAndSupported(aKeySystem) ||
+      IsWidevineExperimentKeySystemAndSupported(aKeySystem)) {
     RefPtr<WMFCDMImpl> cdm = MakeRefPtr<WMFCDMImpl>(aKeySystem);
     return cdm->GetCapabilities(aOutConfigs);
   }
@@ -197,7 +199,18 @@ bool KeySystemConfig::CreateKeySystemConfigs(
   return false;
 }
 
-#ifdef DEBUG
+bool KeySystemConfig::IsSameKeySystem(const nsAString& aKeySystem) const {
+#ifdef MOZ_WMF_CDM
+  // We want to map Widevine experiment key system to normal Widevine key system
+  // as well.
+  if (IsWidevineExperimentKeySystemAndSupported(mKeySystem)) {
+    return mKeySystem.Equals(aKeySystem) ||
+           aKeySystem.EqualsLiteral(kWidevineKeySystemName);
+  }
+#endif
+  return mKeySystem.Equals(aKeySystem);
+}
+
 nsString KeySystemConfig::GetDebugInfo() const {
   nsString debugInfo;
   debugInfo.Append(mKeySystem);
@@ -235,7 +248,6 @@ nsString KeySystemConfig::GetDebugInfo() const {
   debugInfo.Append(NS_ConvertUTF8toUTF16(mWebM.GetDebugInfo()));
   return debugInfo;
 }
-#endif
 
 KeySystemConfig::SessionType ConvertToKeySystemConfigSessionType(
     dom::MediaKeySessionType aType) {

@@ -82,8 +82,9 @@ bool DoTrialInlining(JSContext* cx, BaselineFrame* frame) {
       }
     }
     UniqueChars funName;
-    if (script->function() && script->function()->displayAtom()) {
-      funName = AtomToPrintableString(cx, script->function()->displayAtom());
+    if (script->function() && script->function()->fullDisplayAtom()) {
+      funName =
+          AtomToPrintableString(cx, script->function()->fullDisplayAtom());
     }
 
     JitSpew(
@@ -115,7 +116,7 @@ bool TrialInliner::replaceICStub(ICEntry& entry, ICFallbackStub* fallback,
                                  CacheIRWriter& writer, CacheKind kind) {
   MOZ_ASSERT(fallback->trialInliningState() == TrialInliningState::Candidate);
 
-  fallback->discardStubs(cx(), &entry);
+  fallback->discardStubs(cx()->zone(), &entry);
 
   // Note: AttachBaselineCacheIRStub never throws an exception.
   ICAttachResult result = AttachBaselineCacheIRStub(
@@ -535,8 +536,8 @@ TrialInliningDecision TrialInliner::getInliningDecision(JSFunction* target,
         target->hasBaseScript() ? target->baseScript() : nullptr;
 
     UniqueChars funName;
-    if (target->displayAtom()) {
-      funName = AtomToPrintableString(cx(), target->displayAtom());
+    if (target->maybePartialDisplayAtom()) {
+      funName = AtomToPrintableString(cx(), target->maybePartialDisplayAtom());
     }
 
     JitSpew(JitSpew_WarpTrialInlining,
@@ -923,9 +924,9 @@ bool InliningRoot::traceWeak(JSTracer* trc) {
   return allSurvived;
 }
 
-void InliningRoot::purgeOptimizedStubs(Zone* zone) {
+void InliningRoot::purgeStubs(Zone* zone) {
   for (auto& inlinedScript : inlinedScripts_) {
-    inlinedScript->purgeOptimizedStubs(zone);
+    inlinedScript->purgeStubs(zone);
   }
 }
 

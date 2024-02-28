@@ -17,7 +17,7 @@ default = []
 [dependencies.wgc]
 package = "wgpu-core"
 git = "https://github.com/gfx-rs/wgpu"
-rev = "7fea9e934efd8d5dc03b9aa3e06b775c1ac4a23e"
+rev = "3ec547cdcaaa14488327d8f1b5f7736278c4178d"
 #Note: "replay" shouldn't ideally be needed,
 # but it allows us to serialize everything across IPC.
 features = ["replay", "trace", "serial-pass", "strict_asserts", "wgsl"]
@@ -27,35 +27,38 @@ features = ["replay", "trace", "serial-pass", "strict_asserts", "wgsl"]
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies.wgc]
 package = "wgpu-core"
 git = "https://github.com/gfx-rs/wgpu"
-rev = "7fea9e934efd8d5dc03b9aa3e06b775c1ac4a23e"
+rev = "3ec547cdcaaa14488327d8f1b5f7736278c4178d"
 features = ["metal"]
 
 # We want the wgpu-core Direct3D backends on Windows.
 [target.'cfg(windows)'.dependencies.wgc]
 package = "wgpu-core"
 git = "https://github.com/gfx-rs/wgpu"
-rev = "7fea9e934efd8d5dc03b9aa3e06b775c1ac4a23e"
+rev = "3ec547cdcaaa14488327d8f1b5f7736278c4178d"
 features = ["dx11", "dx12"]
 
 # We want the wgpu-core Vulkan backend on Linux and Windows.
 [target.'cfg(any(windows, all(unix, not(any(target_os = "macos", target_os = "ios")))))'.dependencies.wgc]
 package = "wgpu-core"
 git = "https://github.com/gfx-rs/wgpu"
-rev = "7fea9e934efd8d5dc03b9aa3e06b775c1ac4a23e"
+rev = "3ec547cdcaaa14488327d8f1b5f7736278c4178d"
 features = ["vulkan"]
 
 [dependencies.wgt]
 package = "wgpu-types"
 git = "https://github.com/gfx-rs/wgpu"
-rev = "7fea9e934efd8d5dc03b9aa3e06b775c1ac4a23e"
+rev = "3ec547cdcaaa14488327d8f1b5f7736278c4178d"
 
 [dependencies.wgh]
 package = "wgpu-hal"
 git = "https://github.com/gfx-rs/wgpu"
-rev = "7fea9e934efd8d5dc03b9aa3e06b775c1ac4a23e"
+rev = "3ec547cdcaaa14488327d8f1b5f7736278c4178d"
+
+[target.'cfg(windows)'.dependencies.d3d12]
+git = "https://github.com/gfx-rs/wgpu"
+rev = "3ec547cdcaaa14488327d8f1b5f7736278c4178d"
 
 [target.'cfg(windows)'.dependencies]
-d3d12 = "0.7.0"
 winapi = "0.3"
 
 [dependencies]

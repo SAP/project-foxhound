@@ -1888,22 +1888,22 @@ void MacroAssembler::sqrtDouble(FloatRegister src, FloatRegister dest) {
 void MacroAssembler::sqrtFloat32(FloatRegister src, FloatRegister dest) {
   fsqrt_s(dest, src);
 }
-void MacroAssembler::storeUncanonicalizedFloat32(FloatRegister src,
-                                                 const Address& addr) {
-  ma_fst_s(src, addr);
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat32(
+    FloatRegister src, const Address& addr) {
+  return ma_fst_s(src, addr);
 }
-void MacroAssembler::storeUncanonicalizedFloat32(FloatRegister src,
-                                                 const BaseIndex& addr) {
-  ma_fst_s(src, addr);
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat32(
+    FloatRegister src, const BaseIndex& addr) {
+  return ma_fst_s(src, addr);
 }
 
-void MacroAssembler::storeUncanonicalizedDouble(FloatRegister src,
-                                                const Address& addr) {
-  ma_fst_d(src, addr);
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedDouble(
+    FloatRegister src, const Address& addr) {
+  return ma_fst_d(src, addr);
 }
-void MacroAssembler::storeUncanonicalizedDouble(FloatRegister src,
-                                                const BaseIndex& addr) {
-  ma_fst_d(src, addr);
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedDouble(
+    FloatRegister src, const BaseIndex& addr) {
+  return ma_fst_d(src, addr);
 }
 void MacroAssembler::sub32(Register src, Register dest) {
   subw(dest, dest, src);

@@ -101,7 +101,13 @@ static bool IsX11EGLEnvvarEnabled() {
 
 gfxPlatformGtk::gfxPlatformGtk() {
   if (!gfxPlatform::IsHeadless()) {
-    gtk_init(nullptr, nullptr);
+    if (!gtk_init_check(nullptr, nullptr)) {
+      gfxCriticalNote << "Failed to init Gtk, missing display? DISPLAY="
+                      << getenv("DISPLAY")
+                      << " WAYLAND_DISPLAY=" << getenv("WAYLAND_DISPLAY")
+                      << "\n";
+      abort();
+    }
   }
 
   mIsX11Display = gfxPlatform::IsHeadless() ? false : GdkIsX11Display();
@@ -211,11 +217,16 @@ void gfxPlatformGtk::InitDmabufConfig() {
                          "FEATURE_FAILURE_REQUIRES_EGL"_ns);
   }
 
-  if (feature.IsEnabled()) {
-    nsAutoCString drmRenderDevice;
-    gfxInfo->GetDrmRenderDevice(drmRenderDevice);
-    gfxVars::SetDrmRenderDevice(drmRenderDevice);
+  if (!gfxVars::WebglUseHardware()) {
+    feature.Disable(FeatureStatus::Blocklisted,
+                    "DMABuf disabled with software rendering", failureId);
+  }
 
+  nsAutoCString drmRenderDevice;
+  gfxInfo->GetDrmRenderDevice(drmRenderDevice);
+  gfxVars::SetDrmRenderDevice(drmRenderDevice);
+
+  if (feature.IsEnabled()) {
     if (!GetDMABufDevice()->IsEnabled(failureId)) {
       feature.ForceDisable(FeatureStatus::Failed, "Failed to configure",
                            failureId);

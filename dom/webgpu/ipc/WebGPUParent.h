@@ -27,6 +27,19 @@ class ErrorBuffer;
 class ExternalTexture;
 class PresentationData;
 
+// Destroy/Drop messages:
+// - Messages with "Destroy" in their name request deallocation of resources
+// owned by the
+//   object and put the object in a destroyed state without deleting the object.
+//   It is still safe to reffer to these objects.
+// - Messages with "Drop" in their name can be thought of as C++ destructors.
+// They completely
+//   delete the object, so future attempts at accessing to these objects will
+//   crash. The child process should *never* send a Drop message if it still
+//   holds references to the object. An object that has been destroyed still
+//   needs to be dropped when the last reference to it dies on the child
+//   process.
+
 class WebGPUParent final : public PWebGPUParent {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebGPUParent, override)
 
@@ -40,8 +53,9 @@ class WebGPUParent final : public PWebGPUParent {
   ipc::IPCResult RecvAdapterRequestDevice(
       RawId aAdapterId, const ipc::ByteBuf& aByteBuf, RawId aDeviceId,
       AdapterRequestDeviceResolver&& resolver);
-  ipc::IPCResult RecvAdapterDestroy(RawId aAdapterId);
+  ipc::IPCResult RecvAdapterDrop(RawId aAdapterId);
   ipc::IPCResult RecvDeviceDestroy(RawId aDeviceId);
+  ipc::IPCResult RecvDeviceDrop(RawId aDeviceId);
   ipc::IPCResult RecvCreateBuffer(RawId aDeviceId, RawId aBufferId,
                                   dom::GPUBufferDescriptor&& aDesc,
                                   ipc::UnsafeSharedMemoryHandle&& aShmem);
@@ -51,15 +65,15 @@ class WebGPUParent final : public PWebGPUParent {
   ipc::IPCResult RecvBufferUnmap(RawId aDeviceId, RawId aBufferId, bool aFlush);
   ipc::IPCResult RecvBufferDestroy(RawId aBufferId);
   ipc::IPCResult RecvBufferDrop(RawId aBufferId);
-  ipc::IPCResult RecvTextureDestroy(RawId aTextureId);
-  ipc::IPCResult RecvTextureViewDestroy(RawId aTextureViewId);
-  ipc::IPCResult RecvSamplerDestroy(RawId aSamplerId);
+  ipc::IPCResult RecvTextureDrop(RawId aTextureId);
+  ipc::IPCResult RecvTextureViewDrop(RawId aTextureViewId);
+  ipc::IPCResult RecvSamplerDrop(RawId aSamplerId);
   ipc::IPCResult RecvCommandEncoderFinish(
       RawId aEncoderId, RawId aDeviceId,
       const dom::GPUCommandBufferDescriptor& aDesc);
-  ipc::IPCResult RecvCommandEncoderDestroy(RawId aEncoderId);
-  ipc::IPCResult RecvCommandBufferDestroy(RawId aCommandBufferId);
-  ipc::IPCResult RecvRenderBundleDestroy(RawId aBundleId);
+  ipc::IPCResult RecvCommandEncoderDrop(RawId aEncoderId);
+  ipc::IPCResult RecvCommandBufferDrop(RawId aCommandBufferId);
+  ipc::IPCResult RecvRenderBundleDrop(RawId aBundleId);
   ipc::IPCResult RecvQueueSubmit(RawId aQueueId, RawId aDeviceId,
                                  const nsTArray<RawId>& aCommandBuffers);
   ipc::IPCResult RecvQueueOnSubmittedWorkDone(
@@ -67,14 +81,14 @@ class WebGPUParent final : public PWebGPUParent {
   ipc::IPCResult RecvQueueWriteAction(RawId aQueueId, RawId aDeviceId,
                                       const ipc::ByteBuf& aByteBuf,
                                       ipc::UnsafeSharedMemoryHandle&& aShmem);
-  ipc::IPCResult RecvBindGroupLayoutDestroy(RawId aBindGroupLayoutId);
-  ipc::IPCResult RecvPipelineLayoutDestroy(RawId aPipelineLayoutId);
-  ipc::IPCResult RecvBindGroupDestroy(RawId aBindGroupId);
-  ipc::IPCResult RecvShaderModuleDestroy(RawId aModuleId);
-  ipc::IPCResult RecvComputePipelineDestroy(RawId aPipelineId);
-  ipc::IPCResult RecvRenderPipelineDestroy(RawId aPipelineId);
-  ipc::IPCResult RecvImplicitLayoutDestroy(
-      RawId aImplicitPlId, const nsTArray<RawId>& aImplicitBglIds);
+  ipc::IPCResult RecvBindGroupLayoutDrop(RawId aBindGroupLayoutId);
+  ipc::IPCResult RecvPipelineLayoutDrop(RawId aPipelineLayoutId);
+  ipc::IPCResult RecvBindGroupDrop(RawId aBindGroupId);
+  ipc::IPCResult RecvShaderModuleDrop(RawId aModuleId);
+  ipc::IPCResult RecvComputePipelineDrop(RawId aPipelineId);
+  ipc::IPCResult RecvRenderPipelineDrop(RawId aPipelineId);
+  ipc::IPCResult RecvImplicitLayoutDrop(RawId aImplicitPlId,
+                                        const nsTArray<RawId>& aImplicitBglIds);
   ipc::IPCResult RecvDeviceCreateSwapChain(
       RawId aDeviceId, RawId aQueueId, const layers::RGBDescriptor& aDesc,
       const nsTArray<RawId>& aBufferIds,
@@ -88,7 +102,7 @@ class WebGPUParent final : public PWebGPUParent {
       RawId aTextureId, RawId aCommandEncoderId,
       const layers::RemoteTextureId& aRemoteTextureId,
       const layers::RemoteTextureOwnerId& aOwnerId);
-  ipc::IPCResult RecvSwapChainDestroy(
+  ipc::IPCResult RecvSwapChainDrop(
       const layers::RemoteTextureOwnerId& aOwnerId);
 
   ipc::IPCResult RecvDeviceAction(RawId aDeviceId,
@@ -123,30 +137,42 @@ class WebGPUParent final : public PWebGPUParent {
     bool mHasMapFlags;
     uint64_t mMappedOffset;
     uint64_t mMappedSize;
+    RawId mDeviceId;
   };
 
   BufferMapData* GetBufferMapData(RawId aBufferId);
 
   bool UseExternalTextureForSwapChain(ffi::WGPUSwapChainId aSwapChainId);
 
-  bool CreateExternalTextureForSwapChain(ffi::WGPUSwapChainId aSwapChainId,
+  bool EnsureExternalTextureForSwapChain(ffi::WGPUSwapChainId aSwapChainId,
                                          ffi::WGPUDeviceId aDeviceId,
                                          ffi::WGPUTextureId aTextureId,
                                          uint32_t aWidth, uint32_t aHeight,
-                                         struct ffi::WGPUTextureFormat aFormat);
+                                         struct ffi::WGPUTextureFormat aFormat,
+                                         ffi::WGPUTextureUsages aUsage);
 
   std::shared_ptr<ExternalTexture> CreateExternalTexture(
       ffi::WGPUDeviceId aDeviceId, ffi::WGPUTextureId aTextureId,
       uint32_t aWidth, uint32_t aHeight,
-      const struct ffi::WGPUTextureFormat aFormat);
+      const struct ffi::WGPUTextureFormat aFormat,
+      ffi::WGPUTextureUsages aUsage);
 
   std::shared_ptr<ExternalTexture> GetExternalTexture(ffi::WGPUTextureId aId);
 
+  void PostExternalTexture(
+      const std::shared_ptr<ExternalTexture>&& aExternalTexture,
+      const layers::RemoteTextureId aRemoteTextureId,
+      const layers::RemoteTextureOwnerId aOwnerId);
+
  private:
+  static void MapCallback(ffi::WGPUBufferMapAsyncStatus aStatus,
+                          uint8_t* aUserData);
   void DeallocBufferShmem(RawId aBufferId);
 
   virtual ~WebGPUParent();
   void MaintainDevices();
+  void LoseDevice(const RawId aDeviceId, Maybe<uint8_t> aReason,
+                  const nsACString& aMessage);
 
   bool ForwardError(const RawId aDeviceId, ErrorBuffer& aError) {
     return ForwardError(Some(aDeviceId), aError);
@@ -155,6 +181,8 @@ class WebGPUParent final : public PWebGPUParent {
 
   void ReportError(Maybe<RawId> aDeviceId, GPUErrorFilter,
                    const nsCString& message);
+
+  static Maybe<ffi::WGPUFfiLUID> GetCompositorDeviceLuid();
 
   UniquePtr<ffi::WGPUGlobal> mContext;
   base::RepeatingTimer<WebGPUParent> mTimer;
@@ -176,6 +204,10 @@ class WebGPUParent final : public PWebGPUParent {
 
   std::unordered_map<ffi::WGPUTextureId, std::shared_ptr<ExternalTexture>>
       mExternalTextures;
+
+  // Store a set of DeviceIds that have been SendDeviceLost. We use this to
+  // limit each Device to one DeviceLost message.
+  nsTHashSet<RawId> mLostDeviceIds;
 };
 
 }  // namespace webgpu

@@ -1122,13 +1122,15 @@ void Statistics::sendGCTelemetry() {
   }
 
   // Parallel marking stats.
+  bool usedParallelMarking = false;
   if (gc->isParallelMarkingEnabled()) {
     TimeDuration wallTime = SumPhase(PhaseKind::PARALLEL_MARK, phaseTimes);
     TimeDuration parallelMarkTime =
         sumTotalParallelTime(PhaseKind::PARALLEL_MARK_MARK);
     TimeDuration parallelRunTime =
         parallelMarkTime + sumTotalParallelTime(PhaseKind::PARALLEL_MARK_OTHER);
-    if (wallTime && parallelMarkTime) {
+    usedParallelMarking = wallTime && parallelMarkTime;
+    if (usedParallelMarking) {
       uint32_t threadCount = gc->markers.length();
       double speedup = parallelMarkTime / wallTime;
       double utilization = parallelRunTime / (wallTime * threadCount);
@@ -1140,6 +1142,7 @@ void Statistics::sendGCTelemetry() {
           getCount(COUNT_PARALLEL_MARK_INTERRUPTIONS));
     }
   }
+  runtime->metrics().GC_PARALLEL_MARK(usedParallelMarking);
 }
 
 void Statistics::beginNurseryCollection() {
@@ -1640,29 +1643,29 @@ void Statistics::printProfileHeader() {
   }
 
   Sprinter sprinter;
-  if (!sprinter.init() || !sprinter.put(MajorGCProfilePrefix)) {
+  if (!sprinter.init()) {
     return;
   }
+  sprinter.put(MajorGCProfilePrefix);
 
-#define PRINT_METADATA_NAME(name, width, _1, _2)  \
-  if (!sprinter.jsprintf(" %-*s", width, name)) { \
-    return;                                       \
-  }
+#define PRINT_METADATA_NAME(name, width, _1, _2) \
+  sprinter.printf(" %-*s", width, name);
+
   FOR_EACH_GC_PROFILE_METADATA(PRINT_METADATA_NAME)
 #undef PRINT_METADATA_NAME
 
-#define PRINT_PROFILE_NAME(_1, text, _2)     \
-  if (!sprinter.jsprintf(" %-6.6s", text)) { \
-    return;                                  \
-  }
+#define PRINT_PROFILE_NAME(_1, text, _2) sprinter.printf(" %-6.6s", text);
+
   FOR_EACH_GC_PROFILE_TIME(PRINT_PROFILE_NAME)
 #undef PRINT_PROFILE_NAME
 
-  if (!sprinter.put("\n")) {
+  sprinter.put("\n");
+
+  JS::UniqueChars str = sprinter.release();
+  if (!str) {
     return;
   }
-
-  fputs(sprinter.string(), profileFile());
+  fputs(str.get(), profileFile());
 }
 
 static TimeDuration SumAllPhaseKinds(const Statistics::PhaseKindTimes& times) {
@@ -1681,9 +1684,10 @@ void Statistics::printSliceProfile() {
   updateTotalProfileTimes(times);
 
   Sprinter sprinter;
-  if (!sprinter.init() || !sprinter.put(MajorGCProfilePrefix)) {
+  if (!sprinter.init()) {
     return;
   }
+  sprinter.put(MajorGCProfilePrefix);
 
   size_t pid = getpid();
   JSRuntime* runtime = gc->rt;
@@ -1695,17 +1699,18 @@ void Statistics::printSliceProfile() {
   size_t realmCount = zoneStats.realmCount;
 
 #define PRINT_FIELD_VALUE(_1, _2, format, value) \
-  if (!sprinter.jsprintf(" " format, value)) {   \
-    return;                                      \
-  }
+  sprinter.printf(" " format, value);
+
   FOR_EACH_GC_PROFILE_METADATA(PRINT_FIELD_VALUE)
 #undef PRINT_FIELD_VALUE
 
-  if (!printProfileTimes(times, sprinter)) {
+  printProfileTimes(times, sprinter);
+
+  JS::UniqueChars str = sprinter.release();
+  if (!str) {
     return;
   }
-
-  fputs(sprinter.string(), profileFile());
+  fputs(str.get(), profileFile());
 }
 
 Statistics::ProfileDurations Statistics::getProfileTimes(
@@ -1770,16 +1775,14 @@ const char* Statistics::formatBudget(const SliceData& slice) {
 }
 
 /* static */
-bool Statistics::printProfileTimes(const ProfileDurations& times,
+void Statistics::printProfileTimes(const ProfileDurations& times,
                                    Sprinter& sprinter) {
   for (auto time : times) {
     int64_t millis = int64_t(time.ToMilliseconds());
-    if (!sprinter.jsprintf(" %6" PRIi64, millis)) {
-      return false;
-    }
+    sprinter.printf(" %6" PRIi64, millis);
   }
 
-  return sprinter.put("\n");
+  sprinter.put("\n");
 }
 
 constexpr size_t SliceMetadataFormatWidth() {
@@ -1804,32 +1807,31 @@ void Statistics::printTotalProfileTimes() {
   }
 
   Sprinter sprinter;
-  if (!sprinter.init() || !sprinter.put(MajorGCProfilePrefix)) {
+  if (!sprinter.init()) {
     return;
   }
+  sprinter.put(MajorGCProfilePrefix);
 
   size_t pid = getpid();
   JSRuntime* runtime = gc->rt;
 
 #define PRINT_FIELD_VALUE(_1, _2, format, value) \
-  if (!sprinter.jsprintf(" " format, value)) {   \
-    return;                                      \
-  }
+  sprinter.printf(" " format, value);
+
   FOR_EACH_GC_PROFILE_COMMON_METADATA(PRINT_FIELD_VALUE)
 #undef PRINT_FIELD_VALUE
 
   // Use whole width of per-slice metadata to print total slices so the profile
   // totals that follow line up.
   size_t width = SliceMetadataFormatWidth();
-  if (!sprinter.jsprintf(" %-*s", int(width), formatTotalSlices())) {
+  sprinter.printf(" %-*s", int(width), formatTotalSlices());
+  printProfileTimes(totalTimes_, sprinter);
+
+  JS::UniqueChars str = sprinter.release();
+  if (!str) {
     return;
   }
-
-  if (!printProfileTimes(totalTimes_, sprinter)) {
-    return;
-  }
-
-  fputs(sprinter.string(), profileFile());
+  fputs(str.get(), profileFile());
 }
 
 const char* Statistics::formatTotalSlices() {

@@ -6,7 +6,7 @@
 const fs = require("fs");
 const { mkdir } = require("shelljs");
 const path = require("path");
-const meow = require("meow");
+const { pathToFileURL } = require("url");
 const chalk = require("chalk");
 
 const DEFAULT_OPTIONS = {
@@ -77,6 +77,10 @@ function templateHTML(options) {
     <link rel="localization" href="browser/newtab/newtab.ftl" />
     <link
       rel="stylesheet"
+      href="chrome://global/skin/design-system/tokens-brand.css"
+    />
+    <link
+      rel="stylesheet"
       href="chrome://browser/content/contentSearchUI.css"
     />
     <link
@@ -89,6 +93,11 @@ function templateHTML(options) {
     <div id="footer-asrouter-container" role="presentation"></div>${
       options.noscripts ? "" : scriptRender
     }
+    <script
+      async
+      type="module"
+      src="chrome://global/content/elements/moz-toggle.mjs"
+    ></script>
   </body>
 </html>
 `.trimLeft();
@@ -126,7 +135,9 @@ const STATIC_FILES = new Map([
  * main - Parses command line arguments, generates html and js with templates,
  *        and writes files to their specified locations.
  */
-function main() {
+async function main() {
+  const { default: meow } = await import("meow");
+  const fileUrl = pathToFileURL(__filename);
   const cli = meow(
     `
     Usage
@@ -149,6 +160,10 @@ function main() {
         name: "render-activity-stream-html",
         version: "0.0.0",
       },
+      // `importMeta` is required by meow 10+. It was added to support ESM, but
+      // meow now requires it, and no longer supports CJS style imports. But it
+      // only uses import.meta.url, which can be polyfilled like this:
+      importMeta: { url: fileUrl },
       flags: {
         addonPath: {
           type: "string",

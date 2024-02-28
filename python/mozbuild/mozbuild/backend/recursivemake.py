@@ -369,6 +369,13 @@ class RecursiveMakeBackend(MakeBackend):
         self._gkrust_target = None
         self._pre_compile = set()
 
+        # For a given file produced by the build, gives the top-level target
+        # that will produce it.
+        self._target_per_file = {}
+        # A set of dependencies that need correlation after everything has
+        # been processed.
+        self._post_process_dependencies = []
+
         self._no_skip = {
             "pre-export": set(),
             "export": set(),
@@ -437,6 +444,7 @@ class RecursiveMakeBackend(MakeBackend):
 
         if isinstance(obj, Linkable):
             self._process_test_support_file(obj)
+            self._process_relrhack(obj)
 
         if isinstance(obj, DirectoryTraversal):
             self._process_directory_traversal(obj, backend_file)
@@ -537,12 +545,20 @@ class RecursiveMakeBackend(MakeBackend):
             else:
                 self._no_skip[tier].add(relobjdir)
             backend_file.write_once("include $(topsrcdir)/config/AB_rCD.mk\n")
-            relobjdir = mozpath.relpath(obj.objdir, backend_file.objdir)
+            reldir = mozpath.relpath(obj.objdir, backend_file.objdir)
+            if not reldir:
+                for out in obj.outputs:
+                    out = mozpath.join(relobjdir, out)
+                    assert out not in self._target_per_file
+                    self._target_per_file[out] = (relobjdir, tier)
+                for input in obj.inputs:
+                    if isinstance(input, ObjDirPath):
+                        self._post_process_dependencies.append((relobjdir, tier, input))
             # For generated files that we handle in the top-level backend file,
             # we want to have a `directory/tier` target depending on the file.
             # For the others, we want a `tier` target.
-            if tier != "pre-compile" and relobjdir:
-                tier = "%s/%s" % (relobjdir, tier)
+            if tier != "pre-compile" and reldir:
+                tier = "%s/%s" % (reldir, tier)
             for stmt in self._format_statements_for_generated_file(
                 obj, tier, extra_dependencies="backend.mk" if obj.flags else ""
             ):
@@ -554,6 +570,7 @@ class RecursiveMakeBackend(MakeBackend):
 
         elif isinstance(obj, RustProgram):
             self._process_rust_program(obj, backend_file)
+            self._process_linked_libraries(obj, backend_file)
             # Hook the program into the compile graph.
             build_target = self._build_target_for_obj(obj)
             self._compile_graph[build_target]
@@ -561,6 +578,7 @@ class RecursiveMakeBackend(MakeBackend):
 
         elif isinstance(obj, HostRustProgram):
             self._process_host_rust_program(obj, backend_file)
+            self._process_linked_libraries(obj, backend_file)
             # Hook the program into the compile graph.
             build_target = self._build_target_for_obj(obj)
             self._compile_graph[build_target]
@@ -577,6 +595,10 @@ class RecursiveMakeBackend(MakeBackend):
         elif isinstance(obj, HostProgram):
             self._process_host_program(obj, backend_file)
             self._process_linked_libraries(obj, backend_file)
+            self._target_per_file[obj.output_path.full_path] = (
+                backend_file.relobjdir,
+                obj.KIND,
+            )
 
         elif isinstance(obj, SimpleProgram):
             self._process_simple_program(obj, backend_file)
@@ -751,17 +773,11 @@ class RecursiveMakeBackend(MakeBackend):
         # - nodes that are not dependended upon by anything. Typically, this
         #   would include programs, that need to be recursed, but that nothing
         #   depends on.
-        # - nodes that have no dependencies of their own. Technically, this is
-        #   not necessary, because other things have dependencies on them, and
-        #   they all end up rooting to nodes from the above category. But the
-        #   way make works[1] is such that there can be benefits listing them
-        #   as direct dependencies of the top recursion target, to somehow
-        #   prioritize them.
-        #   1. See bug 1262241 comment 5.
+        # - nodes that are rust targets.
         compile_roots = [
             t
             for t, deps in six.iteritems(self._compile_graph)
-            if not deps or t not in all_compile_deps
+            if t in self._rust_targets or t not in all_compile_deps
         ]
 
         def add_category_rules(category, roots, graph):
@@ -820,6 +836,12 @@ class RecursiveMakeBackend(MakeBackend):
         add_category_rules("compile", compile_roots, self._compile_graph)
         for category, graph in sorted(six.iteritems(non_default_graphs)):
             add_category_rules(category, non_default_roots[category], graph)
+
+        for relobjdir, tier, input in self._post_process_dependencies:
+            dep = self._target_per_file.get(input.full_path)
+            if dep:
+                rule = root_deps_mk.create_rule([mozpath.join(relobjdir, tier)])
+                rule.add_dependencies([mozpath.join(*dep)])
 
         root_mk = Makefile()
 
@@ -1235,6 +1257,16 @@ class RecursiveMakeBackend(MakeBackend):
     def _process_host_simple_program(self, program, backend_file):
         backend_file.write("HOST_SIMPLE_PROGRAMS += %s\n" % program)
 
+    def _process_relrhack(self, obj):
+        if isinstance(
+            obj, (SimpleProgram, Program, SharedLibrary)
+        ) and obj.config.substs.get("RELRHACK"):
+            # When building with RELR-based ELF hack, we need to build the relevant parts
+            # before any target.
+            node = self._compile_graph[self._build_target_for_obj(obj)]
+            node.add("build/unix/elfhack/host")
+            node.add("build/unix/elfhack/inject/target-objects")
+
     def _process_test_support_file(self, obj):
         # Ensure test support programs and libraries are tracked by an
         # install manifest for the benefit of the test packager.
@@ -1422,7 +1454,16 @@ class RecursiveMakeBackend(MakeBackend):
                 backend_file.write("%s: %s\n" % (obj_target, objs_ref))
 
         elif (
-            not isinstance(obj, (HostLibrary, StaticLibrary, SandboxedWasmLibrary))
+            not isinstance(
+                obj,
+                (
+                    HostLibrary,
+                    HostRustProgram,
+                    RustProgram,
+                    StaticLibrary,
+                    SandboxedWasmLibrary,
+                ),
+            )
             or isinstance(obj, (StaticLibrary, SandboxedWasmLibrary))
             and obj.no_expand_lib
         ):
@@ -1683,20 +1724,21 @@ class RecursiveMakeBackend(MakeBackend):
 
         top_level = mozpath.join(obj.install_target, "chrome.manifest")
         if obj.path != top_level:
+            path = mozpath.relpath(obj.path, obj.install_target)
             args = [
                 mozpath.join("$(DEPTH)", top_level),
-                make_quote(
-                    shell_quote(
-                        "manifest %s" % mozpath.relpath(obj.path, obj.install_target)
-                    )
-                ),
+                make_quote(shell_quote("manifest %s" % path)),
             ]
-            rule.add_commands(["$(call py_action,buildlist,%s)" % " ".join(args)])
+            rule.add_commands(
+                ["$(call py_action,buildlist %s,%s)" % (path, " ".join(args))]
+            )
         args = [
             mozpath.join("$(DEPTH)", obj.path),
             make_quote(shell_quote(str(obj.entry))),
         ]
-        rule.add_commands(["$(call py_action,buildlist,%s)" % " ".join(args)])
+        rule.add_commands(
+            ["$(call py_action,buildlist %s,%s)" % (obj.entry.path, " ".join(args))]
+        )
         fragment.dump(backend_file.fh, removal_guard=False)
 
         self._no_skip["misc"].add(obj.relsrcdir)
@@ -1785,7 +1827,7 @@ class RecursiveMakeBackend(MakeBackend):
             rule.add_commands(
                 [
                     "$(RM) $@",
-                    "$(call py_action,preprocessor,$(DEFINES) $(ACDEFINES) "
+                    "$(call py_action,preprocessor $@,$(DEFINES) $(ACDEFINES) "
                     "$< -o $@)",
                 ]
             )
@@ -1860,7 +1902,7 @@ class RecursiveMakeBackend(MakeBackend):
                     # static to preprocessed don't end up writing to a symlink,
                     # which would modify content in the source directory.
                     "$(RM) $@",
-                    "$(call py_action,preprocessor,$(DEFINES) $(ACDEFINES) "
+                    "$(call py_action,preprocessor $@,$(DEFINES) $(ACDEFINES) "
                     "$< -o $@)",
                 ]
             )

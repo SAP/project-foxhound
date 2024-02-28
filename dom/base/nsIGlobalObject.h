@@ -10,7 +10,6 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/ClientInfo.h"
-#include "mozilla/dom/DispatcherTrait.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/OriginTrials.h"
 #include "nsContentUtils.h"
@@ -36,6 +35,7 @@ class nsPIDOMWindowInner;
 
 namespace mozilla {
 class DOMEventTargetHelper;
+class GlobalTeardownObserver;
 template <typename V, typename E>
 class Result;
 enum class StorageAccess;
@@ -65,14 +65,13 @@ class ModuleLoaderBase;
 /**
  * See <https://developer.mozilla.org/en-US/docs/Glossary/Global_object>.
  */
-class nsIGlobalObject : public nsISupports,
-                        public mozilla::dom::DispatcherTrait {
+class nsIGlobalObject : public nsISupports {
  private:
   nsTArray<nsCString> mHostObjectURIs;
 
   // Raw pointers to bound DETH objects.  These are added by
-  // AddEventTargetObject().
-  mozilla::LinkedList<mozilla::DOMEventTargetHelper> mEventTargetObjects;
+  // AddGlobalTeardownObserver().
+  mozilla::LinkedList<mozilla::GlobalTeardownObserver> mGlobalTeardownObservers;
 
   bool mIsDying;
   bool mIsScriptForbidden;
@@ -140,6 +139,9 @@ class nsIGlobalObject : public nsISupports,
    */
   bool HasJSGlobal() const { return GetGlobalJSObjectPreserveColor(); }
 
+  virtual nsISerialEventTarget* SerialEventTarget() const = 0;
+  virtual nsresult Dispatch(already_AddRefed<nsIRunnable>&&) const = 0;
+
   // This method is not meant to be overridden.
   nsIPrincipal* PrincipalOrNull() const;
 
@@ -152,18 +154,18 @@ class nsIGlobalObject : public nsISupports,
   void UnlinkObjectsInGlobal();
   void TraverseObjectsInGlobal(nsCycleCollectionTraversalCallback& aCb);
 
-  // DETH objects must register themselves on the global when they
+  // GlobalTeardownObservers must register themselves on the global when they
   // bind to it in order to get the DisconnectFromOwner() method
-  // called correctly.  RemoveEventTargetObject() must be called
-  // before the DETH object is destroyed.
-  void AddEventTargetObject(mozilla::DOMEventTargetHelper* aObject);
-  void RemoveEventTargetObject(mozilla::DOMEventTargetHelper* aObject);
+  // called correctly.  RemoveGlobalTeardownObserver() must be called
+  // before the GlobalTeardownObserver is destroyed.
+  void AddGlobalTeardownObserver(mozilla::GlobalTeardownObserver* aObject);
+  void RemoveGlobalTeardownObserver(mozilla::GlobalTeardownObserver* aObject);
 
-  // Iterate the registered DETH objects and call the given function
+  // Iterate the registered GlobalTeardownObservers and call the given function
   // for each one.
-  void ForEachEventTargetObject(
-      const std::function<void(mozilla::DOMEventTargetHelper*, bool* aDoneOut)>&
-          aFunc) const;
+  void ForEachGlobalTeardownObserver(
+      const std::function<void(mozilla::GlobalTeardownObserver*,
+                               bool* aDoneOut)>& aFunc) const;
 
   virtual bool IsInSyncOperation() { return false; }
 
@@ -290,7 +292,7 @@ class nsIGlobalObject : public nsISupports,
   void StartForbiddingScript() { mIsScriptForbidden = true; }
   void StopForbiddingScript() { mIsScriptForbidden = false; }
 
-  void DisconnectEventTargetObjects();
+  void DisconnectGlobalTeardownObservers();
 
   size_t ShallowSizeOfExcludingThis(mozilla::MallocSizeOf aSizeOf) const;
 

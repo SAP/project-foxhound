@@ -279,6 +279,8 @@ An override expression can be evaluated at pipeline creation time.
 mod arena;
 pub mod back;
 mod block;
+#[cfg(feature = "compact")]
+pub mod compact;
 pub mod front;
 pub mod keywords;
 pub mod proc;
@@ -308,12 +310,13 @@ pub type FastHashSet<K> = rustc_hash::FxHashSet<K>;
 pub type FastIndexSet<K> =
     indexmap::IndexSet<K, std::hash::BuildHasherDefault<rustc_hash::FxHasher>>;
 
+/// Insertion-order-preserving hash map (`IndexMap<K, V>`), but with the same
+/// hasher as `FastHashMap<K, V>` (faster but not resilient to DoS attacks).
+pub type FastIndexMap<K, V> =
+    indexmap::IndexMap<K, V, std::hash::BuildHasherDefault<rustc_hash::FxHasher>>;
+
 /// Map of expressions that have associated variable names
-pub(crate) type NamedExpressions = indexmap::IndexMap<
-    Handle<Expression>,
-    String,
-    std::hash::BuildHasherDefault<rustc_hash::FxHasher>,
->;
+pub(crate) type NamedExpressions = FastIndexMap<Handle<Expression>, String>;
 
 /// Early fragment tests.
 ///
@@ -469,6 +472,19 @@ pub enum ScalarKind {
     Bool,
 }
 
+/// Characteristics of a scalar type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "deserialize", derive(Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+pub struct Scalar {
+    /// How the value's bits are to be interpreted.
+    pub kind: ScalarKind,
+
+    /// This size of the value in bytes.
+    pub width: Bytes,
+}
+
 /// Size of an array.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
@@ -596,8 +612,10 @@ pub enum StorageFormat {
     Rgba8Snorm,
     Rgba8Uint,
     Rgba8Sint,
+    Bgra8Unorm,
 
     // Packed 32-bit formats
+    Rgb10a2Uint,
     Rgb10a2Unorm,
     Rg11b10Float,
 
@@ -672,13 +690,9 @@ pub struct Type {
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum TypeInner {
     /// Number of integral or floating-point kind.
-    Scalar { kind: ScalarKind, width: Bytes },
+    Scalar(Scalar),
     /// Vector of numbers.
-    Vector {
-        size: VectorSize,
-        kind: ScalarKind,
-        width: Bytes,
-    },
+    Vector { size: VectorSize, scalar: Scalar },
     /// Matrix of floats.
     Matrix {
         columns: VectorSize,
@@ -686,7 +700,7 @@ pub enum TypeInner {
         width: Bytes,
     },
     /// Atomic scalar.
-    Atomic { kind: ScalarKind, width: Bytes },
+    Atomic(Scalar),
     /// Pointer to another type.
     ///
     /// Pointers to scalars and vectors should be treated as equivalent to
@@ -732,8 +746,7 @@ pub enum TypeInner {
     /// [`TypeResolution::Value`]: proc::TypeResolution::Value
     ValuePointer {
         size: Option<VectorSize>,
-        kind: ScalarKind,
-        width: Bytes,
+        scalar: Scalar,
         space: AddressSpace,
     },
 
@@ -850,7 +863,9 @@ pub enum TypeInner {
 #[cfg_attr(feature = "deserialize", derive(Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum Literal {
+    /// May not be NaN or infinity.
     F64(f64),
+    /// May not be NaN or infinity.
     F32(f32),
     U32(u32),
     I32(i32),
@@ -973,7 +988,11 @@ pub struct LocalVariable {
     pub ty: Handle<Type>,
     /// Initial value for this variable.
     ///
-    /// Expression handle lives in const_expressions
+    /// This handle refers to this `LocalVariable`'s function's
+    /// [`expressions`] arena, but it is required to be an evaluated
+    /// constant expression.
+    ///
+    /// [`expressions`]: Function::expressions
     pub init: Option<Handle<Expression>>,
 }
 
@@ -984,7 +1003,8 @@ pub struct LocalVariable {
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum UnaryOperator {
     Negate,
-    Not,
+    LogicalNot,
+    BitwiseNot,
 }
 
 /// Operation that can be applied on two values.
@@ -1105,8 +1125,6 @@ pub enum RelationalFunction {
     Any,
     IsNan,
     IsInf,
-    IsFinite,
-    IsNormal,
 }
 
 /// Built-in shader function for math.
@@ -1956,10 +1974,7 @@ pub struct EntryPoint {
 #[cfg_attr(feature = "deserialize", derive(Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum PredeclaredType {
-    AtomicCompareExchangeWeakResult {
-        kind: ScalarKind,
-        width: Bytes,
-    },
+    AtomicCompareExchangeWeakResult(Scalar),
     ModfResult {
         size: Option<VectorSize>,
         width: Bytes,
@@ -1993,7 +2008,7 @@ pub struct SpecialTypes {
     ///
     /// Call [`Module::generate_predeclared_type`] to populate this if
     /// needed and return the handle.
-    pub predeclared_types: indexmap::IndexMap<PredeclaredType, Handle<Type>>,
+    pub predeclared_types: FastIndexMap<PredeclaredType, Handle<Type>>,
 }
 
 /// Shader module.

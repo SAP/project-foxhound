@@ -8,7 +8,6 @@ file-whitespace:
         - tools/lint/rst/requirements.txt
         - tools/lint/tox/tox_requirements.txt
         - tools/lint/spell/codespell_requirements.txt
-        - tools/tryselect/selectors/chooser/requirements.txt
     exclude:
         - accessible/tests/crashtests
         - accessible/tests/mochitest
@@ -76,6 +75,7 @@ file-whitespace:
         - intl/strres/tests/unit/strres.properties
         - js/xpconnect/crashtests
         - js/xpconnect/tests
+        - js/src/builtin/intl/IcuMemoryUsage.java
         - js/src/frontend/BytecodeEmitter.cpp
         - js/src/frontend/SharedContext.h
         - layout/base/crashtests
@@ -103,6 +103,7 @@ file-whitespace:
         - netwerk/test/mochitests/test2.css
         - parser/htmlparser/tests
         - parser/html/java/named-character-references.html
+        - parser/html/javasrc
         - testing/perfdocs/generated/
         - testing/talos/talos/pageloader/chrome/pageloader.xhtml
         - testing/talos/talos/tests
@@ -147,11 +148,14 @@ file-whitespace:
         - .ftl
         - .h
         - .html
+        - .java
+        - .kt
         - .md
         - .properties
         - .py
         - .rs
         - .rst
+        - .toml
         - .webidl
         - .xhtml
     support-files:

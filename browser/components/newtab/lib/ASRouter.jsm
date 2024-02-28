@@ -1751,6 +1751,50 @@ class _ASRouter {
     }));
   }
 
+  resetScreenImpressions() {
+    const newScreenImpressions = {};
+    this._storage.set("screenImpressions", newScreenImpressions);
+    return this.setState(() => ({ screenImpressions: newScreenImpressions }));
+  }
+
+  /**
+   * Edit the ASRouter state directly. For use by the ASRouter devtools.
+   * Requires browser.newtabpage.activity-stream.asrouter.devtoolsEnabled
+   * @param {string} key Key of the property to edit, one of:
+   *   | "groupImpressions"
+   *   | "messageImpressions"
+   *   | "screenImpressions"
+   *   | "messageBlockList"
+   * @param {object|string[]} value New value to set for state[key]
+   * @returns {Promise<unknown>} The new value in state
+   */
+  async editState(key, value) {
+    if (!lazy.ASRouterPreferences.devtoolsEnabled) {
+      throw new Error("Editing state is only allowed in devtools mode");
+    }
+    switch (key) {
+      case "groupImpressions":
+      case "messageImpressions":
+      case "screenImpressions":
+        if (typeof value !== "object") {
+          throw new Error("Invalid impression data");
+        }
+        break;
+      case "messageBlockList":
+        if (!Array.isArray(value)) {
+          throw new Error("Invalid message block list");
+        }
+        break;
+      default:
+        throw new Error("Invalid state key");
+    }
+    const newState = await this.setState(() => {
+      this._storage.set(key, value);
+      return { [key]: value };
+    });
+    return newState[key];
+  }
+
   _validPreviewEndpoint(url) {
     try {
       const endpoint = new URL(url);
@@ -1839,6 +1883,15 @@ class _ASRouter {
     return Promise.resolve();
   }
 
+  /** Simple wrapper to make test mocking easier
+   *
+   * @returns {Promise} resolves when the attribution string has been set
+   * succesfully.
+   */
+  setAttributionString(attrStr) {
+    return lazy.MacAttribution.setAttributionString(attrStr);
+  }
+
   /**
    * forceAttribution - this function should only be called from within about:newtab#asrouter.
    * It forces the browser attribution to be set to something specified in asrouter admin
@@ -1857,16 +1910,9 @@ class _ASRouter {
         encodeURIComponent(attributionData)
       );
     } else if (AppConstants.platform === "macosx") {
-      let appPath = lazy.MacAttribution.applicationPath;
-      let attributionSvc = Cc["@mozilla.org/mac-attribution;1"].getService(
-        Ci.nsIMacAttributionService
+      await this.setAttributionString(
+        `__MOZCUSTOM__${encodeURIComponent(attributionData)}`
       );
-
-      // The attribution data is treated as a url query for mac
-      let referrer = `https://www.mozilla.org/anything/?${attributionData}`;
-
-      // This sets the Attribution to be the referrer
-      attributionSvc.setReferrerUrl(appPath, referrer, true);
 
       // Delete attribution data file
       await AttributionCode.deleteFileAsync();

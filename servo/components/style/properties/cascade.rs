@@ -66,7 +66,6 @@ pub fn cascade<E>(
     pseudo: Option<&PseudoElement>,
     rule_node: &StrongRuleNode,
     guards: &StylesheetGuards,
-    originating_element_style: Option<&ComputedValues>,
     parent_style: Option<&ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
     first_line_reparenting: FirstLineReparenting,
@@ -84,7 +83,6 @@ where
         pseudo,
         rule_node,
         guards,
-        originating_element_style,
         parent_style,
         layout_parent_style,
         first_line_reparenting,
@@ -184,7 +182,6 @@ fn cascade_rules<E>(
     pseudo: Option<&PseudoElement>,
     rule_node: &StrongRuleNode,
     guards: &StylesheetGuards,
-    originating_element_style: Option<&ComputedValues>,
     parent_style: Option<&ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
     first_line_reparenting: FirstLineReparenting,
@@ -203,7 +200,6 @@ where
         rule_node,
         guards,
         DeclarationIterator::new(rule_node, guards, pseudo),
-        originating_element_style,
         parent_style,
         layout_parent_style,
         first_line_reparenting,
@@ -217,7 +213,7 @@ where
 
 /// Whether we're cascading for visited or unvisited styles.
 #[derive(Clone, Copy)]
-pub enum CascadeMode<'a> {
+pub enum CascadeMode<'a, 'b> {
     /// We're cascading for unvisited styles.
     Unvisited {
         /// The visited rules that should match the visited style.
@@ -225,45 +221,56 @@ pub enum CascadeMode<'a> {
     },
     /// We're cascading for visited styles.
     Visited {
-        /// The writing mode of our unvisited style, needed to correctly resolve
-        /// logical properties..
-        writing_mode: WritingMode,
+        /// The cascade for our unvisited style.
+        unvisited_context: &'a computed::Context<'b>,
     },
+}
+
+fn iter_declarations<'builder, 'decls: 'builder>(
+    iter: impl Iterator<Item = (&'decls PropertyDeclaration, CascadePriority)>,
+    declarations: &mut Declarations<'decls>,
+    mut custom_builder: Option<&mut CustomPropertiesBuilder<'builder, 'decls>>,
+) {
+    for (declaration, priority) in iter {
+        if let PropertyDeclaration::Custom(ref declaration) = *declaration {
+            if let Some(ref mut builder) = custom_builder {
+                builder.cascade(declaration, priority);
+            }
+        } else {
+            let id = declaration.id().as_longhand().unwrap();
+            declarations.note_declaration(declaration, priority, id);
+        }
+    }
 }
 
 /// NOTE: This function expects the declaration with more priority to appear
 /// first.
 pub fn apply_declarations<'a, E, I>(
-    stylist: &Stylist,
-    pseudo: Option<&PseudoElement>,
+    stylist: &'a Stylist,
+    pseudo: Option<&'a PseudoElement>,
     rules: &StrongRuleNode,
     guards: &StylesheetGuards,
     iter: I,
-    originating_element_style: Option<&ComputedValues>,
-    parent_style: Option<&ComputedValues>,
+    parent_style: Option<&'a ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
-    first_line_reparenting: FirstLineReparenting,
+    first_line_reparenting: FirstLineReparenting<'a>,
     cascade_mode: CascadeMode,
     cascade_input_flags: ComputedValueFlags,
-    rule_cache: Option<&RuleCache>,
-    rule_cache_conditions: &mut RuleCacheConditions,
+    rule_cache: Option<&'a RuleCache>,
+    rule_cache_conditions: &'a mut RuleCacheConditions,
     element: Option<E>,
 ) -> Arc<ComputedValues>
 where
-    E: TElement,
+    E: TElement + 'a,
     I: Iterator<Item = (&'a PropertyDeclaration, CascadePriority)>,
 {
-    debug_assert_eq!(
-        originating_element_style.is_some(),
-        element.is_some() && pseudo.is_some()
-    );
     debug_assert!(layout_parent_style.is_none() || parent_style.is_some());
     let device = stylist.device();
     let inherited_style = parent_style.unwrap_or(device.default_computed_values());
     let is_root_element = pseudo.is_none() && element.map_or(false, |e| e.is_root());
 
     let container_size_query =
-        ContainerSizeQuery::for_option_element(element, originating_element_style);
+        ContainerSizeQuery::for_option_element(element, Some(inherited_style), pseudo.is_some());
 
     let mut context = computed::Context::new(
         // We'd really like to own the rules here to avoid refcount traffic, but
@@ -285,39 +292,36 @@ where
     context.style().add_flags(cascade_input_flags);
 
     let using_cached_reset_properties;
-    let mut cascade = Cascade::new(&mut context, cascade_mode, first_line_reparenting);
-    let mut data = CascadeData::default();
-
-    {
-        let mut builder =
-            CustomPropertiesBuilder::new(inherited_style.custom_properties(), stylist);
-        for (declaration, priority) in iter {
-            if let PropertyDeclaration::Custom(ref declaration) = *declaration {
-                builder.cascade(declaration, priority);
-            } else {
-                let id = declaration.id().as_longhand().unwrap();
-                data.note_declaration(declaration, priority, id);
-            }
-        }
-        cascade.context.builder.custom_properties = builder.build();
-    };
-
-    let properties_to_apply = match cascade.cascade_mode {
-        CascadeMode::Visited { writing_mode } => {
-            cascade.context.builder.writing_mode = writing_mode;
+    let mut cascade = Cascade::new(&mut context, first_line_reparenting);
+    let mut declarations = Default::default();
+    let mut shorthand_cache = ShorthandsWithPropertyReferencesCache::default();
+    let properties_to_apply = match cascade_mode {
+        CascadeMode::Visited { unvisited_context } => {
+            cascade.context.builder.custom_properties = unvisited_context.builder.custom_properties.clone();
+            cascade.context.builder.writing_mode = unvisited_context.builder.writing_mode;
             // We never insert visited styles into the cache so we don't need to try looking it up.
             // It also wouldn't be super-profitable, only a handful :visited properties are
             // non-inherited.
             using_cached_reset_properties = false;
+            // TODO(bug 1859385): If we match the same rules when visited and unvisited, we could
+            // try to avoid gathering the declarations. That'd be:
+            //      unvisited_context.builder.rules.as_ref() == Some(rules)
+            iter_declarations(iter, &mut declarations, None);
+
             LonghandIdSet::visited_dependent()
         },
         CascadeMode::Unvisited { visited_rules } => {
-            cascade.apply_prioritary_properties(&mut data);
+            cascade.context.builder.custom_properties = {
+                let mut builder = CustomPropertiesBuilder::new(stylist, cascade.context);
+                iter_declarations(iter, &mut declarations, Some(&mut builder));
+                builder.build()
+            };
+
+            cascade.apply_prioritary_properties(&declarations, &mut shorthand_cache);
 
             if let Some(visited_rules) = visited_rules {
                 cascade.compute_visited_style_if_needed(
                     element,
-                    originating_element_style,
                     parent_style,
                     layout_parent_style,
                     visited_rules,
@@ -336,7 +340,7 @@ where
         },
     };
 
-    cascade.apply_non_prioritary_properties(&mut data, &properties_to_apply);
+    cascade.apply_non_prioritary_properties(&declarations.longhand_declarations, &mut shorthand_cache, &properties_to_apply);
 
     cascade.finished_applying_properties();
 
@@ -536,22 +540,18 @@ struct Declaration<'a> {
     next_index: DeclarationIndex,
 }
 
-/// A bit of a kitchen-sink struct for things that need to mutate in ways that otherwise rustc
-/// can't reason about if we put these in Cascade.
+/// The set of property declarations from our rules.
 #[derive(Default)]
-struct CascadeData<'a> {
+struct Declarations<'a> {
     /// Whether we have any prioritary property. This is just a minor optimization.
     has_prioritary_properties: bool,
-    /// A cache for shorthands with property references, to avoid substituting the same value over
-    /// and over for each of the longhands.
-    shorthand_cache: ShorthandsWithPropertyReferencesCache,
     /// A list of all the applicable longhand declarations.
     longhand_declarations: SmallVec<[Declaration<'a>; 32]>,
     /// The prioritary property position data.
     prioritary_positions: [PrioritaryDeclarationPosition; PRIORITARY_PROPERTY_COUNT],
 }
 
-impl<'a> CascadeData<'a> {
+impl<'a> Declarations<'a> {
     fn note_prioritary_property(&mut self, id: PrioritaryPropertyId) {
         let new_index = self.longhand_declarations.len();
         if new_index >= DeclarationIndex::MAX as usize {
@@ -593,7 +593,6 @@ impl<'a> CascadeData<'a> {
 
 struct Cascade<'a, 'b: 'a> {
     context: &'a mut computed::Context<'b>,
-    cascade_mode: CascadeMode<'a>,
     first_line_reparenting: FirstLineReparenting<'b>,
     ignore_colors: bool,
     seen: LonghandIdSet,
@@ -606,13 +605,11 @@ struct Cascade<'a, 'b: 'a> {
 impl<'a, 'b: 'a> Cascade<'a, 'b> {
     fn new(
         context: &'a mut computed::Context<'b>,
-        cascade_mode: CascadeMode<'a>,
         first_line_reparenting: FirstLineReparenting<'b>,
     ) -> Self {
         let ignore_colors = !context.builder.device.use_document_colors();
         Self {
             context,
-            cascade_mode,
             first_line_reparenting,
             ignore_colors,
             seen: LonghandIdSet::default(),
@@ -668,20 +665,20 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         );
         declaration.value.substitute_variables(
             declaration.id,
-            self.context.builder.writing_mode,
             self.context.builder.custom_properties(),
-            self.context.quirks_mode,
             self.context.builder.stylist.unwrap(),
+            self.context,
             shorthand_cache,
         )
     }
 
     fn apply_one_prioritary_property(
         &mut self,
-        data: &mut CascadeData,
+        decls: &Declarations,
+        cache: &mut ShorthandsWithPropertyReferencesCache,
         id: PrioritaryPropertyId,
     ) -> bool {
-        let mut index = data.prioritary_positions[id as usize].most_important;
+        let mut index = decls.prioritary_positions[id as usize].most_important;
         if index == DeclarationIndex::MAX {
             return false;
         }
@@ -692,13 +689,13 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             "That could require more book-keeping"
         );
         loop {
-            let decl = data.longhand_declarations[index as usize];
+            let decl = decls.longhand_declarations[index as usize];
             self.apply_one_longhand(
                 longhand_id,
                 longhand_id,
                 decl.decl,
                 decl.priority,
-                &mut data.shorthand_cache,
+                cache,
             );
             if self.seen.contains(longhand_id) {
                 return true; // Common case, we're done.
@@ -721,23 +718,27 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         false
     }
 
-    fn apply_prioritary_properties(&mut self, data: &mut CascadeData) {
-        if !data.has_prioritary_properties {
+    fn apply_prioritary_properties(&mut self, decls: &Declarations, cache: &mut ShorthandsWithPropertyReferencesCache) {
+        if !decls.has_prioritary_properties {
             return;
         }
 
         let has_writing_mode = self
-            .apply_one_prioritary_property(data, PrioritaryPropertyId::WritingMode) |
-            self.apply_one_prioritary_property(data, PrioritaryPropertyId::Direction) |
-            self.apply_one_prioritary_property(data, PrioritaryPropertyId::TextOrientation);
+            .apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::WritingMode) |
+            self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::Direction) |
+            self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::TextOrientation);
         if has_writing_mode {
             self.compute_writing_mode();
         }
 
+        if self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::Zoom) {
+            self.compute_zoom();
+        }
+
         // Compute font-family.
         let has_font_family =
-            self.apply_one_prioritary_property(data, PrioritaryPropertyId::FontFamily);
-        let has_lang = self.apply_one_prioritary_property(data, PrioritaryPropertyId::XLang);
+            self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::FontFamily);
+        let has_lang = self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::XLang);
         if has_lang {
             self.recompute_initial_font_family_if_needed();
         }
@@ -746,15 +747,15 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         }
 
         // Compute font-size.
-        if self.apply_one_prioritary_property(data, PrioritaryPropertyId::XTextScale) {
+        if self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::XTextScale) {
             self.unzoom_fonts_if_needed();
         }
         let has_font_size =
-            self.apply_one_prioritary_property(data, PrioritaryPropertyId::FontSize);
+            self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::FontSize);
         let has_math_depth =
-            self.apply_one_prioritary_property(data, PrioritaryPropertyId::MathDepth);
+            self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::MathDepth);
         let has_min_font_size_ratio =
-            self.apply_one_prioritary_property(data, PrioritaryPropertyId::MozMinFontSizeRatio);
+            self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::MozMinFontSizeRatio);
 
         if has_math_depth && has_font_size {
             self.recompute_math_font_size_if_needed();
@@ -767,23 +768,27 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         }
 
         // Compute the rest of the first-available-font-affecting properties.
-        self.apply_one_prioritary_property(data, PrioritaryPropertyId::FontWeight);
-        self.apply_one_prioritary_property(data, PrioritaryPropertyId::FontStretch);
-        self.apply_one_prioritary_property(data, PrioritaryPropertyId::FontStyle);
-        self.apply_one_prioritary_property(data, PrioritaryPropertyId::FontSizeAdjust);
+        self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::FontWeight);
+        self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::FontStretch);
+        self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::FontStyle);
+        self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::FontSizeAdjust);
 
-        self.apply_one_prioritary_property(data, PrioritaryPropertyId::ColorScheme);
-        self.apply_one_prioritary_property(data, PrioritaryPropertyId::ForcedColorAdjust);
+        self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::ColorScheme);
+        self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::ForcedColorAdjust);
+
+        // Compute the line height.
+        self.apply_one_prioritary_property(decls, cache, PrioritaryPropertyId::LineHeight);
     }
 
     fn apply_non_prioritary_properties(
         &mut self,
-        data: &mut CascadeData,
+        longhand_declarations: &[Declaration],
+        shorthand_cache: &mut ShorthandsWithPropertyReferencesCache,
         properties_to_apply: &LonghandIdSet,
     ) {
         debug_assert!(!properties_to_apply.contains_any(LonghandIdSet::prioritary_properties()));
         debug_assert!(self.declarations_to_apply_unless_overridden.is_empty());
-        for declaration in &data.longhand_declarations {
+        for declaration in &*longhand_declarations {
             let longhand_id = declaration.decl.id().as_longhand().unwrap();
             if !properties_to_apply.contains(longhand_id) {
                 continue;
@@ -795,7 +800,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 physical_longhand_id,
                 declaration.decl,
                 declaration.priority,
-                &mut data.shorthand_cache,
+                shorthand_cache,
             );
         }
         if !self.declarations_to_apply_unless_overridden.is_empty() {
@@ -816,7 +821,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         physical_longhand_id: LonghandId,
         declaration: &PropertyDeclaration,
         priority: CascadePriority,
-        shorthand_cache: &mut ShorthandsWithPropertyReferencesCache,
+        cache: &mut ShorthandsWithPropertyReferencesCache,
     ) {
         debug_assert!(!physical_longhand_id.is_logical());
         let origin = priority.cascade_level().origin();
@@ -834,7 +839,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             }
         }
 
-        let mut declaration = self.substitute_variables_if_needed(shorthand_cache, declaration);
+        let mut declaration = self.substitute_variables_if_needed(cache, declaration);
 
         // When document colors are disabled, do special handling of
         // properties that are marked as ignored in that mode.
@@ -888,8 +893,15 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         (CASCADE_PROPERTY[longhand_id as usize])(&declaration, &mut self.context);
     }
 
+    fn compute_zoom(&mut self) {
+        self.context.builder.effective_zoom = self
+            .context
+            .builder
+            .inherited_effective_zoom()
+            .compute_effective(self.context.builder.specified_zoom());
+    }
+
     fn compute_writing_mode(&mut self) {
-        debug_assert!(matches!(self.cascade_mode, CascadeMode::Unvisited { .. }));
         self.context.builder.writing_mode =
             WritingMode::new(self.context.builder.get_inherited_box())
     }
@@ -897,7 +909,6 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
     fn compute_visited_style_if_needed<E>(
         &mut self,
         element: Option<E>,
-        originating_element_style: Option<&ComputedValues>,
         parent_style: Option<&ComputedValues>,
         layout_parent_style: Option<&ComputedValues>,
         visited_rules: &StrongRuleNode,
@@ -905,7 +916,6 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
     ) where
         E: TElement,
     {
-        debug_assert!(matches!(self.cascade_mode, CascadeMode::Unvisited { .. }));
         let is_link = self.context.builder.pseudo.is_none() && element.unwrap().is_link();
 
         macro_rules! visited_parent {
@@ -918,8 +928,6 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             };
         }
 
-        let writing_mode = self.context.builder.writing_mode;
-
         // We could call apply_declarations directly, but that'd cause
         // another instantiation of this function which is not great.
         let style = cascade_rules(
@@ -927,11 +935,10 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             self.context.builder.pseudo,
             visited_rules,
             guards,
-            visited_parent!(originating_element_style),
             visited_parent!(parent_style),
             visited_parent!(layout_parent_style),
             self.first_line_reparenting,
-            CascadeMode::Visited { writing_mode },
+            CascadeMode::Visited { unvisited_context: &*self.context },
             // Cascade input flags don't matter for the visited style, they are
             // in the main (unvisited) style.
             Default::default(),
@@ -1091,11 +1098,16 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
     fn prioritize_user_fonts_if_needed(&mut self) {
         use crate::gecko_bindings::bindings;
 
-        if static_prefs::pref!("browser.display.use_document_fonts") != 0 {
+        let builder = &mut self.context.builder;
+
+        // Check the use_document_fonts setting for content, but for chrome
+        // documents they're treated as always enabled.
+        if static_prefs::pref!("browser.display.use_document_fonts") != 0 ||
+            builder.device.chrome_rules_enabled_for_document()
+        {
             return;
         }
 
-        let builder = &mut self.context.builder;
         let default_font_type = {
             let font = builder.get_font();
 

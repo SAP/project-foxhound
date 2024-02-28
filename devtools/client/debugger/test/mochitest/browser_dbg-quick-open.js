@@ -82,7 +82,7 @@ add_task(async function () {
   pressKey(dbg, "Tab");
   assertQuickOpenDisabled(dbg);
 
-  info("Testing function search");
+  info("Testing function search (anonymous fuctions should not display)");
   await quickOpen(dbg, "", "quickOpenFunc");
   await waitForResults(dbg, ["secondCall", "foo"]);
   is(resultCount(dbg), 2, "two function results");
@@ -132,6 +132,9 @@ function assertColumn(dbg, columnNumber) {
   let value = dbg.selectors.getSelectedLocation().column;
   if (value === undefined) {
     value = null;
+  } else {
+    // column is 0-based, while we want to mention 1-based in the test.
+    value++;
   }
   is(value, columnNumber, `goto column is ${columnNumber}`);
 }

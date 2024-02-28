@@ -26,10 +26,7 @@
 #include "mozilla/dom/RefMessageBodyService.h"
 #include "mozilla/dom/SharedMessageBody.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/MessagePortTimelineMarker.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/TimelineConsumers.h"
-#include "mozilla/TimelineMarker.h"
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsPresContext.h"
@@ -112,26 +109,8 @@ class PostMessageRunnable final : public CancelableRunnable {
     IgnoredErrorResult rv;
     JS::Rooted<JS::Value> value(cx);
 
-    UniquePtr<AbstractTimelineMarker> start;
-    UniquePtr<AbstractTimelineMarker> end;
-    bool isTimelineRecording = !TimelineConsumers::IsEmpty();
-
-    if (isTimelineRecording) {
-      start = MakeUnique<MessagePortTimelineMarker>(
-          ProfileTimelineMessagePortOperationType::DeserializeData,
-          MarkerTracingType::START);
-    }
-
     mData->Read(cx, &value, mPort->mRefMessageBodyService,
                 SharedMessageBody::ReadMethod::StealRefMessageBody, rv);
-
-    if (isTimelineRecording) {
-      end = MakeUnique<MessagePortTimelineMarker>(
-          ProfileTimelineMessagePortOperationType::DeserializeData,
-          MarkerTracingType::END);
-      TimelineConsumers::AddMarkerForAllObservedDocShells(start);
-      TimelineConsumers::AddMarkerForAllObservedDocShells(end);
-    }
 
     if (NS_WARN_IF(rv.Failed())) {
       JS_ClearPendingException(cx);
@@ -210,6 +189,11 @@ MessagePort::MessagePort(nsIGlobalObject* aGlobal, State aState)
 
 MessagePort::~MessagePort() {
   CloseForced();
+  MOZ_ASSERT(!mActor);
+  if (mActor) {
+    mActor->SetPort(nullptr);
+    mActor = nullptr;
+  }
   MOZ_ASSERT(!mWorkerRef);
 }
 
@@ -282,8 +266,7 @@ void MessagePort::Initialize(const nsID& aUUID, const nsID& aDestinationUUID,
         workerPrivate, "MessagePort", [self]() { self->CloseForced(); });
     if (NS_WARN_IF(!strongWorkerRef)) {
       // The worker is shutting down.
-      mState = eStateDisentangled;
-      UpdateMustKeepAlive();
+      CloseForced();
       aRv.Throw(NS_ERROR_FAILURE);
       return;
     }
@@ -337,26 +320,8 @@ void MessagePort::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
   RefPtr<SharedMessageBody> data = new SharedMessageBody(
       StructuredCloneHolder::TransferringSupported, agentClusterId);
 
-  UniquePtr<AbstractTimelineMarker> start;
-  UniquePtr<AbstractTimelineMarker> end;
-  bool isTimelineRecording = !TimelineConsumers::IsEmpty();
-
-  if (isTimelineRecording) {
-    start = MakeUnique<MessagePortTimelineMarker>(
-        ProfileTimelineMessagePortOperationType::SerializeData,
-        MarkerTracingType::START);
-  }
-
   data->Write(aCx, aMessage, transferable, mIdentifier->uuid(),
               mRefMessageBodyService, aRv);
-
-  if (isTimelineRecording) {
-    end = MakeUnique<MessagePortTimelineMarker>(
-        ProfileTimelineMessagePortOperationType::SerializeData,
-        MarkerTracingType::END);
-    TimelineConsumers::AddMarkerForAllObservedDocShells(start);
-    TimelineConsumers::AddMarkerForAllObservedDocShells(end);
-  }
 
   if (NS_WARN_IF(aRv.Failed())) {
     return;
@@ -473,14 +438,6 @@ void MessagePort::Dispatch() {
   mMessages.RemoveElementAt(0);
 
   mPostMessageRunnable = new PostMessageRunnable(this, data);
-
-  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
-  if (NS_IsMainThread() && global) {
-    MOZ_ALWAYS_SUCCEEDS(
-        global->Dispatch(TaskCategory::Other, do_AddRef(mPostMessageRunnable)));
-    return;
-  }
-
   MOZ_ALWAYS_SUCCEEDS(NS_DispatchToCurrentThread(mPostMessageRunnable));
 }
 

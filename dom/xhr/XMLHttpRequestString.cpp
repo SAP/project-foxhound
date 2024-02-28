@@ -92,7 +92,7 @@ class XMLHttpRequestStringBuffer final {
  private:
   ~XMLHttpRequestStringBuffer() = default;
 
-  nsString& UnsafeData() { return mData; }
+  nsString& UnsafeData() MOZ_NO_THREAD_SAFETY_ANALYSIS { return mData; }
 
   Mutex mMutex;
 

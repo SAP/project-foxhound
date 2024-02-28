@@ -16,7 +16,7 @@ const TEST_PROVIDER_INFO = [
     telemetryId: "example",
     searchPageRegexp:
       /^https:\/\/example.org\/browser\/browser\/components\/search\/test\/browser\/telemetry\/searchTelemetry(?:Ad)?/,
-    queryParamName: "s",
+    queryParamNames: ["s"],
     codeParamName: "abc",
     taggedCodes: ["ff"],
     followOnParamNames: ["a"],
@@ -129,6 +129,7 @@ async function track_ad_click(
         partner_code: "ff",
         source: expectedScalarSource,
         is_shopping_page: "false",
+        is_private: "false",
         shopping_tab_displayed: "false",
       },
     },
@@ -163,6 +164,7 @@ async function track_ad_click(
         partner_code: "ff",
         source: expectedScalarSource,
         is_shopping_page: "false",
+        is_private: "false",
         shopping_tab_displayed: "false",
       },
       engagements: [

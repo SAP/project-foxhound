@@ -4,6 +4,7 @@
 ChromeUtils.defineESModuleGetters(this, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchSERPTelemetryUtils: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
@@ -15,7 +16,7 @@ const TEST_PROVIDER_INFO = [
   {
     telemetryId: "example",
     searchPageRegexp: /^https:\/\/www\.example\.com\/search/,
-    queryParamName: "q",
+    queryParamNames: ["q"],
     codeParamName: "abc",
     taggedCodes: ["ff", "tb"],
     expectedOrganicCodes: ["baz"],
@@ -35,7 +36,7 @@ const TEST_PROVIDER_INFO = [
   {
     telemetryId: "example2",
     searchPageRegexp: /^https:\/\/www\.example2\.com\/search/,
-    queryParamName: "q",
+    queryParamNames: ["a", "q"],
     codeParamName: "abc",
     taggedCodes: ["ff", "tb"],
     expectedOrganicCodes: ["baz"],
@@ -64,6 +65,7 @@ const TESTS = [
       tagged: "true",
       partner_code: "ff",
       is_shopping_page: "false",
+      is_private: "false",
       shopping_tab_displayed: "false",
       source: "unknown",
     },
@@ -80,6 +82,7 @@ const TESTS = [
       tagged: "true",
       partner_code: "ff",
       is_shopping_page: "true",
+      is_private: "false",
       shopping_tab_displayed: "false",
       source: "unknown",
     },
@@ -96,6 +99,7 @@ const TESTS = [
       tagged: "true",
       partner_code: "tb",
       is_shopping_page: "false",
+      is_private: "false",
       shopping_tab_displayed: "false",
       source: "unknown",
     },
@@ -112,6 +116,7 @@ const TESTS = [
       tagged: "false",
       partner_code: "foo",
       is_shopping_page: "false",
+      is_private: "false",
       shopping_tab_displayed: "false",
       source: "unknown",
     },
@@ -128,6 +133,7 @@ const TESTS = [
       tagged: "false",
       partner_code: "other",
       is_shopping_page: "false",
+      is_private: "false",
       shopping_tab_displayed: "false",
       source: "unknown",
     },
@@ -144,6 +150,7 @@ const TESTS = [
       tagged: "false",
       partner_code: "other",
       is_shopping_page: "false",
+      is_private: "false",
       shopping_tab_displayed: "false",
       source: "unknown",
     },
@@ -160,6 +167,7 @@ const TESTS = [
       tagged: "false",
       partner_code: "",
       is_shopping_page: "false",
+      is_private: "false",
       shopping_tab_displayed: "false",
       source: "unknown",
     },
@@ -176,6 +184,7 @@ const TESTS = [
       tagged: "false",
       partner_code: "",
       is_shopping_page: "false",
+      is_private: "false",
       shopping_tab_displayed: "false",
       source: "unknown",
     },
@@ -192,6 +201,7 @@ const TESTS = [
       tagged: "false",
       partner_code: "",
       is_shopping_page: "false",
+      is_private: "false",
       shopping_tab_displayed: "false",
       source: "unknown",
     },
@@ -258,6 +268,10 @@ add_task(async function setup() {
   await SearchSERPTelemetry.init();
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   sinon.stub(BrowserSearchTelemetry, "shouldRecordSearchCount").returns(true);
+  // There is no concept of browsing in unit tests, so assume in tests that we
+  // are not in private browsing mode. We have browser tests that check when
+  // private browsing is used.
+  sinon.stub(PrivateBrowsingUtils, "isBrowserPrivate").returns(false);
 });
 
 add_task(async function test_parsing_search_urls() {

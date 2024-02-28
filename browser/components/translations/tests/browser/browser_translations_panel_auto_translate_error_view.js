@@ -19,10 +19,6 @@ const { PromiseTestUtils } = ChromeUtils.importESModule(
  */
 add_task(
   async function test_revisit_view_updates_with_auto_translate_failure() {
-    PromiseTestUtils.expectUncaughtRejection(
-      /Intentionally rejecting downloads./
-    );
-
     const { cleanup, resolveDownloads, rejectDownloads, runInPage } =
       await loadTestPage({
         page: SPANISH_PAGE_URL,
@@ -31,7 +27,6 @@ add_task(
           { fromLang: "en", toLang: "es" },
           { fromLang: "es", toLang: "en" },
         ],
-        prefs: [["browser.translations.alwaysTranslateLanguages", ""]],
       });
 
     await assertTranslationsButton(
@@ -63,6 +58,9 @@ add_task(
       openFromAppMenu: true,
       onOpenPanel: assertPanelUnsupportedLanguageView,
     });
+
+    info("Destroy the engine process so that an error will happen.");
+    await TranslationsParent.destroyEngineProcess();
 
     await navigate("Navigate back to a Spanish page.", {
       url: SPANISH_PAGE_URL_DOT_ORG,

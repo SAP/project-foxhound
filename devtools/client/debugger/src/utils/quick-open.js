@@ -45,10 +45,14 @@ export function parseLineColumn(query) {
   if (isNaN(lineNumber)) {
     return null;
   }
-
+  if (isNaN(columnNumber)) {
+    return { line: lineNumber };
+  }
+  // columnNumber here is the user input value which is 1-based.
+  // Whereas in location objects, line is 1-based, and column is 0-based.
   return {
     line: lineNumber,
-    ...(!isNaN(columnNumber) ? { column: columnNumber } : null),
+    column: columnNumber - 1,
   };
 }
 
@@ -85,20 +89,6 @@ export function formatSymbol(symbol) {
     subtitle: `${symbol.location.start.line}`,
     value: symbol.name,
     location: symbol.location,
-  };
-}
-
-export function formatSymbols(symbols, maxResults) {
-  if (!symbols) {
-    return { functions: [] };
-  }
-
-  let { functions } = symbols;
-  // Avoid formating more symbols than necessary
-  functions = functions.slice(0, maxResults);
-
-  return {
-    functions: functions.map(formatSymbol),
   };
 }
 

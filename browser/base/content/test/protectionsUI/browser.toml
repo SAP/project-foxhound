@@ -15,7 +15,9 @@ support-files = [
 
 ["browser_protectionsUI.js"]
 https_first_disabled = true
-skip-if = ["os == 'linux' && !debug && tsan"] # Bug 1675107
+skip-if = [
+  "os == 'linux' && !debug && tsan", # Bug 1675107
+]
 
 ["browser_protectionsUI_3.js"]
 
@@ -45,11 +47,13 @@ support-files = [
 
 ["browser_protectionsUI_fingerprinters.js"]
 https_first_disabled = true
+skip-if = ["a11y_checks"] # Bugs 1858041 and 1849179 for causing intermittent crashes
 
 ["browser_protectionsUI_icon_state.js"]
 https_first_disabled = true
 
 ["browser_protectionsUI_milestones.js"]
+fail-if = ["a11y_checks"] # Bug 1854233 protections-popup-milestones-content may not be labeled
 
 ["browser_protectionsUI_open_preferences.js"]
 https_first_disabled = true
@@ -81,6 +85,12 @@ https_first_disabled = true
 
 ["browser_protectionsUI_subview_shim.js"]
 https_first_disabled = true
+
+["browser_protectionsUI_suspicious_fingerprinters_subview.js"]
+support-files = [
+  "canvas-fingerprinter.html",
+  "font-fingerprinter.html",
+]
 
 ["browser_protectionsUI_telemetry.js"]
 https_first_disabled = true

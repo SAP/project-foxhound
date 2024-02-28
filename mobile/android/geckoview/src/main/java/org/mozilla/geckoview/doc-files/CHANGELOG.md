@@ -13,9 +13,54 @@ exclude: true
 
 ⚠️  breaking change and deprecation notices
 
+## v121
+- Added runtime controller functions. [`RuntimeTranslation`][121.1] has options for retrieving translation languages and managing language models.
+- Added support for controlling `cookiebanners.service.enableGlobalRules` and `cookiebanners.service.enableGlobalRules.subFrames` via [`GeckoSession.ContentDelegate.cookieBannerGlobalRulesEnabled`][121.2] and [`GeckoSession.ContentDelegate.cookieBannerGlobalRulesSubFramesEnabled`][121.3].
+- Added [`GeckoSession.sendClickAttributionEvent`][121.4] for sending click attribution event for a given product recommendation.
+- Added [`GeckoSession.sendImpressionAttributionEvent`][121.5] for sending impression attribution event for a given product recommendation.
+- Added support for controlling `privacy.query_stripping.enabled` and `privacy.query_stripping.enabled.pbmode` via [`GeckoSession.ContentDelegate.queryParameterStrippingEnabled`][121.6] and [`GeckoSession.ContentDelegate.queryParameterStrippingPrivateBrowsingEnabled`][121.7].
+- Added support for controlling `privacy.query_stripping.allow_list` and `privacy.query_stripping.strip_list` via [`GeckoSession.ContentDelegate.queryParameterStrippingAllowList`][121.8] and [`GeckoSession.ContentDelegate.queryParameterStrippingStripList`][121.9].
+- Add [`WebExtensionController.AddonManagerDelegate.onReady`][121.10] ([bug 1859585]({{bugzilla}}1859585).
+- ⚠️  `WebExtensionController.install` method will not be implicitly awaiting for the installed extension to be fully started anymore, callers of the install method should now expect the `WebExtension.MetaData` properties `baseUrl` and `optionsPageUrl` to be not be
+  defined yet until the `WebExtensionController.AddonManagerDelegate.onReady` delegated method has been called ([bug 1859585]({{bugzilla}}1859585).
+- Added additional support for translation settings such as: `getLanguageSetting`, `setLanguageSetting`, `getNeverTranslateSiteSetting`,`setNeverTranslateSiteSetting`, on the Translations Controller [121.11], and `getTranslationsOfferPopup`, `setTranslationsOfferPopup` on the Runtime Settings [121.12].
+- Added `privacy.trackingprotection.emailtracking.enabled` to strict mode for email tracker blocking in GeckoView. Removed unnecessary string manipulation on STP Pref string. [121.13] ([bug 1856634]({{bugzilla}}1856634).
+
+[121.1]: {{javadoc_uri}}/TranslationsController.RuntimeTranslation.html
+[121.2]: {{javadoc_uri}}/ContentBlocking.Settings.Builder.html#cookieBannerGlobalRulesEnabled(boolean)
+[121.3]: {{javadoc_uri}}/ContentBlocking.Settings.Builder.html#cookieBannerGlobalRulesSubFramesEnabled(boolean)
+[121.4]: {{javadoc_uri}}/GeckoSession.html#sendClickAttributionEvent(String)
+[121.5]: {{javadoc_uri}}/GeckoSession.html#sendImpressionAttributionEvent(String)
+[121.6]: {{javadoc_uri}}/ContentBlocking.Settings.Builder.html#queryParameterStrippingEnabled(boolean)
+[121.7]: {{javadoc_uri}}/ContentBlocking.Settings.Builder.html#queryParameterStrippingPrivateBrowsingEnabled(boolean)
+[121.8]: {{javadoc_uri}}/ContentBlocking.Settings.Builder.html#queryParameterStrippingAllowList(String)
+[121.9]: {{javadoc_uri}}/ContentBlocking.Settings.Builder.html#queryParameterStrippingStripList(boolean)
+[121.10]: {{javadoc_uri}}/WebExtensionController.AddonManagerDelegate.html#onReady
+[121.11]: {{javadoc_uri}}/TranslationsController.html
+[121.12]: {{javadoc_uri}}/GeckoRuntimeSettings.html
+[121.13]: {{javadoc_uri}}/Contentblocking.AntiTracking.html#EMAIL
+
+## v120
+- Added [`disableExtensionProcessSpawning`][120.1] for disabling the extension process spawning. ([bug 1855405]({{bugzilla}}1855405))
+- Added `DisabledFlags.SIGNATURE` for extensions disabled because they aren't correctly signed. ([bug 1847266]({{bugzilla}}1847266))
+- Added `Builder` pattern constructors for [`ReviewAnalysis`][120.2] and [`Recommendation`][120.3] (part of [bug 1846341]({{bugzilla}}1846341))
+- Added `DisabledFlags.APP_VERSION` for extensions disabled because they aren't compatible with the application version. ([bug 1847266]({{bugzilla}}1847266))
+- Added more metadata to the [WebExtension][120.4] class. ([bug 1850674]({{bugzilla}}1850674), [bug 1858925]({{bugzilla}}1858925))
+- Added session and translations controller. Includes [`TranslationsController`][120.5], [`TranslationsController.SessionTranslation`][120.6] (notably [translate][120.7]), and a [translations delegate][120.8].
+
+[120.1]: {{javadoc_uri}}/WebExtensionController.html#disableExtensionProcessSpawning
+[120.2]: {{javadoc_uri}}/GeckoSession.html#ReviewAnalysis.Builder.html
+[120.3]: {{javadoc_uri}}/GeckoSession.html#Recommendation.Builder.html
+[120.4]: {{javadoc_uri}}/WebExtension.html)
+[120.5]: {{javadoc_uri}}/TranslationsController.html
+[120.6]: {{javadoc_uri}}/TranslationsController.SessionTranslation.html
+[120.7]: {{javadoc_uri}}/TranslationsController.SessionTranslation.html#translate(java.lang.String,java.lang.String,org.mozilla.geckoview.TranslationsController.SessionTranslation.TranslationOptions)
+[120.8]: {{javadoc_uri}}/TranslationsController.SessionTranslation.Delegate.html
+
 ## v119
 - Added `remoteType` to GeckoView child crash intent. ([bug 1851518]({{bugzilla}}1851518))
-[119.1]: {{javadoc_uri}}/GeckoSession.html#requestCreateAnalysis(String)
+
+- [119.1]: {{javadoc_uri}}/GeckoSession.html#requestCreateAnalysis(String)
 [119.2]: {{javadoc_uri}}/GeckoSession.html#requestAnalysisCreationStatus(String)
 [119.3]: {{javadoc_uri}}/GeckoSession.html#pollForAnalysisCompleted(String)
 
@@ -1431,4 +1476,4 @@ to allow adding gecko profiler markers.
 [65.24]: {{javadoc_uri}}/CrashReporter.html#sendCrashReport(android.content.Context,android.os.Bundle,java.lang.String)
 [65.25]: {{javadoc_uri}}/GeckoResult.html
 
-[api-version]: 596078a3ce21ff0aab1063e4e4150c141eadaf2f
+[api-version]: 28fe00d99fd6e91f9fdada76d88865ec64494bc4

@@ -634,7 +634,21 @@
       this.textContent = "";
       this.appendChild(this.constructor.fragment);
       this.initializeAttributeInheritance();
+      this.initializeSecondaryAction();
       this._adjustAcItem();
+    }
+
+    initializeSecondaryAction() {
+      const button = this.querySelector(".ac-secondary-action");
+
+      if (this.onSecondaryAction) {
+        button.addEventListener("mousedown", event => {
+          event.stopPropagation();
+          this.onSecondaryAction();
+        });
+      } else {
+        button?.remove();
+      }
     }
 
     static get inheritedAttributes() {
@@ -643,6 +657,7 @@
         ".line1-label": "text=ac-value",
         // getCommentAt:
         ".line2-label": "text=ac-label",
+        ".ac-site-icon": "src=ac-image",
       };
     }
 
@@ -656,6 +671,7 @@
           <div class="label-row line1-label"></div>
           <div class="label-row line2-label"></div>
         </div>
+        <button class="ac-secondary-action"></button>
       </div>
     `;
     }
@@ -669,39 +685,17 @@
     handleOverUnderflow() {}
   }
 
-  class MozAutocompleteGenericRichlistitem extends MozAutocompleteTwoLineRichlistitem {
-    static get inheritedAttributes() {
-      return {};
-    }
-
-    _adjustAcItem() {
-      super._adjustAcItem();
-
-      try {
-        const details = JSON.parse(this.getAttribute("ac-label"));
-        this.querySelector(".ac-site-icon").src = details.icon;
-        this.querySelector(".line1-label").textContent = details.title;
-        this.querySelector(".line2-label").textContent = details.subtitle;
-      } catch {
-        // Update item content only when expected JSON is provided
-      }
-    }
-  }
-
   class MozAutocompleteLoginRichlistitem extends MozAutocompleteTwoLineRichlistitem {
     connectedCallback() {
       super.connectedCallback();
+      this.firstChild.classList.add("ac-login-item");
+    }
 
-      this.querySelector(".ac-settings-button").addEventListener(
-        "mousedown",
-        event => {
-          event.stopPropagation();
-          const details = JSON.parse(this.getAttribute("ac-label"));
-          LoginHelper.openPasswordManager(window, {
-            loginGuid: details?.guid,
-          });
-        }
-      );
+    onSecondaryAction() {
+      const details = JSON.parse(this.getAttribute("ac-label"));
+      LoginHelper.openPasswordManager(window, {
+        loginGuid: details?.guid,
+      });
     }
 
     static get inheritedAttributes() {
@@ -709,22 +703,8 @@
         // getLabelAt:
         ".line1-label": "text=ac-value",
         // Don't inherit ac-label with getCommentAt since the label is JSON.
+        ".ac-site-icon": "src=ac-image",
       };
-    }
-
-    static get markup() {
-      return `
-        <div xmlns="http://www.w3.org/1999/xhtml"
-             xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-             class="two-line-wrapper ac-login-item">
-          <xul:image class="ac-site-icon"></xul:image>
-          <div class="labels-wrapper">
-            <div class="label-row line1-label"></div>
-            <div class="label-row line2-label"></div>
-          </div>
-          <button class="ac-settings-button"></button>
-        </div>
-      `;
     }
 
     _adjustAcItem() {
@@ -732,9 +712,6 @@
 
       let details = JSON.parse(this.getAttribute("ac-label"));
       this.querySelector(".line2-label").textContent = details.comment;
-      this.querySelector(
-        ".ac-site-icon"
-      ).src = `page-icon:${details.login?.origin}`;
     }
   }
 
@@ -833,14 +810,6 @@
   customElements.define(
     "autocomplete-richlistitem",
     MozElements.MozAutocompleteRichlistitem,
-    {
-      extends: "richlistitem",
-    }
-  );
-
-  customElements.define(
-    "autocomplete-generic-richlistitem",
-    MozAutocompleteGenericRichlistitem,
     {
       extends: "richlistitem",
     }

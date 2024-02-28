@@ -718,7 +718,7 @@ void ReflowInput::InitResizeFlags(nsPresContext* aPresContext,
     dependsOnCBBSize |= (flexBasis.IsSize() && flexBasis.AsSize().HasPercent());
   }
 
-  if (mFrame->StyleText()->mLineHeight.IsMozBlockHeight()) {
+  if (mFrame->StyleFont()->mLineHeight.IsMozBlockHeight()) {
     // line-height depends on block bsize
     mFrame->AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
     // but only on containing blocks if this frame is not a suitable block
@@ -2456,8 +2456,7 @@ static void UpdateProp(nsIFrame* aFrame,
                        const FramePropertyDescriptor<nsMargin>* aProperty,
                        bool aNeeded, const nsMargin& aNewValue) {
   if (aNeeded) {
-    nsMargin* propValue = aFrame->GetProperty(aProperty);
-    if (propValue) {
+    if (nsMargin* propValue = aFrame->GetProperty(aProperty)) {
       *propValue = aNewValue;
     } else {
       aFrame->AddProperty(aProperty, new nsMargin(aNewValue));
@@ -2474,11 +2473,7 @@ void SizeComputationInput::InitOffsets(WritingMode aCBWM, nscoord aPercentBasis,
                                        const Maybe<LogicalMargin>& aPadding,
                                        const nsStyleDisplay* aDisplay) {
   DISPLAY_INIT_OFFSETS(mFrame, this, aPercentBasis, aCBWM, aBorder, aPadding);
-
-  // Since we are in reflow, we don't need to store these properties anymore
-  // unless they are dependent on width, in which case we store the new value.
   nsPresContext* presContext = mFrame->PresContext();
-  mFrame->RemoveProperty(nsIFrame::UsedBorderProperty());
 
   // Compute margins from the specified margin style information. These
   // become the default computed values, and may be adjusted below
@@ -2806,7 +2801,7 @@ nscoord ReflowInput::CalcLineHeight(const ComputedStyle& aStyle,
                                     const nsIContent* aContent,
                                     nscoord aBlockBSize,
                                     float aFontSizeInflation) {
-  const StyleLineHeight& lh = aStyle.StyleText()->mLineHeight;
+  const StyleLineHeight& lh = aStyle.StyleFont()->mLineHeight;
   WritingMode wm(&aStyle);
   const bool vertical = wm.IsVertical() && !wm.IsSideways();
   return CalcLineHeight(lh, *aStyle.StyleFont(), aPresContext, vertical,

@@ -37,9 +37,9 @@ class StereoPannerNodeEngine final : public AudioNodeEngine {
         mPan(0.f) {}
 
   enum Parameters { PAN };
-  void RecvTimelineEvent(uint32_t aIndex, AudioTimelineEvent& aEvent) override {
+  void RecvTimelineEvent(uint32_t aIndex, AudioParamEvent& aEvent) override {
     MOZ_ASSERT(mDestination);
-    WebAudioUtils::ConvertAudioTimelineEventToTicks(aEvent, mDestination);
+    aEvent.ConvertToTicks(mDestination);
 
     switch (aIndex) {
       case PAN:

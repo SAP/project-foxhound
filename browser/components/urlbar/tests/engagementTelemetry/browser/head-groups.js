@@ -59,6 +59,26 @@ async function doSearchHistoryTest({ trigger, assert }) {
   await SpecialPowers.popPrefEnv();
 }
 
+async function doRecentSearchTest({ trigger, assert }) {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.recentsearches.featureGate", true]],
+  });
+
+  await doTest(async browser => {
+    await UrlbarTestUtils.formHistory.add([
+      { value: "foofoo", source: Services.search.defaultEngine.name },
+    ]);
+
+    await openPopup("");
+    await selectRowByURL("http://mochi.test:8888/?terms=foofoo");
+
+    await trigger();
+    await assert();
+  });
+
+  await SpecialPowers.popPrefEnv();
+}
+
 async function doSearchSuggestTest({ trigger, assert }) {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -94,24 +114,28 @@ async function doTailSearchSuggestTest({ trigger, assert }) {
 
 async function doTopPickTest({ trigger, assert }) {
   const cleanupQuickSuggest = await ensureQuickSuggestInit({
-    // eslint-disable-next-line mozilla/valid-lazy
-    config: lazy.QuickSuggestTestUtils.BEST_MATCH_CONFIG,
-  });
-
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.bestMatch.enabled", true]],
+    merinoSuggestions: [
+      {
+        title: "Navigational suggestion",
+        url: "https://example.com/navigational-suggestion",
+        provider: "top_picks",
+        is_sponsored: false,
+        score: 0.25,
+        block_id: 0,
+        is_top_pick: true,
+      },
+    ],
   });
 
   await doTest(async browser => {
-    await openPopup("sponsored");
-    await selectRowByURL("https://example.com/sponsored");
+    await openPopup("navigational");
+    await selectRowByURL("https://example.com/navigational-suggestion");
 
     await trigger();
     await assert();
   });
 
-  await SpecialPowers.popPrefEnv();
-  cleanupQuickSuggest();
+  await cleanupQuickSuggest();
 }
 
 async function doTopSiteTest({ trigger, assert }) {
@@ -210,9 +234,6 @@ async function doGeneralHistoryTest({ trigger, assert }) {
 
 async function doSuggestTest({ trigger, assert }) {
   const cleanupQuickSuggest = await ensureQuickSuggestInit();
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.bestMatch.enabled", false]],
-  });
 
   await doTest(async browser => {
     await openPopup("nonsponsored");
@@ -222,8 +243,7 @@ async function doSuggestTest({ trigger, assert }) {
     await assert();
   });
 
-  await SpecialPowers.popPrefEnv();
-  cleanupQuickSuggest();
+  await cleanupQuickSuggest();
 }
 
 async function doAboutPageTest({ trigger, assert }) {

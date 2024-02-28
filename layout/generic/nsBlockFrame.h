@@ -198,12 +198,17 @@ class nsBlockFrame : public nsContainerFrame {
       ClearLineCursorForQuery();
       RemoveStateBits(NS_BLOCK_HAS_LINE_CURSOR);
     }
-    RemoveProperty(LineIteratorProperty());
+    ClearLineIterator();
   }
   void ClearLineCursorForDisplay() {
     RemoveProperty(LineCursorPropertyDisplay());
   }
   void ClearLineCursorForQuery() { RemoveProperty(LineCursorPropertyQuery()); }
+
+  // Clear just the line-iterator property; this is used if we need to get a
+  // LineIterator temporarily during reflow, when using a persisted iterator
+  // would be invalid. So we clear the stored property immediately after use.
+  void ClearLineIterator() { RemoveProperty(LineIteratorProperty()); }
 
   // Get the first line that might contain y-coord 'y', or nullptr if you must
   // search all lines. If nonnull is returned then we guarantee that the lines'
@@ -274,6 +279,9 @@ class nsBlockFrame : public nsContainerFrame {
   void MarkIntrinsicISizesDirty() override;
 
  private:
+  // Whether CSS text-indent should be applied to the given line.
+  bool TextIndentAppliesTo(const LineIterator& aLine) const;
+
   void CheckIntrinsicCacheAgainstShrinkWrapState();
 
   template <typename LineIteratorType>
@@ -481,9 +489,9 @@ class nsBlockFrame : public nsContainerFrame {
   // helper for SlideLine and UpdateLineContainerSize
   void MoveChildFramesOfLine(nsLineBox* aLine, nscoord aDeltaBCoord);
 
-  void ComputeFinalSize(const ReflowInput& aReflowInput,
-                        BlockReflowState& aState, ReflowOutput& aMetrics,
-                        nscoord* aBEndEdgeOfChildren);
+  // Returns block-end edge of children.
+  nscoord ComputeFinalSize(const ReflowInput& aReflowInput,
+                           BlockReflowState& aState, ReflowOutput& aMetrics);
 
   /**
    * Helper method for Reflow(). Computes the overflow areas created by our
@@ -533,6 +541,61 @@ class nsBlockFrame : public nsContainerFrame {
    * @return whether the frame is a BIDI form control
    */
   bool IsVisualFormControl(nsPresContext* aPresContext);
+
+  /**
+   * For text-wrap:balance, we iteratively try reflowing with adjusted inline
+   * size to find the "best" result (the tightest size that can be applied
+   * without increasing the total line count of the block).
+   * This record is used to manage the state of these "trial reflows", and
+   * return results from the final trial.
+   */
+  struct TrialReflowState {
+    // Values pre-computed at start of Reflow(), constant across trials.
+    const nscoord mConsumedBSize;
+    const nscoord mEffectiveContentBoxBSize;
+    bool mNeedFloatManager;
+    // Settings for the current trial.
+    bool mBalancing = false;
+    nscoord mInset = 0;
+    // Results computed during the trial reflow. Values from the final trial
+    // will be used by the remainder of Reflow().
+    mozilla::OverflowAreas mOcBounds;
+    mozilla::OverflowAreas mFcBounds;
+    nscoord mBlockEndEdgeOfChildren = 0;
+    nscoord mContainerWidth = 0;
+
+    // Initialize for the initial trial reflow, with zero inset.
+    TrialReflowState(nscoord aConsumedBSize, nscoord aEffectiveContentBoxBSize,
+                     bool aNeedFloatManager)
+        : mConsumedBSize(aConsumedBSize),
+          mEffectiveContentBoxBSize(aEffectiveContentBoxBSize),
+          mNeedFloatManager(aNeedFloatManager) {}
+
+    // Adjust the inset amount, and reset state for a new trial.
+    void ResetForBalance(nscoord aInsetDelta) {
+      // Tells the reflow-lines loop we must consider all lines "dirty" (as we
+      // are modifying the effective inline-size to be used).
+      mBalancing = true;
+      // Adjust inset to apply.
+      mInset += aInsetDelta;
+      // Re-initialize state that the reflow loop will compute.
+      mOcBounds.Clear();
+      mFcBounds.Clear();
+      mBlockEndEdgeOfChildren = 0;
+      mContainerWidth = 0;
+    }
+  };
+
+  /**
+   * Internal helper for Reflow(); may be called repeatedly during a single
+   * Reflow() in order to implement text-wrap:balance.
+   * This method applies aTrialState.mInset during line-breaking to reduce
+   * the effective available inline-size (without affecting alignment).
+   */
+  nsReflowStatus TrialReflow(nsPresContext* aPresContext,
+                             ReflowOutput& aMetrics,
+                             const ReflowInput& aReflowInput,
+                             TrialReflowState& aTrialState);
 
  public:
   /**

@@ -99,6 +99,12 @@ gfx::SurfaceFormat WebRenderTextureHost::GetFormat() const {
   return mWrappedTextureHost->GetFormat();
 }
 
+void WebRenderTextureHost::MaybeDestroyRenderTexture() {
+  // WebRenderTextureHost does not create RenderTexture, then
+  // WebRenderTextureHost does not need to destroy RenderTexture.
+  mExternalImageId = Nothing();
+}
+
 void WebRenderTextureHost::NotifyNotUsed() {
 #ifdef MOZ_WIDGET_ANDROID
   // When SurfaceTextureHost is wrapped by RemoteTextureHostWrapper,
@@ -108,7 +114,8 @@ void WebRenderTextureHost::NotifyNotUsed() {
     wr::RenderThread::Get()->NotifyNotUsed(GetExternalImageKey());
   }
 #endif
-  if (mWrappedTextureHost->AsRemoteTextureHostWrapper()) {
+  if (mWrappedTextureHost->AsRemoteTextureHostWrapper() ||
+      mWrappedTextureHost->AsTextureHostWrapperD3D11()) {
     mWrappedTextureHost->NotifyNotUsed();
   }
   TextureHost::NotifyNotUsed();

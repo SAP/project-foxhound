@@ -24,8 +24,14 @@ const VALID_EXPLAINER_L10N_IDS = new Map([
  */
 class AnalysisExplainer extends MozLitElement {
   static properties = {
-    productURL: { type: String, reflect: true },
+    productUrl: { type: String, reflect: true },
   };
+
+  static get queries() {
+    return {
+      reviewQualityExplainerLink: "#review-quality-url",
+    };
+  }
 
   getGradesDescriptionTemplate() {
     return html`
@@ -83,10 +89,10 @@ class AnalysisExplainer extends MozLitElement {
   // placeholder "retailer", which should never be visible to users.
   getRetailerDisplayName() {
     let defaultName = "retailer";
-    if (!this.productURL) {
+    if (!this.productUrl) {
       return defaultName;
     }
-    let url = new URL(this.productURL);
+    let url = new URL(this.productUrl);
     let hostname = url.hostname;
     let displayNames = {
       "www.amazon.com": "Amazon",
@@ -98,13 +104,7 @@ class AnalysisExplainer extends MozLitElement {
 
   handleReviewQualityUrlClicked(e) {
     if (e.target.localName == "a" && e.button == 0) {
-      this.dispatchEvent(
-        new CustomEvent("ShoppingTelemetryEvent", {
-          composed: true,
-          bubbles: true,
-          detail: "surfaceReviewQualityExplainerURLClicked",
-        })
-      );
+      Glean.shopping.surfaceShowQualityExplainerUrlClicked.record();
     }
   }
 
@@ -136,10 +136,11 @@ class AnalysisExplainer extends MozLitElement {
               })}"
             ></p>
             <p
-              data-l10n-id="shopping-analysis-explainer-learn-more"
+              data-l10n-id="shopping-analysis-explainer-learn-more2"
               @click=${this.handleReviewQualityUrlClicked}
             >
               <a
+                id="review-quality-url"
                 data-l10n-name="review-quality-url"
                 target="_blank"
                 href="${window.RPMGetFormatURLPref(

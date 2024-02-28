@@ -11,6 +11,7 @@
 #include "AudioStream.h"
 #include "VideoUtils.h"
 #include "mozilla/dom/AudioDeviceInfo.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Sprintf.h"
@@ -251,6 +252,10 @@ nsresult AudioStream::Init(AudioDeviceInfo* aSinkInfo)
     CubebUtils::ReportCubebStreamInitFailure(true);
     return NS_ERROR_DOM_MEDIA_CUBEB_INITIALIZATION_ERR;
   }
+
+  mozilla::glean::fog_validation::gvsv_audio_stream_init.Get("inits"_ns).Add();
+  Telemetry::AccumulateCategorical(
+      mozilla::Telemetry::LABELS_GVSV_AUDIO_STREAM_INITS::inits);
 
   return OpenCubeb(cubebContext, params, startTime,
                    CubebUtils::GetFirstStream());
@@ -604,7 +609,8 @@ long AudioStream::DataCallback(void* aBuffer, long aFrames) {
     mCallbacksStarted = true;
   }
 
-  TRACE_AUDIO_CALLBACK_BUDGET(aFrames, mAudioClock.GetInputRate());
+  TRACE_AUDIO_CALLBACK_BUDGET("AudioStream real-time budget", aFrames,
+                              mAudioClock.GetInputRate());
   TRACE("AudioStream::DataCallback");
   MOZ_ASSERT(mState != SHUTDOWN, "No data callback after shutdown");
 
@@ -693,7 +699,7 @@ void AudioClock::UpdateFrameHistory(uint32_t aServiced, uint32_t aUnderrun,
                                     bool aAudioThreadChanged) {
 #ifdef XP_MACOSX
   if (aAudioThreadChanged) {
-    mCallbackInfoQueue.ResetThreadIds();
+    mCallbackInfoQueue.ResetProducerThreadId();
   }
   // Flush the local items, if any, and then attempt to enqueue the current
   // item. This is only a fallback mechanism, under non-critical load this is

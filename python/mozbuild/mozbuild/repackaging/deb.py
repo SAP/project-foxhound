@@ -74,13 +74,12 @@ def repackage_deb(
     source_dir = os.path.join(tmpdir, "source")
     try:
         mozfile.extract_tarball(infile, source_dir)
-        application_ini_data = _extract_application_ini_data(infile)
+        application_ini_data = _load_application_ini_data(infile, version, build_number)
         build_variables = _get_build_variables(
             application_ini_data,
             arch,
-            version,
-            build_number,
             depends="${shlibs:Depends},",
+            release_product=release_product,
         )
 
         _copy_plain_deb_config(template_dir, source_dir)
@@ -121,7 +120,13 @@ def repackage_deb(
 
 
 def repackage_deb_l10n(
-    input_xpi_file, input_tar_file, output, template_dir, version, build_number
+    input_xpi_file,
+    input_tar_file,
+    output,
+    template_dir,
+    version,
+    build_number,
+    release_product,
 ):
     arch = "all"
 
@@ -130,17 +135,24 @@ def repackage_deb_l10n(
     try:
         langpack_metadata = _extract_langpack_metadata(input_xpi_file)
         langpack_dir = mozpath.join(source_dir, "firefox", "distribution", "extensions")
-        application_ini_data = _extract_application_ini_data(input_tar_file)
+        application_ini_data = _load_application_ini_data(
+            input_tar_file, version, build_number
+        )
         langpack_id = langpack_metadata["langpack_id"]
+        if release_product == "devedition":
+            depends = (
+                f"firefox-devedition (= {application_ini_data['deb_pkg_version']})"
+            )
+        else:
+            depends = f"{application_ini_data['remoting_name']} (= {application_ini_data['deb_pkg_version']})"
         build_variables = _get_build_variables(
             application_ini_data,
             arch,
-            version,
-            build_number,
-            depends=application_ini_data["remoting_name"],
+            depends=depends,
             # Debian package names are only lowercase
             package_name_suffix=f"-l10n-{langpack_id.lower()}",
             description_suffix=f" - {langpack_metadata['description']}",
+            release_product=release_product,
         )
         _copy_plain_deb_config(template_dir, source_dir)
         _render_deb_templates(template_dir, source_dir, build_variables)
@@ -184,7 +196,43 @@ def _extract_application_ini_data(input_tar_file):
 
             tar.extract(application_ini_files[0], path=d)
 
-        return _extract_application_ini_data_from_directory(d)
+        application_ini_data = _extract_application_ini_data_from_directory(d)
+
+        return application_ini_data
+
+
+def _load_application_ini_data(infile, version, build_number):
+    extracted_application_ini_data = _extract_application_ini_data(infile)
+    parsed_application_ini_data = _parse_application_ini_data(
+        extracted_application_ini_data, version, build_number
+    )
+    return parsed_application_ini_data
+
+
+def _parse_application_ini_data(application_ini_data, version, build_number):
+    application_ini_data["timestamp"] = datetime.datetime.strptime(
+        application_ini_data["build_id"], "%Y%m%d%H%M%S"
+    )
+
+    application_ini_data["remoting_name"] = application_ini_data[
+        "remoting_name"
+    ].lower()
+
+    application_ini_data["deb_pkg_version"] = _get_deb_pkg_version(
+        version, application_ini_data["build_id"], build_number
+    )
+
+    return application_ini_data
+
+
+def _get_deb_pkg_version(version, build_id, build_number):
+    gecko_version = GeckoVersion.parse(version)
+    deb_pkg_version = (
+        f"{gecko_version}~{build_id}"
+        if gecko_version.is_nightly
+        else f"{gecko_version}~build{build_number}"
+    )
+    return deb_pkg_version
 
 
 def _extract_application_ini_data_from_directory(application_directory):
@@ -204,7 +252,6 @@ def _extract_application_ini_data_from_directory(application_directory):
         "remoting_name": next(values),
         "build_id": next(values),
     }
-    data["timestamp"] = datetime.datetime.strptime(data["build_id"], "%Y%m%d%H%M%S")
 
     return data
 
@@ -212,27 +259,23 @@ def _extract_application_ini_data_from_directory(application_directory):
 def _get_build_variables(
     application_ini_data,
     arch,
-    version_string,
-    build_number,
     depends,
     package_name_suffix="",
     description_suffix="",
+    release_product="",
 ):
-    version = GeckoVersion.parse(version_string)
-    # Nightlies don't have build numbers
-    deb_pkg_version = (
-        f"{version}~{application_ini_data['build_id']}"
-        if version.is_nightly
-        else f"{version}~build{build_number}"
-    )
-    remoting_name = application_ini_data["remoting_name"].lower()
-
+    if release_product == "devedition":
+        deb_pkg_install_path = "usr/lib/firefox-devedition"
+        deb_pkg_name = f"firefox-devedition{package_name_suffix}"
+    else:
+        deb_pkg_install_path = f"usr/lib/{application_ini_data['remoting_name']}"
+        deb_pkg_name = f"{application_ini_data['remoting_name']}{package_name_suffix}"
     return {
         "DEB_DESCRIPTION": f"{application_ini_data['vendor']} {application_ini_data['display_name']}"
         f"{description_suffix}",
-        "DEB_PKG_INSTALL_PATH": f"usr/lib/{remoting_name}",
-        "DEB_PKG_NAME": f"{remoting_name}{package_name_suffix}",
-        "DEB_PKG_VERSION": deb_pkg_version,
+        "DEB_PKG_INSTALL_PATH": deb_pkg_install_path,
+        "DEB_PKG_NAME": deb_pkg_name,
+        "DEB_PKG_VERSION": application_ini_data["deb_pkg_version"],
         "DEB_CHANGELOG_DATE": format_datetime(application_ini_data["timestamp"]),
         "DEB_ARCH_NAME": _DEB_ARCH[arch],
         "DEB_DEPENDS": depends,
@@ -367,23 +410,14 @@ def _create_fluent_localizations(
         )
         if locale == "en-US":
             en_US_desktop_entry_fluent_filename = os.path.join(
-                "browser/locales/en-US/browser", desktop_entry_fluent_filename
+                "browser", "locales", "en-US", "browser", desktop_entry_fluent_filename
             )
             shutil.copyfile(
                 en_US_desktop_entry_fluent_filename,
                 localized_desktop_entry_filename,
             )
         else:
-            non_en_US_desktop_entry_fluent_filename = os.path.join(
-                "browser/browser", desktop_entry_fluent_filename
-            )
-            non_en_US_fluent_resource_file_url = os.path.join(
-                l10n_central_url,
-                locale,
-                "raw-file",
-                linux_l10n_changesets[locale]["revision"],
-                non_en_US_desktop_entry_fluent_filename,
-            )
+            non_en_US_fluent_resource_file_url = f"{l10n_central_url}/{locale}/raw-file/{linux_l10n_changesets[locale]['revision']}/browser/browser/{desktop_entry_fluent_filename}"
             response = requests.get(non_en_US_fluent_resource_file_url)
             response = retry(
                 requests.get,

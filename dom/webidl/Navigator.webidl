@@ -28,7 +28,13 @@ interface URI;
 
 // https://html.spec.whatwg.org/#the-navigator-object
 [HeaderFile="Navigator.h",
- Exposed=Window]
+ Exposed=Window,
+ InstrumentedProps=(canShare,
+                    clearAppBadge,
+                    setAppBadge,
+                    share,
+                    userActivation,
+                    wakeLock)]
 interface Navigator {
   // objects implementing this interface also implement the interfaces given below
 };
@@ -366,4 +372,9 @@ partial interface Navigator {
 
   [Pref="dom.media.autoplay-policy-detection.enabled"]
   AutoplayPolicy getAutoplayPolicy(AudioContext context);
+};
+
+// https://html.spec.whatwg.org/multipage/interaction.html#the-useractivation-interface
+partial interface Navigator {
+  [SameObject] readonly attribute UserActivation userActivation;
 };

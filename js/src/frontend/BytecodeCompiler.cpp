@@ -27,8 +27,8 @@
 #include "frontend/UsedNameTracker.h"  // UsedNameTracker, UsedNameMap
 #include "js/AllocPolicy.h"        // js::SystemAllocPolicy, ReportOutOfMemory
 #include "js/CharacterEncoding.h"  // JS_EncodeStringToUTF8
-#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberZeroOrigin, JS::ColumnNumberZeroOrigin
-#include "js/ErrorReport.h"  // JS_ReportErrorASCII
+#include "js/ColumnNumber.h"       // JS::ColumnNumberOneOrigin
+#include "js/ErrorReport.h"        // JS_ReportErrorASCII
 #include "js/experimental/JSStencil.h"
 #include "js/GCVector.h"    // JS::StackGCVector
 #include "js/Id.h"          // JS::PropertyKey
@@ -327,7 +327,8 @@ template <typename Unit>
 
   SourceExtent extent = SourceExtent::makeGlobalExtent(
       srcBuf.length(), input.options.lineno,
-      JS::LimitedColumnNumberZeroOrigin::fromUnlimited(input.options.column));
+      JS::LimitedColumnNumberOneOrigin::fromUnlimited(
+          JS::ColumnNumberOneOrigin(input.options.column)));
 
   GlobalSharedContext globalsc(fc, scopeKind, input.options,
                                compiler.compilationState().directives, extent);
@@ -700,7 +701,8 @@ static JSScript* CompileEvalScriptImpl(
     uint32_t len = srcBuf.length();
     SourceExtent extent = SourceExtent::makeGlobalExtent(
         len, options.lineno,
-        JS::LimitedColumnNumberZeroOrigin::fromUnlimited(options.column));
+        JS::LimitedColumnNumberOneOrigin::fromUnlimited(
+            JS::ColumnNumberOneOrigin(options.column)));
     EvalSharedContext evalsc(&fc, compiler.compilationState(), extent);
     if (!compiler.compile(cx, &evalsc)) {
       return nullptr;
@@ -958,9 +960,9 @@ bool ScriptCompiler<Unit>::compile(JSContext* maybeCx, SharedContext* sc) {
                           JS::ProfilingCategoryPair::JS_Parsing);
     }
     if (sc->isEvalContext()) {
-      pn = parser->evalBody(sc->asEvalContext());
+      pn = parser->evalBody(sc->asEvalContext()).unwrapOr(nullptr);
     } else {
-      pn = parser->globalBody(sc->asGlobalContext());
+      pn = parser->globalBody(sc->asGlobalContext()).unwrapOr(nullptr);
     }
   }
 
@@ -1018,10 +1020,11 @@ bool ModuleCompiler<Unit>::compile(JSContext* maybeCx, FrontendContext* fc) {
   uint32_t len = this->sourceBuffer_.length();
   SourceExtent extent = SourceExtent::makeGlobalExtent(
       len, options.lineno,
-      JS::LimitedColumnNumberZeroOrigin::fromUnlimited(options.column));
+      JS::LimitedColumnNumberOneOrigin::fromUnlimited(
+          JS::ColumnNumberOneOrigin(options.column)));
   ModuleSharedContext modulesc(fc, options, builder, extent);
 
-  ParseNode* pn = parser->moduleBody(&modulesc);
+  ParseNode* pn = parser->moduleBody(&modulesc).unwrapOr(nullptr);
   if (!pn) {
     return false;
   }
@@ -1064,9 +1067,11 @@ FunctionNode* StandaloneFunctionCompiler<Unit>::parse(
   FunctionNode* fn;
   for (;;) {
     Directives newDirectives = compilationState_.directives;
-    fn = parser->standaloneFunction(parameterListEnd, syntaxKind, generatorKind,
-                                    asyncKind, compilationState_.directives,
-                                    &newDirectives);
+    fn = parser
+             ->standaloneFunction(parameterListEnd, syntaxKind, generatorKind,
+                                  asyncKind, compilationState_.directives,
+                                  &newDirectives)
+             .unwrapOr(nullptr);
     if (fn) {
       break;
     }
@@ -1111,13 +1116,13 @@ bool StandaloneFunctionCompiler<Unit>::compile(
     // line and column.
     const auto& options = compilationState_.input.options;
     compilationState_.scriptExtra[CompilationStencil::TopLevelIndex].extent =
-        SourceExtent{
-            /* sourceStart = */ 0,
-            sourceBuffer_.length(),
-            funbox->extent().toStringStart,
-            funbox->extent().toStringEnd,
-            options.lineno,
-            JS::LimitedColumnNumberZeroOrigin::fromUnlimited(options.column)};
+        SourceExtent{/* sourceStart = */ 0,
+                     sourceBuffer_.length(),
+                     funbox->extent().toStringStart,
+                     funbox->extent().toStringEnd,
+                     options.lineno,
+                     JS::LimitedColumnNumberOneOrigin::fromUnlimited(
+                         JS::ColumnNumberOneOrigin(options.column))};
   } else {
     // The asm.js module was created by parser. Instantiation below will
     // allocate the JSFunction that wraps it.
@@ -1444,9 +1449,12 @@ static bool CompileLazyFunctionToStencilMaybeInstantiate(
     return false;
   }
 
-  FunctionNode* pn = parser.standaloneLazyFunction(
-      input, input.extent().toStringStart, input.strict(),
-      input.generatorKind(), input.asyncKind());
+  FunctionNode* pn =
+      parser
+          .standaloneLazyFunction(input, input.extent().toStringStart,
+                                  input.strict(), input.generatorKind(),
+                                  input.asyncKind())
+          .unwrapOr(nullptr);
   if (!pn) {
     return false;
   }
@@ -1574,7 +1582,7 @@ static bool DelazifyCanonicalScriptedFunctionImpl(JSContext* cx,
   JS::CompileOptions options(cx);
   options.setMutedErrors(lazy->mutedErrors())
       .setFileAndLine(lazy->filename(), lazy->lineno())
-      .setColumn(JS::ColumnNumberZeroOrigin(lazy->column()))
+      .setColumn(JS::ColumnNumberOneOrigin(lazy->column()))
       .setScriptSourceOffset(lazy->sourceStart())
       .setNoScriptRval(false)
       .setSelfHostingMode(false)
@@ -1650,7 +1658,7 @@ DelazifyCanonicalScriptedFunctionImpl(
   JS::CompileOptions options(prefableOptions);
   options.setMutedErrors(ss->mutedErrors())
       .setFileAndLine(ss->filename(), extra.extent.lineno)
-      .setColumn(JS::ColumnNumberZeroOrigin(extra.extent.column))
+      .setColumn(JS::ColumnNumberOneOrigin(extra.extent.column))
       .setScriptSourceOffset(sourceStart)
       .setNoScriptRval(false)
       .setSelfHostingMode(false);

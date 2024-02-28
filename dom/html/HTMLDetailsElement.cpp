@@ -46,13 +46,22 @@ void HTMLDetailsElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
     bool wasOpen = !!aOldValue;
     bool isOpen = !!aValue;
     if (wasOpen != isOpen) {
+      auto stringForState = [](bool aOpen) {
+        return aOpen ? u"open"_ns : u"closed"_ns;
+      };
+      nsAutoString oldState;
       if (mToggleEventDispatcher) {
+        oldState.Truncate();
+        static_cast<ToggleEvent*>(mToggleEventDispatcher->mEvent.get())
+            ->GetOldState(oldState);
         mToggleEventDispatcher->Cancel();
+      } else {
+        oldState.Assign(stringForState(wasOpen));
       }
-      // According to the html spec, a 'toggle' event is a simple event which
-      // does not bubble.
+      RefPtr<ToggleEvent> toggleEvent = CreateToggleEvent(
+          u"toggle"_ns, oldState, stringForState(isOpen), Cancelable::eNo);
       mToggleEventDispatcher =
-          new AsyncEventDispatcher(this, u"toggle"_ns, CanBubble::eNo);
+          new AsyncEventDispatcher(this, toggleEvent.forget());
       mToggleEventDispatcher->PostDOMEvent();
     }
   }
@@ -132,6 +141,22 @@ void HTMLDetailsElement::AsyncEventRunning(AsyncEventDispatcher* aEvent) {
 JSObject* HTMLDetailsElement::WrapNode(JSContext* aCx,
                                        JS::Handle<JSObject*> aGivenProto) {
   return HTMLDetailsElement_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+void HTMLDetailsElement::HandleInvokeInternal(nsAtom* aAction,
+                                              ErrorResult& aRv) {
+  if (nsContentUtils::EqualsIgnoreASCIICase(aAction, nsGkAtoms::_auto) ||
+      nsContentUtils::EqualsIgnoreASCIICase(aAction, nsGkAtoms::toggle)) {
+    ToggleOpen();
+  } else if (nsContentUtils::EqualsIgnoreASCIICase(aAction, nsGkAtoms::close)) {
+    if (Open()) {
+      SetOpen(false, IgnoreErrors());
+    }
+  } else if (nsContentUtils::EqualsIgnoreASCIICase(aAction, nsGkAtoms::open)) {
+    if (!Open()) {
+      SetOpen(true, IgnoreErrors());
+    }
+  }
 }
 
 }  // namespace mozilla::dom

@@ -47,6 +47,7 @@ interface nsIPrintSettings;
                     ClipboardItem,
                     CSSImageValue,
                     CSSKeywordValue,
+                    CSSMathClamp,
                     CSSMathInvert,
                     CSSMathMax,
                     CSSMathMin,
@@ -59,6 +60,7 @@ interface nsIPrintSettings;
                     CSSNumericValue,
                     CSSPerspective,
                     CSSPositionValue,
+                    CSSPropertyRule,
                     CSSRotate,
                     CSSScale,
                     CSSSkew,
@@ -80,6 +82,7 @@ interface nsIPrintSettings;
                     DeviceMotionEventAcceleration,
                     DeviceMotionEventRotationRate,
                     DOMError,
+                    EncodedVideoChunk,
                     EnterPictureInPictureEvent,
                     External,
                     FederatedCredential,
@@ -106,9 +109,11 @@ interface nsIPrintSettings;
                     onbeforeinstallprompt,
                     oncancel,
                     onmousewheel,
+                    onorientationchange,
                     onsearch,
                     onselectionchange,
                     openDatabase,
+                    orientation,
                     OrientationSensor,
                     OverconstrainedError,
                     PasswordCredential,
@@ -121,6 +126,7 @@ interface nsIPrintSettings;
                     PaymentResponse,
                     PerformanceLongTaskTiming,
                     PhotoCapabilities,
+                    PictureInPictureEvent,
                     PictureInPictureWindow,
                     Presentation,
                     PresentationAvailability,
@@ -132,12 +138,18 @@ interface nsIPrintSettings;
                     PresentationRequest,
                     RelativeOrientationSensor,
                     RemotePlayback,
+                    Report,
+                    ReportBody,
                     ReportingObserver,
                     RTCError,
                     RTCErrorEvent,
                     RTCIceTransport,
+                    RTCPeerConnectionIceErrorEvent,
                     Sensor,
                     SensorErrorEvent,
+                    SpeechRecognitionAlternative,
+                    SpeechRecognitionResult,
+                    SpeechRecognitionResultList,
                     styleMedia,
                     StylePropertyMap,
                     StylePropertyMapReadOnly,
@@ -162,6 +174,12 @@ interface nsIPrintSettings;
                     USBIsochronousOutTransferResult,
                     USBOutTransferResult,
                     UserActivation,
+                    VideoColorSpace,
+                    VideoDecoder,
+                    VideoEncoder,
+                    VideoFrame,
+                    WakeLock,
+                    WakeLockSentinel,
                     webkitCancelAnimationFrame,
                     webkitMediaStream,
                     WebKitMutationObserver,
@@ -296,10 +314,8 @@ dictionary ScrollToOptions : ScrollOptions {
 partial interface Window {
   //[Throws, NewObject, NeedsCallerType] MediaQueryList matchMedia(DOMString query);
   [Throws, NewObject, NeedsCallerType] MediaQueryList? matchMedia(UTF8String query);
-  // Per spec, screen is SameObject, but we don't actually guarantee that given
-  // nsGlobalWindow::Cleanup.  :(
-  //[SameObject, Replaceable, Throws] readonly attribute Screen screen;
-  [Replaceable, Throws] readonly attribute Screen screen;
+
+  [SameObject, Replaceable] readonly attribute Screen screen;
 
   // browsing context
   //[Throws] undefined moveTo(double x, double y);
@@ -538,6 +554,14 @@ partial interface Window {
    */
   [ChromeOnly]
   readonly attribute Principal? clientPrincipal;
+
+  /**
+   *  Whether the chrome window is currently in a full screen transition. This
+   *  flag is updated from FullscreenTransitionTask.
+   *  Always set to false for non-chrome windows.
+   */
+  [ChromeOnly]
+  readonly attribute boolean isInFullScreenTransition;
 };
 
 Window includes TouchEventHandlers;

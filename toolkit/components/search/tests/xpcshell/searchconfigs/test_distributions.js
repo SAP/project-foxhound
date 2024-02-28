@@ -4,32 +4,10 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
   SearchService: "resource://gre/modules/SearchService.sys.mjs",
 });
 
 const tests = [];
-
-// Bing should be default everywhere for Acer
-for (let [locale, region] of [
-  ["en-US", "US"],
-  ["pl", "PL"],
-  ["be", "BY"],
-  ["ru", "RU"],
-  ["zh-CN", "CN"],
-]) {
-  for (let distribution of ["acer-003", "acer-004"]) {
-    tests.push({
-      distribution,
-      locale,
-      region,
-      test: engines =>
-        hasParams(engines, "Bing", "searchbar", "pc=MOZX") &&
-        hasDefault(engines, "Bing") &&
-        hasEnginesFirst(engines, ["Bing"]),
-    });
-  }
-}
 
 for (let canonicalId of ["canonical", "canonical-001"]) {
   tests.push({
@@ -78,12 +56,6 @@ tests.push({
   region: "CN",
   distribution: "MozillaOnline",
   test: engines =>
-    hasParams(engines, "亚马逊", "searchbar", "ie=UTF8") &&
-    hasParams(engines, "亚马逊", "suggestions", "tag=mozilla") &&
-    hasParams(engines, "亚马逊", "homepage", "camp=536") &&
-    hasParams(engines, "亚马逊", "homepage", "creative=3200") &&
-    hasParams(engines, "亚马逊", "homepage", "index=aps") &&
-    hasParams(engines, "亚马逊", "homepage", "linkCode=ur2") &&
     hasEnginesFirst(engines, ["百度", "Bing", "Google", "亚马逊", "维基百科"]),
 });
 
@@ -118,77 +90,6 @@ tests.push({
   test: engines =>
     hasParams(engines, "Qwant Junior", "searchbar", "client=firefoxqwant"),
 });
-
-tests.push({
-  locale: "cs",
-  distribution: "seznam",
-  test: engines =>
-    hasParams(engines, "Seznam", "searchbar", "sourceid=FF_3") &&
-    hasDefault(engines, "Seznam") &&
-    hasEnginesFirst(engines, ["Seznam"]),
-});
-
-for (const locale of ["en-US", "en-GB", "fr", "de"]) {
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-oem1",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL01") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-r-oem1",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL01") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-oem2",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL02") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-r-oem2",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL02") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-oem3",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL03") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-
-  tests.push({
-    locale,
-    distribution: "sweetlabs-b-r-oem3",
-    test: engines =>
-      hasParams(engines, "Bing", "searchbar", "pc=MZSL03") &&
-      hasParams(engines, "Bing", "searchbar", "ptag=MOZZ0000000020") &&
-      hasDefault(engines, "Bing") &&
-      hasEnginesFirst(engines, ["Bing"]),
-  });
-}
 
 for (const locale of ["en-US", "de"]) {
   tests.push({
@@ -401,18 +302,21 @@ function hasEnginesFirst(engines, expectedEngines) {
   }
 }
 
-engineSelector = new SearchEngineSelector();
-
-AddonTestUtils.init(GLOBAL_SCOPE);
-AddonTestUtils.createAppInfo(
-  "xpcshell@tests.mozilla.org",
-  "XPCShell",
-  "42",
-  "42"
-);
+engineSelector = SearchUtils.newSearchConfigEnabled
+  ? new SearchEngineSelector()
+  : new SearchEngineSelectorOld();
 
 add_setup(async function () {
-  await AddonTestUtils.promiseStartupManager();
+  if (!SearchUtils.newSearchConfigEnabled) {
+    AddonTestUtils.init(GLOBAL_SCOPE);
+    AddonTestUtils.createAppInfo(
+      "xpcshell@tests.mozilla.org",
+      "XPCShell",
+      "42",
+      "42"
+    );
+    await AddonTestUtils.promiseStartupManager();
+  }
 
   await maybeSetupConfig();
 });

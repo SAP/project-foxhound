@@ -698,15 +698,6 @@ public class Tokenizer implements Locator, Locator2 {
     }
 
     /**
-     * Gets the errorProfile.
-     *
-     * @param errorProfile
-     */
-    public HashMap getErrorProfile() {
-        return null;
-    }
-
-    /**
      * Sets the commentPolicy.
      *
      * @param commentPolicy
@@ -795,7 +786,7 @@ public class Tokenizer implements Locator, Locator2 {
         }
         @Auto char[] asArray = Portability.newCharArrayFromLocal(endTagExpectation);
         this.endTagExpectation = ElementName.elementNameByBuffer(asArray,
-                asArray.length, interner);
+                asArray.length);
         assert this.endTagExpectation != null;
         endTagExpectationToArray();
     }
@@ -1236,7 +1227,7 @@ public class Tokenizer implements Locator, Locator2 {
                 tagName = nonInternedTagName;
             }
         } else {
-            tagName = ElementName.elementNameByBuffer(strBuf, strBufLen, interner);
+            tagName = ElementName.elementNameByBuffer(strBuf, strBufLen);
             if (tagName == null) {
                 nonInternedTagName.setNameForNonInterned(Portability.newLocalNameFromBuffer(strBuf, strBufLen,
                     interner)
@@ -1410,9 +1401,19 @@ public class Tokenizer implements Locator, Locator2 {
     public void start() throws SAXException {
         initializeWithoutStarting();
         tokenHandler.startTokenization(this);
-        // CPPONLY: line = 0;
-        // CPPONLY: col = 1;
-        // CPPONLY: nextCharOnNewLine = true;
+        // CPPONLY: if (mViewSource) {
+        // CPPONLY:   line = 1;
+        // CPPONLY:   col = -1;
+        // CPPONLY:   nextCharOnNewLine = false;
+        // CPPONLY: } else if (tokenHandler.WantsLineAndColumn()) {
+        // CPPONLY:   line = 0;
+        // CPPONLY:   col = 1;
+        // CPPONLY:   nextCharOnNewLine = true;
+        // CPPONLY: } else {
+        // CPPONLY:   line = -1;
+        // CPPONLY:   col = -1;
+        // CPPONLY:   nextCharOnNewLine = false;
+        // CPPONLY: }
         // [NOCPP[
         startErrorReporting();
         // ]NOCPP]
@@ -1478,6 +1479,8 @@ public class Tokenizer implements Locator, Locator2 {
         // CPPONLY:   mViewSource.SetBuffer(buffer);
         // CPPONLY:   pos = stateLoop(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
         // CPPONLY:   mViewSource.DropBuffer((pos == buffer.getEnd()) ? pos : pos + 1);
+        // CPPONLY: } else if (tokenHandler.WantsLineAndColumn()) {
+        // CPPONLY:   pos = stateLoop(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
         // CPPONLY: } else {
         // CPPONLY:   pos = stateLoop(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
         // CPPONLY: }
@@ -6329,24 +6332,24 @@ public class Tokenizer implements Locator, Locator2 {
         forceQuirks = false;
     }
 
-    @Inline private void adjustDoubleHyphenAndAppendToStrBufCarriageReturn()
+    private void adjustDoubleHyphenAndAppendToStrBufCarriageReturn()
             throws SAXException {
         silentCarriageReturn();
         adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
     }
 
-    @Inline private void adjustDoubleHyphenAndAppendToStrBufLineFeed()
+    private void adjustDoubleHyphenAndAppendToStrBufLineFeed()
             throws SAXException {
         silentLineFeed();
         adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
     }
 
-    @Inline private void appendStrBufLineFeed() {
+    private void appendStrBufLineFeed() {
         silentLineFeed();
         appendStrBuf('\n');
     }
 
-    @Inline private void appendStrBufCarriageReturn() {
+    private void appendStrBufCarriageReturn() {
         silentCarriageReturn();
         appendStrBuf('\n');
     }

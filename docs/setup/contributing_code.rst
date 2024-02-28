@@ -157,7 +157,7 @@ stronger for it. But don't stop now.
 
 Go back to step 3, as there is plenty more to do. Your mentor might
 suggest a new bug for you to work on, or `find one that interests
-you <http://www.whatcanidoformozilla.org/>`_. Now that you've got your
+you <https://moztw.org/~petercpg/asknot/>`_. Now that you've got your
 first bug fixed you should request level 1 access to the repository to
 push to the try server and get automated feedback about your changes on
 multiple platforms. After fixing a nontrivial number of bugs you should
@@ -172,10 +172,5 @@ to the project. We'll be integrating some information from these pages
 soon, but until then you may find them interesting in their current
 form:
 
--  `A guide to learning the Firefox
-   codebase <http://www.joshmatthews.net/blog/2010/03/getting-involve-with-mozilla/>`_
 -  `A beginner's guide to SpiderMonkey, Mozilla's Javascript
    engine <https://wiki.mozilla.org/JavaScript:New_to_SpiderMonkey>`_
--  `Mozilla platform development
-   cheatsheet <https://web.archive.org/web/20160813112326/http://www.codefirefox.com:80/cheatsheet>`_
-   (archive.org)

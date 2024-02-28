@@ -1365,7 +1365,8 @@ export class ExtensionData {
     let { manifest } = this;
     if (
       !manifest.background ||
-      manifest.background.service_worker ||
+      (manifest.background.service_worker &&
+        WebExtensionPolicy.backgroundServiceWorkerEnabled) ||
       this.manifestVersion > 2
     ) {
       return false;
@@ -2339,8 +2340,6 @@ export class ExtensionData {
    * @param {boolean} options.buildOptionalOrigins
    *                  Wether to build optional origins Maps for permission
    *                  controls.  Defaults to false.
-   * @param {Localization} options.localization
-   *                       Optional custom localization instance.
    *
    * @returns {object} An object with properties containing localized strings
    *                   for various elements of a permission dialog. The "header"
@@ -2367,9 +2366,9 @@ export class ExtensionData {
       type,
       unsigned,
     },
-    { collapseOrigins = false, buildOptionalOrigins = false, localization } = {}
+    { collapseOrigins = false, buildOptionalOrigins = false } = {}
   ) {
-    const l10n = localization ?? lazy.PERMISSION_L10N;
+    const l10n = lazy.PERMISSION_L10N;
 
     const msgIds = [];
     const headerArgs = { extension: "<>" };

@@ -19,7 +19,7 @@
 #include <stdint.h>  // uint16_t, uint32_t
 
 #include "frontend/AbstractScopePtr.h"  // ScopeIndex
-#include "frontend/BytecodeSection.h"  // BytecodeSection, PerScriptData, CGScopeList
+#include "frontend/BytecodeSection.h"  // BytecodeSection, PerScriptData, GCThingList
 #include "frontend/DestructuringFlavor.h"  // DestructuringFlavor
 #include "frontend/EitherParser.h"         // EitherParser
 #include "frontend/IteratorKind.h"         // IteratorKind
@@ -34,7 +34,7 @@
 #include "frontend/SourceNotes.h"          // SrcNoteType
 #include "frontend/ValueUsage.h"           // ValueUsage
 #include "js/AllocPolicy.h"                // ReportOutOfMemory
-#include "js/ColumnNumber.h"               // JS::LimitedColumnNumberZeroOrigin
+#include "js/ColumnNumber.h"               // JS::LimitedColumnNumberOneOrigin
 #include "js/TypeDecls.h"                  // jsbytecode
 #include "vm/BuiltinObjectKind.h"          // BuiltinObjectKind
 #include "vm/CheckIsObjectKind.h"          // CheckIsObjectKind
@@ -495,9 +495,9 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   [[nodiscard]] bool newSrcNote2(SrcNoteType type, ptrdiff_t operand,
                                  unsigned* indexp = nullptr);
   [[nodiscard]] bool convertLastNewLineToNewLineColumn(
-      JS::LimitedColumnNumberZeroOrigin column);
+      JS::LimitedColumnNumberOneOrigin column);
   [[nodiscard]] bool convertLastSetLineToSetLineColumn(
-      JS::LimitedColumnNumberZeroOrigin column);
+      JS::LimitedColumnNumberOneOrigin column);
 
   [[nodiscard]] bool newSrcNoteOperand(ptrdiff_t operand);
 
@@ -519,7 +519,7 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // encompasses the entire source.
   [[nodiscard]] bool emitScript(ParseNode* body);
 
-  // Calculate the `nslots` value for BCEScriptStencil constructor parameter.
+  // Calculate the `nslots` value for ImmutableScriptData constructor parameter.
   // Fails if it overflows.
   [[nodiscard]] bool getNslots(uint32_t* nslots);
 
@@ -655,7 +655,7 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
 
   [[nodiscard]] bool emitObjLiteralArray(ListNode* array);
 
-  // Is a field value OBJLITERAL-compatible?
+  // Is a field value JSOp::Object-compatible?
   [[nodiscard]] bool isRHSObjLiteralCompatible(ParseNode* value);
 
   [[nodiscard]] bool emitObjLiteralValue(ObjLiteralWriter& writer,
@@ -1035,7 +1035,7 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   [[nodiscard]] bool emitSuperGetElem(PropertyByValue* elem,
                                       bool isCall = false);
 
-  [[nodiscard]] bool emitCalleeAndThis(ParseNode* callee, CallNode* call,
+  [[nodiscard]] bool emitCalleeAndThis(ParseNode* callee, CallNode* maybeCall,
                                        CallOrNewEmitter& cone);
 
   [[nodiscard]] bool emitOptionalCalleeAndThis(ParseNode* callee,

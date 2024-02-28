@@ -43,6 +43,14 @@ const EXTENSION_ID1 = "@test-extension1";
 const EXTENSION_ID2 = "@test-extension2";
 
 async function test_telemetry_background() {
+  const { GleanTimingDistribution } = globalThis;
+  const expectedEmptyGleanMetrics = ExtensionStorageIDB.isBackendEnabled
+    ? ["storageLocalGetJson", "storageLocalSetJson"]
+    : ["storageLocalGetIdb", "storageLocalSetIdb"];
+  const expectedNonEmptyGleanMetrics = ExtensionStorageIDB.isBackendEnabled
+    ? ["storageLocalGetIdb", "storageLocalSetIdb"]
+    : ["storageLocalGetJson", "storageLocalSetJson"];
+
   const expectedEmptyHistograms = ExtensionStorageIDB.isBackendEnabled
     ? HISTOGRAM_JSON_IDS
     : HISTOGRAM_IDB_IDS;
@@ -108,8 +116,23 @@ async function test_telemetry_background() {
     },
   });
 
-  clearHistograms();
+  // Make sure to force flushing glean fog data from child processes before
+  // resetting the already collected data.
+  await Services.fog.testFlushAllChildren();
+  resetTelemetryData();
 
+  // Verify the telemetry data has been cleared.
+
+  // Assert glean telemetry data.
+  for (let metricId of expectedNonEmptyGleanMetrics) {
+    assertGleanMetricsNoSamples({
+      metricId,
+      gleanMetric: Glean.extensionsTiming[metricId],
+      gleanMetricConstructor: GleanTimingDistribution,
+    });
+  }
+
+  // Assert unified telemetry data.
   let process = IS_OOP ? "extension" : "parent";
   let snapshots = getSnapshots(process);
   let keyedSnapshots = getKeyedSnapshots(process);
@@ -128,135 +151,197 @@ async function test_telemetry_background() {
 
   await extension1.startup();
   await extension1.awaitMessage("backgroundDone");
-  for (let id of expectedNonEmptyHistograms) {
-    await promiseTelemetryRecorded(id, process, 1);
-  }
-  for (let id of expectedNonEmptyKeyedHistograms) {
-    await promiseKeyedTelemetryRecorded(id, process, EXTENSION_ID1, 1);
-  }
 
-  // Telemetry from extension1's background page should be recorded.
-  snapshots = getSnapshots(process);
-  keyedSnapshots = getKeyedSnapshots(process);
-
-  for (let id of expectedNonEmptyHistograms) {
-    equal(
-      valueSum(snapshots[id].values),
-      1,
-      `Data recorded for histogram: ${id}.`
-    );
+  // Assert glean telemetry data.
+  await Services.fog.testFlushAllChildren();
+  for (let metricId of expectedNonEmptyGleanMetrics) {
+    assertGleanMetricsSamplesCount({
+      metricId,
+      gleanMetric: Glean.extensionsTiming[metricId],
+      gleanMetricConstructor: GleanTimingDistribution,
+      expectedSamplesCount: 1,
+    });
   }
 
-  for (let id of expectedNonEmptyKeyedHistograms) {
-    Assert.deepEqual(
-      Object.keys(keyedSnapshots[id]),
-      [EXTENSION_ID1],
-      `Data recorded for histogram: ${id}.`
-    );
-    equal(
-      valueSum(keyedSnapshots[id][EXTENSION_ID1].values),
-      1,
-      `Data recorded for histogram: ${id}.`
-    );
+  // Assert unified telemetry data.
+  if (AppConstants.platform != "android") {
+    for (let id of expectedNonEmptyHistograms) {
+      await promiseTelemetryRecorded(id, process, 1);
+    }
+    for (let id of expectedNonEmptyKeyedHistograms) {
+      await promiseKeyedTelemetryRecorded(id, process, EXTENSION_ID1, 1);
+    }
+
+    // Telemetry from extension1's background page should be recorded.
+    snapshots = getSnapshots(process);
+    keyedSnapshots = getKeyedSnapshots(process);
+
+    for (let id of expectedNonEmptyHistograms) {
+      equal(
+        valueSum(snapshots[id].values),
+        1,
+        `Data recorded for histogram: ${id}.`
+      );
+    }
+
+    for (let id of expectedNonEmptyKeyedHistograms) {
+      Assert.deepEqual(
+        Object.keys(keyedSnapshots[id]),
+        [EXTENSION_ID1],
+        `Data recorded for histogram: ${id}.`
+      );
+      equal(
+        valueSum(keyedSnapshots[id][EXTENSION_ID1].values),
+        1,
+        `Data recorded for histogram: ${id}.`
+      );
+    }
   }
 
   await extension2.startup();
   await extension2.awaitMessage("backgroundDone");
 
-  for (let id of expectedNonEmptyHistograms) {
-    await promiseTelemetryRecorded(id, process, 2);
-  }
-  for (let id of expectedNonEmptyKeyedHistograms) {
-    await promiseKeyedTelemetryRecorded(id, process, EXTENSION_ID2, 1);
-  }
-
-  // Telemetry from extension2's background page should be recorded.
-  snapshots = getSnapshots(process);
-  keyedSnapshots = getKeyedSnapshots(process);
-
-  for (let id of expectedNonEmptyHistograms) {
-    equal(
-      valueSum(snapshots[id].values),
-      2,
-      `Additional data recorded for histogram: ${id}.`
-    );
+  // Assert glean telemetry data.
+  await Services.fog.testFlushAllChildren();
+  for (let metricId of expectedNonEmptyGleanMetrics) {
+    assertGleanMetricsSamplesCount({
+      metricId,
+      gleanMetric: Glean.extensionsTiming[metricId],
+      gleanMetricConstructor: GleanTimingDistribution,
+      expectedSamplesCount: 2,
+    });
   }
 
-  for (let id of expectedNonEmptyKeyedHistograms) {
-    Assert.deepEqual(
-      Object.keys(keyedSnapshots[id]).sort(),
-      [EXTENSION_ID1, EXTENSION_ID2],
-      `Additional data recorded for histogram: ${id}.`
-    );
-    equal(
-      valueSum(keyedSnapshots[id][EXTENSION_ID2].values),
-      1,
-      `Additional data recorded for histogram: ${id}.`
-    );
+  // Assert unified telemetry data.
+  if (AppConstants.platform != "android") {
+    for (let id of expectedNonEmptyHistograms) {
+      await promiseTelemetryRecorded(id, process, 2);
+    }
+    for (let id of expectedNonEmptyKeyedHistograms) {
+      await promiseKeyedTelemetryRecorded(id, process, EXTENSION_ID2, 1);
+    }
+
+    // Telemetry from extension2's background page should be recorded.
+    snapshots = getSnapshots(process);
+    keyedSnapshots = getKeyedSnapshots(process);
+
+    for (let id of expectedNonEmptyHistograms) {
+      equal(
+        valueSum(snapshots[id].values),
+        2,
+        `Additional data recorded for histogram: ${id}.`
+      );
+    }
+
+    for (let id of expectedNonEmptyKeyedHistograms) {
+      Assert.deepEqual(
+        Object.keys(keyedSnapshots[id]).sort(),
+        [EXTENSION_ID1, EXTENSION_ID2],
+        `Additional data recorded for histogram: ${id}.`
+      );
+      equal(
+        valueSum(keyedSnapshots[id][EXTENSION_ID2].values),
+        1,
+        `Additional data recorded for histogram: ${id}.`
+      );
+    }
   }
 
   await extension2.unload();
 
+  await Services.fog.testFlushAllChildren();
+  resetTelemetryData();
+
   // Run a content script.
-  process = IS_OOP ? "content" : "parent";
-  let expectedCount = IS_OOP ? 1 : 3;
-  let expectedKeyedCount = IS_OOP ? 1 : 2;
+  process = "content";
+  // Expect only telemetry for the single extension content script
+  // that should be executed when loading the test webpage.
+  let expectedCount = 1;
+  let expectedKeyedCount = 1;
 
   let contentPage = await ExtensionTestUtils.loadContentPage(
     `${BASE_URL}/file_sample.html`
   );
   await extension1.awaitMessage("contentDone");
 
-  for (let id of expectedNonEmptyHistograms) {
-    await promiseTelemetryRecorded(id, process, expectedCount);
-  }
-  for (let id of expectedNonEmptyKeyedHistograms) {
-    await promiseKeyedTelemetryRecorded(
-      id,
-      process,
-      EXTENSION_ID1,
-      expectedKeyedCount
-    );
-  }
-
-  // Telemetry from extension1's content script should be recorded.
-  snapshots = getSnapshots(process);
-  keyedSnapshots = getKeyedSnapshots(process);
-
-  for (let id of expectedNonEmptyHistograms) {
-    equal(
-      valueSum(snapshots[id].values),
-      expectedCount,
-      `Data recorded in content script for histogram: ${id}.`
-    );
+  // Assert glean telemetry data.
+  await Services.fog.testFlushAllChildren();
+  for (let metricId of expectedNonEmptyGleanMetrics) {
+    assertGleanMetricsSamplesCount({
+      metricId,
+      gleanMetric: Glean.extensionsTiming[metricId],
+      gleanMetricConstructor: GleanTimingDistribution,
+      expectedSamplesCount: expectedCount,
+    });
   }
 
-  for (let id of expectedNonEmptyKeyedHistograms) {
-    Assert.deepEqual(
-      Object.keys(keyedSnapshots[id]).sort(),
-      IS_OOP ? [EXTENSION_ID1] : [EXTENSION_ID1, EXTENSION_ID2],
-      `Additional data recorded for histogram: ${id}.`
-    );
-    equal(
-      valueSum(keyedSnapshots[id][EXTENSION_ID1].values),
-      expectedKeyedCount,
-      `Additional data recorded for histogram: ${id}.`
-    );
+  // Assert unified telemetry data.
+  if (AppConstants.platform != "android") {
+    for (let id of expectedNonEmptyHistograms) {
+      await promiseTelemetryRecorded(id, process, expectedCount);
+    }
+    for (let id of expectedNonEmptyKeyedHistograms) {
+      await promiseKeyedTelemetryRecorded(
+        id,
+        process,
+        EXTENSION_ID1,
+        expectedKeyedCount
+      );
+    }
+
+    // Telemetry from extension1's content script should be recorded.
+    snapshots = getSnapshots(process);
+    keyedSnapshots = getKeyedSnapshots(process);
+
+    for (let id of expectedNonEmptyHistograms) {
+      equal(
+        valueSum(snapshots[id].values),
+        expectedCount,
+        `Data recorded in content script for histogram: ${id}.`
+      );
+    }
+
+    for (let id of expectedNonEmptyKeyedHistograms) {
+      Assert.deepEqual(
+        Object.keys(keyedSnapshots[id]).sort(),
+        [EXTENSION_ID1],
+        `Additional data recorded for histogram: ${id}.`
+      );
+      equal(
+        valueSum(keyedSnapshots[id][EXTENSION_ID1].values),
+        expectedKeyedCount,
+        `Additional data recorded for histogram: ${id}.`
+      );
+    }
   }
 
   await extension1.unload();
 
-  // Telemetry for histograms that we expect to be empty.
-  for (let id of expectedEmptyHistograms) {
-    ok(!(id in snapshots), `No data recorded for histogram: ${id}.`);
+  // Telemetry that we expect to be empty.
+
+  // Assert glean telemetry data.
+  await Services.fog.testFlushAllChildren();
+  for (let metricId of expectedEmptyGleanMetrics) {
+    assertGleanMetricsNoSamples({
+      metricId,
+      gleanMetric: Glean.extensionsTiming[metricId],
+      gleanMetricConstructor: GleanTimingDistribution,
+    });
   }
 
-  for (let id of expectedEmptyKeyedHistograms) {
-    Assert.deepEqual(
-      Object.keys(keyedSnapshots[id] || {}),
-      [],
-      `No data recorded for histogram: ${id}.`
-    );
+  // Assert unified telemetry data.
+  if (AppConstants.platform != "android") {
+    for (let id of expectedEmptyHistograms) {
+      ok(!(id in snapshots), `No data recorded for histogram: ${id}.`);
+    }
+
+    for (let id of expectedEmptyKeyedHistograms) {
+      Assert.deepEqual(
+        Object.keys(keyedSnapshots[id] || {}),
+        [],
+        `No data recorded for histogram: ${id}.`
+      );
+    }
   }
 
   await contentPage.close();

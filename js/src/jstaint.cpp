@@ -248,11 +248,11 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
         hash = ss->md5Checksum(cx);
       }
       filename = JS_GetScriptFilename(i.script());
-      JS::LimitedColumnNumberZeroOrigin column;
+      JS::LimitedColumnNumberOneOrigin column;
       line = PCToLineNumber(i.script(), i.pc(), &column);
       pos = column.oneOriginValue();
     } else {
-      JS::TaggedColumnNumberZeroOrigin column;
+      JS::TaggedColumnNumberOneOrigin column;
       filename = i.filename();
       line = i.computeLine(&column);
       pos = column.oneOriginValue();
@@ -337,8 +337,10 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
     return;
 
   RootedValue name(cx);
-  if (function->displayAtom()) {
-    name = StringValue(function->displayAtom());
+
+  JS::Rooted<JSAtom*> atom(cx);
+  if (function->getDisplayAtom(cx, &atom)) {
+    name = StringValue(atom);
   }
 
   RootedFunction fun(cx, function);

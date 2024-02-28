@@ -1703,6 +1703,13 @@ void MessageChannel::DispatchMessage(ActorLifecycleProxy* aProxy,
 
   UniquePtr<Message> reply;
 
+#ifdef FUZZING_SNAPSHOT
+  if (IsCrossProcess()) {
+    aMsg = mozilla::fuzzing::IPCFuzzController::instance().replaceIPCMessage(
+        std::move(aMsg));
+  }
+#endif
+
   IPC_LOG("DispatchMessage: seqno=%d, xid=%d", aMsg->seqno(),
           aMsg->transaction_id());
   AddProfilerMarker(*aMsg, MessageDirection::eReceiving);
@@ -1735,6 +1742,12 @@ void MessageChannel::DispatchMessage(ActorLifecycleProxy* aProxy,
       reply = nullptr;
     }
   }
+
+#ifdef FUZZING_SNAPSHOT
+  if (aMsg->IsFuzzMsg()) {
+    mozilla::fuzzing::IPCFuzzController::instance().syncAfterReplace();
+  }
+#endif
 
   if (reply && ChannelConnected == mChannelState) {
     IPC_LOG("Sending reply seqno=%d, xid=%d", aMsg->seqno(),
@@ -1934,6 +1947,10 @@ void MessageChannel::ReportMessageRouteError(const char* channelName) const {
 bool MessageChannel::MaybeHandleError(Result code, const Message& aMsg,
                                       const char* channelName) {
   if (MsgProcessed == code) return true;
+
+#ifdef FUZZING_SNAPSHOT
+  mozilla::fuzzing::IPCFuzzController::instance().OnMessageError(code, aMsg);
+#endif
 
   const char* errorMsg = nullptr;
   switch (code) {

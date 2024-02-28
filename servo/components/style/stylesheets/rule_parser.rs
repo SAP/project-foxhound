@@ -477,7 +477,7 @@ impl NestedParseResult {
         lazy_static! {
             static ref AMPERSAND: SelectorList<SelectorImpl> = {
                 let list = SelectorList::ampersand();
-                list.0
+                list.slice()
                     .iter()
                     .for_each(|selector| selector.mark_as_intentionally_leaked());
                 list
@@ -572,7 +572,7 @@ impl<'a, 'i> NestedRuleParser<'a, 'i> {
         use cssparser::ToCss;
         debug_assert!(self.context.error_reporting_enabled());
         self.error_reporting_state.push(selectors.clone());
-        'selector_loop: for selector in selectors.0.iter() {
+        'selector_loop: for selector in selectors.slice().iter() {
             let mut current = selector.iter();
             loop {
                 let mut found_host = false;
@@ -774,13 +774,13 @@ impl<'a, 'i> AtRuleParser<'i> for NestedRuleParser<'a, 'i> {
                 })))
             },
             AtRulePrelude::Property(name) => self.nest_for_rule(CssRuleType::Property, |p| {
-                CssRule::Property(Arc::new(parse_property_block(
+                let rule_data = parse_property_block(
                     &p.context,
                     input,
                     name,
-                    start.source_location(),
-                )))
-            }),
+                    start.source_location())?;
+                Ok::<CssRule, ParseError<'i>>(CssRule::Property(Arc::new(rule_data)))
+            })?,
             AtRulePrelude::Document(condition) => {
                 if !cfg!(feature = "gecko") {
                     unreachable!()

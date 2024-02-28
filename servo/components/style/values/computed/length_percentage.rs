@@ -30,7 +30,7 @@ use crate::values::animated::{Animate, Procedure, ToAnimatedValue, ToAnimatedZer
 use crate::values::distance::{ComputeSquaredDistance, SquaredDistance};
 use crate::values::generics::calc::{CalcUnits, PositivePercentageBasis};
 use crate::values::generics::{calc, NonNegative};
-use crate::values::specified::length::FontBaseSize;
+use crate::values::specified::length::{FontBaseSize, LineHeightBase};
 use crate::values::{specified, CSSFloat};
 use crate::{Zero, ZeroNoPercent};
 use app_units::Au;
@@ -668,15 +668,22 @@ impl calc::CalcNodeLeaf for CalcLengthPercentageLeaf {
 
     fn compare(&self, other: &Self, basis: PositivePercentageBasis) -> Option<std::cmp::Ordering> {
         use self::CalcLengthPercentageLeaf::*;
+        if std::mem::discriminant(self) != std::mem::discriminant(other) {
+            return None;
+        }
         match (self, other) {
             (&Length(ref one), &Length(ref other)) => one.partial_cmp(other),
-            (&Percentage(ref one), &Percentage(ref other)) => {
-                match basis {
-                    PositivePercentageBasis::Yes => one.partial_cmp(other),
-                    PositivePercentageBasis::Unknown => None,
+            (&Percentage(ref one), &Percentage(ref other)) => match basis {
+                PositivePercentageBasis::Yes => one.partial_cmp(other),
+                PositivePercentageBasis::Unknown => None,
+            },
+            (&Number(ref one), &Number(ref other)) => one.partial_cmp(other),
+            _ => unsafe {
+                match *self {
+                    Length(..) | Percentage(..) | Number(..) => {},
                 }
-            }
-            _ => None,
+                debug_unreachable!("Forgot to handle unit in compare()")
+            },
         }
     }
 
@@ -693,6 +700,10 @@ impl calc::CalcNodeLeaf for CalcLengthPercentageLeaf {
             return Ok(());
         }
 
+        if std::mem::discriminant(self) != std::mem::discriminant(other) {
+            return Err(());
+        }
+
         match (self, other) {
             (&mut Length(ref mut one), &Length(ref other)) => {
                 *one += *other;
@@ -700,7 +711,15 @@ impl calc::CalcNodeLeaf for CalcLengthPercentageLeaf {
             (&mut Percentage(ref mut one), &Percentage(ref other)) => {
                 one.0 += other.0;
             },
-            _ => return Err(()),
+            (&mut Number(ref mut one), &Number(ref other)) => {
+                *one += *other;
+            },
+            _ => unsafe {
+                match *other {
+                    Length(..) | Percentage(..) | Number(..) => {},
+                }
+                debug_unreachable!("Forgot to handle unit in try_sum_in_place()")
+            },
         }
 
         Ok(())
@@ -734,33 +753,36 @@ impl calc::CalcNodeLeaf for CalcLengthPercentageLeaf {
     where
         O: Fn(f32, f32) -> f32,
     {
-        match (self, other) {
-            (
-                &CalcLengthPercentageLeaf::Length(ref one),
-                &CalcLengthPercentageLeaf::Length(ref other),
-            ) => Ok(CalcLengthPercentageLeaf::Length(Length::new(op(
-                one.px(),
-                other.px(),
-            )))),
-            (
-                &CalcLengthPercentageLeaf::Percentage(one),
-                &CalcLengthPercentageLeaf::Percentage(other),
-            ) => Ok(CalcLengthPercentageLeaf::Percentage(Percentage(op(
-                one.0, other.0,
-            )))),
-            _ => Err(()),
+        use self::CalcLengthPercentageLeaf::*;
+        if std::mem::discriminant(self) != std::mem::discriminant(other) {
+            return Err(());
         }
+        Ok(match (self, other) {
+            (&Length(ref one), &Length(ref other)) => {
+                Length(super::Length::new(op(one.px(), other.px())))
+            },
+            (&Percentage(one), &Percentage(other)) => {
+                Self::Percentage(super::Percentage(op(one.0, other.0)))
+            },
+            (&Number(one), &Number(other)) => Self::Number(op(one, other)),
+            _ => unsafe {
+                match *self {
+                    Length(..) | Percentage(..) | Number(..) => {},
+                }
+                debug_unreachable!("Forgot to handle unit in try_op()")
+            },
+        })
     }
 
     fn map(&mut self, mut op: impl FnMut(f32) -> f32) {
         match self {
-            CalcLengthPercentageLeaf::Length(value) => {
+            Self::Length(value) => {
                 *value = Length::new(op(value.px()));
             },
-            CalcLengthPercentageLeaf::Percentage(value) => {
+            Self::Percentage(value) => {
                 *value = Percentage(op(value.0));
             },
-            CalcLengthPercentageLeaf::Number(value) => {
+            Self::Number(value) => {
                 *value = op(*value);
             },
         }
@@ -840,6 +862,7 @@ impl specified::CalcLengthPercentage {
         context: &Context,
         zoom_fn: F,
         base_size: FontBaseSize,
+        line_height_base: LineHeightBase,
     ) -> LengthPercentage
     where
         F: Fn(Length) -> Length,
@@ -849,7 +872,8 @@ impl specified::CalcLengthPercentage {
         let node = self.node.map_leaves(|leaf| match *leaf {
             Leaf::Percentage(p) => CalcLengthPercentageLeaf::Percentage(Percentage(p)),
             Leaf::Length(l) => CalcLengthPercentageLeaf::Length({
-                let result = l.to_computed_value_with_base_size(context, base_size);
+                let result =
+                    l.to_computed_value_with_base_size(context, base_size, line_height_base);
                 if l.should_zoom_text() {
                     zoom_fn(result)
                 } else {
@@ -870,8 +894,14 @@ impl specified::CalcLengthPercentage {
         &self,
         context: &Context,
         base_size: FontBaseSize,
+        line_height_base: LineHeightBase,
     ) -> LengthPercentage {
-        self.to_computed_value_with_zoom(context, |abs| context.maybe_zoom_text(abs), base_size)
+        self.to_computed_value_with_zoom(
+            context,
+            |abs| context.maybe_zoom_text(abs),
+            base_size,
+            line_height_base,
+        )
     }
 
     /// Compute the value into pixel length as CSSFloat without context,
@@ -910,9 +940,14 @@ impl specified::CalcLengthPercentage {
         }
     }
 
-    /// Compute the calc using the current font-size (and without text-zoom).
+    /// Compute the calc using the current font-size and line-height. (and without text-zoom).
     pub fn to_computed_value(&self, context: &Context) -> LengthPercentage {
-        self.to_computed_value_with_zoom(context, |abs| abs, FontBaseSize::CurrentStyle)
+        self.to_computed_value_with_zoom(
+            context,
+            |abs| abs,
+            FontBaseSize::CurrentStyle,
+            LineHeightBase::CurrentStyle,
+        )
     }
 
     #[inline]

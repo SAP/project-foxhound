@@ -175,6 +175,7 @@ rusty-enums = [
     "mozilla::StyleBlend",
     "mozilla::StyleMaskComposite",
     "mozilla::StyleWritingModeProperty",
+    "mozilla::StyleTextWrap",
     "StyleFontVariantEmoji",
 ]
 allowlist-vars = [
@@ -417,6 +418,8 @@ opaque-types = [
     "mozilla::Widget.*Event", # As above
     "mozilla::detail::GkAtoms", # https://bugzilla.mozilla.org/show_bug.cgi?id=1517685
     "mozilla::detail::ThreadLocal.*",
+    "std::make_signed_t",
+    "mozilla::ProfileChunkedBuffer",
 ]
 
 # All cbindgen-types are in mod "structs::root::mozilla".
@@ -480,6 +483,7 @@ cbindgen-types = [
     { gecko = "StyleOverscrollBehavior", servo = "crate::values::computed::OverscrollBehavior" },
     { gecko = "StyleTextAlign", servo = "crate::values::computed::TextAlign" },
     { gecko = "StyleTextAlignLast", servo = "crate::values::computed::text::TextAlignLast" },
+    { gecko = "StyleTextIndent", servo = "crate::values::computed::text::TextIndent" },
     { gecko = "StyleTextOverflow", servo = "crate::values::computed::TextOverflow" },
     { gecko = "StyleOverflow", servo = "crate::values::computed::Overflow" },
     { gecko = "StyleOverflowAnchor", servo = "crate::values::computed::OverflowAnchor" },
@@ -522,7 +526,7 @@ cbindgen-types = [
     { gecko = "StyleTransformStyle", servo = "crate::values::computed::TransformStyle" },
     { gecko = "StyleGenericBorderRadius", servo = "crate::values::generics::border::BorderRadius" },
     { gecko = "StyleLetterSpacing", servo = "crate::values::computed::text::LetterSpacing" },
-    { gecko = "StyleGenericLineHeight", servo = "crate::values::generics::text::LineHeight" },
+    { gecko = "StyleGenericLineHeight", servo = "crate::values::generics::font::LineHeight" },
     { gecko = "StyleCaretColor", servo = "crate::values::computed::color::CaretColor" },
     { gecko = "StyleContain", servo = "crate::values::computed::Contain" },
     { gecko = "StyleContainerType", servo = "crate::values::computed::ContainerType" },
@@ -540,7 +544,6 @@ cbindgen-types = [
     { gecko = "StyleStrong", servo = "crate::gecko_bindings::sugar::ownership::Strong" },
     { gecko = "StyleGenericFontFamily", servo = "crate::values::computed::font::GenericFontFamily" },
     { gecko = "StyleGenericPosition", servo = "crate::values::generics::position::GenericPosition" },
-    { gecko = "StyleGenericMozImageRect", servo = "crate::values::generics::image::GenericMozImageRect" },
     { gecko = "StyleGenericCounterPair", servo = "crate::values::generics::counters::GenericCounterPair" },
     { gecko = "StyleGenericShapeRadius", servo = "crate::values::generics::basic_shape::GenericShapeRadius" },
     { gecko = "StyleGenericClipRect", servo = "crate::values::generics::GenericClipRect" },
@@ -649,6 +652,7 @@ cbindgen-types = [
     { gecko = "StyleBoolInteger", servo = "crate::values::computed::BoolInteger" },
     { gecko = "StyleTime", servo = "crate::values::computed::Time" },
     { gecko = "StyleXTextScale", servo = "crate::values::computed::XTextScale" },
+    { gecko = "StyleZoom", servo = "crate::values::computed::Zoom" },
     { gecko = "StyleAnimationValueMap", servo = "crate::properties::animated_properties::AnimationValueMap" },
     { gecko = "StyleAuthorStyles", servo = "crate::gecko::data::AuthorStyles" },
     { gecko = "StyleUseCounters", servo = "crate::use_counters::UseCounters" },
@@ -666,7 +670,7 @@ mapped-generic-types = [
     { generic = true, gecko = "mozilla::RustCell", servo = "::std::cell::Cell" },
     { generic = false, gecko = "ServoNodeData", servo = "atomic_refcell::AtomicRefCell<crate::data::ElementData>" },
     { generic = false, gecko = "mozilla::ServoWritingMode", servo = "crate::logical_geometry::WritingMode" },
-    { generic = false, gecko = "mozilla::ServoCustomPropertiesMap", servo = "Option<servo_arc::Arc<crate::custom_properties::CustomPropertiesMap>>" },
+    { generic = false, gecko = "mozilla::ServoComputedCustomProperties", servo = "crate::custom_properties::ComputedCustomProperties" },
     { generic = false, gecko = "mozilla::ServoRuleNode", servo = "Option<crate::rule_tree::StrongRuleNode>" },
     { generic = false, gecko = "nsACString", servo = "nsstring::nsACString" },
     { generic = false, gecko = "nsAString", servo = "nsstring::nsAString" },

@@ -17,8 +17,11 @@ namespace mozilla {
 namespace layers {
 
 GPUVideoTextureHost::GPUVideoTextureHost(
-    TextureFlags aFlags, const SurfaceDescriptorGPUVideo& aDescriptor)
-    : TextureHost(TextureHostType::Unknown, aFlags), mDescriptor(aDescriptor) {
+    const dom::ContentParentId& aContentId, TextureFlags aFlags,
+    const SurfaceDescriptorGPUVideo& aDescriptor)
+    : TextureHost(TextureHostType::Unknown, aFlags),
+      mContentId(aContentId),
+      mDescriptor(aDescriptor) {
   MOZ_COUNT_CTOR(GPUVideoTextureHost);
 }
 
@@ -27,8 +30,9 @@ GPUVideoTextureHost::~GPUVideoTextureHost() {
 }
 
 GPUVideoTextureHost* GPUVideoTextureHost::CreateFromDescriptor(
-    TextureFlags aFlags, const SurfaceDescriptorGPUVideo& aDescriptor) {
-  return new GPUVideoTextureHost(aFlags, aDescriptor);
+    const dom::ContentParentId& aContentId, TextureFlags aFlags,
+    const SurfaceDescriptorGPUVideo& aDescriptor) {
+  return new GPUVideoTextureHost(aContentId, aFlags, aDescriptor);
 }
 
 TextureHost* GPUVideoTextureHost::EnsureWrappedTextureHost() {
@@ -44,7 +48,8 @@ TextureHost* GPUVideoTextureHost::EnsureWrappedTextureHost() {
     // crashes.
     return nullptr;
   }
-  mWrappedTextureHost = parent->LookupTexture(sd.handle());
+
+  mWrappedTextureHost = parent->LookupTexture(mContentId, sd.handle());
 
   if (!mWrappedTextureHost) {
     // The TextureHost hasn't been registered yet. This is due to a race
@@ -136,12 +141,16 @@ void GPUVideoTextureHost::CreateRenderTexture(
 }
 
 void GPUVideoTextureHost::MaybeDestroyRenderTexture() {
-  if (mExternalImageId.isNothing() || !mWrappedTextureHost) {
+  if (mExternalImageId.isNothing()) {
     // RenderTextureHost was not created
     return;
   }
-  // When GPUVideoTextureHost created RenderTextureHost, delete it here.
-  TextureHost::DestroyRenderTexture(mExternalImageId.ref());
+
+  if (mExternalImageId.isSome() && mWrappedTextureHost) {
+    // When GPUVideoTextureHost created RenderTextureHost, delete it here.
+    TextureHost::DestroyRenderTexture(mExternalImageId.ref());
+  }
+  mExternalImageId = Nothing();
 }
 
 uint32_t GPUVideoTextureHost::NumSubTextures() {

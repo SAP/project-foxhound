@@ -1769,14 +1769,6 @@ static Maybe<VibrancyType> ThemeGeometryTypeToVibrancyType(
       return Some(VibrancyType::TOOLTIP);
     case eThemeGeometryTypeMenu:
       return Some(VibrancyType::MENU);
-    case eThemeGeometryTypeHighlightedMenuItem:
-      return Some(VibrancyType::HIGHLIGHTED_MENUITEM);
-    case eThemeGeometryTypeSourceList:
-      return Some(VibrancyType::SOURCE_LIST);
-    case eThemeGeometryTypeSourceListSelection:
-      return Some(VibrancyType::SOURCE_LIST_SELECTION);
-    case eThemeGeometryTypeActiveSourceListSelection:
-      return Some(VibrancyType::ACTIVE_SOURCE_LIST_SELECTION);
     default:
       return Nothing();
   }
@@ -1822,31 +1814,13 @@ void nsChildView::UpdateVibrancy(
       GatherVibrantRegion(aThemeGeometries, VibrancyType::MENU);
   LayoutDeviceIntRegion tooltipRegion =
       GatherVibrantRegion(aThemeGeometries, VibrancyType::TOOLTIP);
-  LayoutDeviceIntRegion highlightedMenuItemRegion =
-      GatherVibrantRegion(aThemeGeometries, VibrancyType::HIGHLIGHTED_MENUITEM);
-  LayoutDeviceIntRegion sourceListRegion =
-      GatherVibrantRegion(aThemeGeometries, VibrancyType::SOURCE_LIST);
-  LayoutDeviceIntRegion sourceListSelectionRegion = GatherVibrantRegion(
-      aThemeGeometries, VibrancyType::SOURCE_LIST_SELECTION);
-  LayoutDeviceIntRegion activeSourceListSelectionRegion = GatherVibrantRegion(
-      aThemeGeometries, VibrancyType::ACTIVE_SOURCE_LIST_SELECTION);
 
-  MakeRegionsNonOverlapping(
-      menuRegion, tooltipRegion, highlightedMenuItemRegion, sourceListRegion,
-      sourceListSelectionRegion, activeSourceListSelectionRegion);
+  MakeRegionsNonOverlapping(menuRegion, tooltipRegion);
 
   auto& vm = EnsureVibrancyManager();
   bool changed = false;
   changed |= vm.UpdateVibrantRegion(VibrancyType::MENU, menuRegion);
   changed |= vm.UpdateVibrantRegion(VibrancyType::TOOLTIP, tooltipRegion);
-  changed |= vm.UpdateVibrantRegion(VibrancyType::HIGHLIGHTED_MENUITEM,
-                                    highlightedMenuItemRegion);
-  changed |=
-      vm.UpdateVibrantRegion(VibrancyType::SOURCE_LIST, sourceListRegion);
-  changed |= vm.UpdateVibrantRegion(VibrancyType::SOURCE_LIST_SELECTION,
-                                    sourceListSelectionRegion);
-  changed |= vm.UpdateVibrantRegion(VibrancyType::ACTIVE_SOURCE_LIST_SELECTION,
-                                    activeSourceListSelectionRegion);
 
   if (changed) {
     SuspendAsyncCATransactions();
@@ -1897,7 +1871,10 @@ void nsChildView::UpdateBoundsFromView() {
   // of _opaqueRect returns [self visibleRect], and the default implementation
   // of _opaqueRectForWindowMoveWhenInTitlebar returns NSZeroRect unless it's
   // overridden.
-  return [self visibleRect];
+  //
+  // Since this view is constructed and used such that its entire bounds is the
+  // relevant region, we just return our bounds.
+  return self.bounds;
 }
 @end
 

@@ -59,8 +59,13 @@ already_AddRefed<Buffer> Buffer::Create(Device* aDevice, RawId aDeviceId,
                                         const dom::GPUBufferDescriptor& aDesc,
                                         ErrorResult& aRv) {
   if (aDevice->IsLost()) {
+    // Create and return an invalid Buffer. This Buffer will have id 0 and
+    // won't be sent in any messages to the parent.
     RefPtr<Buffer> buffer = new Buffer(aDevice, 0, aDesc.mSize, 0,
                                        ipc::WritableSharedMemoryMapping());
+
+    // Track the invalid Buffer to ensure that ::Drop can untrack it later.
+    aDevice->TrackBuffer(buffer.get());
     return buffer.forget();
   }
 
@@ -127,10 +132,18 @@ already_AddRefed<Buffer> Buffer::Create(Device* aDevice, RawId aDeviceId,
     buffer->SetMapped(0, aDesc.mSize, writable);
   }
 
+  aDevice->TrackBuffer(buffer.get());
+
   return buffer.forget();
 }
 
 void Buffer::Drop() {
+  if (!mValid) {
+    return;
+  }
+
+  mValid = false;
+
   AbortMapRequest();
 
   if (mMapped && !mMapped->mArrayBuffers.IsEmpty()) {
@@ -144,10 +157,11 @@ void Buffer::Drop() {
   }
   mMapped.reset();
 
-  if (mValid && !GetDevice().IsLost()) {
+  GetDevice().UntrackBuffer(this);
+
+  if (GetDevice().IsBridgeAlive() && mId) {
     GetDevice().GetBridge()->SendBufferDrop(mId);
   }
-  mValid = false;
 }
 
 void Buffer::SetMapped(BufferAddress aOffset, BufferAddress aSize,
@@ -207,6 +221,11 @@ already_AddRefed<dom::Promise> Buffer::MapAsync(
         if (promise->State() != dom::Promise::PromiseState::Pending) {
           return;
         }
+
+        // mValid should be true or we should have called unmap while marking
+        // the buffer invalid, causing the promise to be rejected and the branch
+        // above to have early-returned.
+        MOZ_RELEASE_ASSERT(self->mValid);
 
         switch (aResult.type()) {
           case BufferMapResult::TBufferMapSuccess: {

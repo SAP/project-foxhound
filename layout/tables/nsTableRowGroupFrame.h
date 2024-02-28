@@ -33,8 +33,6 @@ struct TableRowGroupReflowInput;
  */
 class nsTableRowGroupFrame final : public nsContainerFrame,
                                    public nsILineIterator {
-  using TableRowGroupReflowInput = mozilla::TableRowGroupReflowInput;
-
  public:
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsTableRowGroupFrame)
@@ -97,8 +95,8 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-  nsTableRowFrame* GetFirstRow();
-  nsTableRowFrame* GetLastRow();
+  nsTableRowFrame* GetFirstRow() const;
+  nsTableRowFrame* GetLastRow() const;
 
   nsTableFrame* GetTableFrame() const {
     nsIFrame* parent = GetParent();
@@ -142,7 +140,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    * @param aHeaderFooterFrame the original header or footer row group frame
    * that was repeated
    */
-  nsresult InitRepeatedFrame(nsTableRowGroupFrame* aHeaderFooterFrame);
+  void InitRepeatedFrame(nsTableRowGroupFrame* aHeaderFooterFrame);
 
   /**
    * Get the total bsize of all the row rects
@@ -309,14 +307,15 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   explicit nsTableRowGroupFrame(ComputedStyle* aStyle,
                                 nsPresContext* aPresContext);
 
-  void InitChildReflowInput(nsPresContext& aPresContext, bool aBorderCollapse,
+  void InitChildReflowInput(nsPresContext* aPresContext, bool aBorderCollapse,
                             ReflowInput& aReflowInput);
 
   LogicalSides GetLogicalSkipSides() const override;
 
   void PlaceChild(nsPresContext* aPresContext,
-                  TableRowGroupReflowInput& aReflowInput, nsIFrame* aKidFrame,
-                  const ReflowInput& aKidReflowInput, mozilla::WritingMode aWM,
+                  mozilla::TableRowGroupReflowInput& aReflowInput,
+                  nsIFrame* aKidFrame, const ReflowInput& aKidReflowInput,
+                  mozilla::WritingMode aWM,
                   const mozilla::LogicalPoint& aKidPosition,
                   const nsSize& aContainerSize, ReflowOutput& aDesiredSize,
                   const nsRect& aOriginalKidRect,
@@ -335,26 +334,29 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    * @param   aReflowInput current inline state
    */
   void ReflowChildren(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
-                      TableRowGroupReflowInput& aReflowInput,
+                      mozilla::TableRowGroupReflowInput& aReflowInput,
                       nsReflowStatus& aStatus,
                       bool* aPageBreakBeforeEnd = nullptr);
 
-  nsresult SplitRowGroup(nsPresContext* aPresContext,
-                         ReflowOutput& aDesiredSize,
-                         const ReflowInput& aReflowInput,
-                         nsTableFrame* aTableFrame, nsReflowStatus& aStatus,
-                         bool aRowForcedPageBreak);
+  void SplitRowGroup(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+                     const ReflowInput& aReflowInput, nsTableFrame* aTableFrame,
+                     nsReflowStatus& aStatus, bool aRowForcedPageBreak);
 
-  void SplitSpanningCells(nsPresContext& aPresContext,
+  void SplitSpanningCells(nsPresContext* aPresContext,
                           const ReflowInput& aReflowInput,
-                          nsTableFrame& aTableFrame, nsTableRowFrame& aFirstRow,
-                          nsTableRowFrame& aLastRow, bool aFirstRowIsTopOfPage,
-                          nscoord aSpanningRowBottom,
+                          nsTableFrame* aTableFrame, nsTableRowFrame* aFirstRow,
+                          nsTableRowFrame* aLastRow, bool aFirstRowIsTopOfPage,
+                          nscoord aSpanningRowBEnd,
+                          const nsSize& aContainerSize,
                           nsTableRowFrame*& aContRowFrame,
                           nsTableRowFrame*& aFirstTruncatedRow,
-                          nscoord& aDesiredHeight);
+                          nscoord& aDesiredBSize);
 
-  void CreateContinuingRowFrame(nsIFrame& aRowFrame, nsIFrame** aContRowFrame);
+  /**
+   * Create a continuing table row frame, add it to the child list, and then
+   * push it and its later siblings to our overflow frames list.
+   */
+  nsTableRowFrame* CreateContinuingRowFrame(nsIFrame* aRowFrame);
 
   bool IsSimpleRowFrame(nsTableFrame* aTableFrame, nsTableRowFrame* aRowFrame);
 

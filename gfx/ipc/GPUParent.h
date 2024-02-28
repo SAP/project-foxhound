@@ -45,6 +45,7 @@ class GPUParent final : public PGPUParent {
   void NotifyDeviceReset();
   void NotifyOverlayInfo(layers::OverlayInfo aInfo);
   void NotifySwapChainInfo(layers::SwapChainInfo aInfo);
+  void NotifyDisableRemoteCanvas();
 
   mozilla::ipc::IPCResult RecvInit(nsTArray<GfxVarUpdate>&& vars,
                                    const DevicePrefs& devicePrefs,
@@ -74,13 +75,16 @@ class GPUParent final : public PGPUParent {
   mozilla::ipc::IPCResult RecvUpdateVar(const GfxVarUpdate& pref);
   mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& pref);
   mozilla::ipc::IPCResult RecvNewContentCompositorManager(
-      Endpoint<PCompositorManagerParent>&& aEndpoint);
+      Endpoint<PCompositorManagerParent>&& aEndpoint,
+      const ContentParentId& aChildId);
   mozilla::ipc::IPCResult RecvNewContentImageBridge(
-      Endpoint<PImageBridgeParent>&& aEndpoint);
+      Endpoint<PImageBridgeParent>&& aEndpoint,
+      const ContentParentId& aChildId);
   mozilla::ipc::IPCResult RecvNewContentVRManager(
-      Endpoint<PVRManagerParent>&& aEndpoint);
+      Endpoint<PVRManagerParent>&& aEndpoint, const ContentParentId& aChildId);
   mozilla::ipc::IPCResult RecvNewContentRemoteDecoderManager(
-      Endpoint<PRemoteDecoderManagerParent>&& aEndpoint);
+      Endpoint<PRemoteDecoderManagerParent>&& aEndpoint,
+      const ContentParentId& aChildId);
   mozilla::ipc::IPCResult RecvGetDeviceStatus(GPUDeviceData* aOutStatus);
   mozilla::ipc::IPCResult RecvSimulateDeviceReset();
   mozilla::ipc::IPCResult RecvAddLayerTreeIdMapping(

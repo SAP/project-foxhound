@@ -1934,8 +1934,8 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
 
   if (ret && ShouldResistFingerprinting(RFPTarget::CanvasRandomization)) {
     nsRFPService::RandomizePixels(
-        GetCookieJarSettings(), ret.get(),
-        out_imageSize->width * out_imageSize->height * 4,
+        GetCookieJarSettings(), ret.get(), out_imageSize->width,
+        out_imageSize->height, out_imageSize->width * out_imageSize->height * 4,
         SurfaceFormat::A8R8G8B8_UINT32);
   }
 
@@ -2672,7 +2672,7 @@ void CanvasRenderingContext2D::SetFilter(const nsACString& aFilter,
           SVGObserverUtils::ObserveFiltersForCanvasContext(
               this, mCanvasElement, CurrentState().filterChain.AsSpan());
     }
-    UpdateFilter();
+    UpdateFilter(/* aFlushIfNeeded = */ true);
   }
 }
 
@@ -2875,7 +2875,7 @@ static bool FiltersNeedFrameFlush(Span<const StyleFilter> aFilters) {
   return false;
 }
 
-void CanvasRenderingContext2D::UpdateFilter() {
+void CanvasRenderingContext2D::UpdateFilter(bool aFlushIfNeeded) {
   const bool writeOnly = IsWriteOnly() ||
                          (mCanvasElement && mCanvasElement->IsWriteOnly()) ||
                          (mOffscreenCanvas && mOffscreenCanvas->IsWriteOnly());
@@ -2889,18 +2889,13 @@ void CanvasRenderingContext2D::UpdateFilter() {
     return;
   }
 
-  RefPtr<const ComputedStyle> canvasStyle;
-
   // The PresContext is only used with URL filters and we don't allow those to
   // be used on worker threads.
   nsPresContext* presContext = nullptr;
   if (presShell) {
-    if (FiltersNeedFrameFlush(CurrentState().filterChain.AsSpan())) {
+    if (aFlushIfNeeded &&
+        FiltersNeedFrameFlush(CurrentState().filterChain.AsSpan())) {
       presShell->FlushPendingNotifications(FlushType::Frames);
-      if (mCanvasElement) {
-        canvasStyle =
-            nsComputedDOMStyle::GetComputedStyleNoFlush(mCanvasElement);
-      }
     }
 
     if (MOZ_UNLIKELY(presShell->IsDestroying())) {
@@ -2909,11 +2904,16 @@ void CanvasRenderingContext2D::UpdateFilter() {
 
     presContext = presShell->GetPresContext();
   }
+  RefPtr<const ComputedStyle> canvasStyle;
+  if (mCanvasElement) {
+    canvasStyle = nsComputedDOMStyle::GetComputedStyleNoFlush(mCanvasElement);
+  }
 
   MOZ_RELEASE_ASSERT(!mStyleStack.IsEmpty());
 
   CurrentState().filter = FilterInstance::GetFilterDescription(
-      mCanvasElement, CurrentState().filterChain.AsSpan(), writeOnly,
+      mCanvasElement, CurrentState().filterChain.AsSpan(),
+      CurrentState().autoSVGFiltersObserver, writeOnly,
       CanvasUserSpaceMetrics(GetSize(), CurrentState().fontFont, canvasStyle,
                              presContext),
       gfxRect(0, 0, mWidth, mHeight), CurrentState().filterAdditionalImages);
@@ -2976,6 +2976,8 @@ void CanvasRenderingContext2D::ClearRect(double aX, double aY, double aW,
 
 void CanvasRenderingContext2D::FillRect(double aX, double aY, double aW,
                                         double aH) {
+  mFeatureUsage |= CanvasFeatureUsage::FillRect;
+
   if (!ValidateRect(aX, aY, aW, aH, true)) {
     return;
   }
@@ -3252,6 +3254,8 @@ void CanvasRenderingContext2D::StrokeImpl(const gfx::Path& aPath) {
 }
 
 void CanvasRenderingContext2D::Stroke() {
+  mFeatureUsage |= CanvasFeatureUsage::Stroke;
+
   EnsureUserSpacePath();
   if (!IsTargetValid()) {
     return;
@@ -3749,6 +3753,8 @@ void CanvasRenderingContext2D::TransformCurrentPath(const Matrix& aTransform) {
 
 void CanvasRenderingContext2D::SetFont(const nsACString& aFont,
                                        ErrorResult& aError) {
+  mFeatureUsage |= CanvasFeatureUsage::SetFont;
+
   SetFontInternal(aFont, aError);
   if (aError.Failed()) {
     return;
@@ -4152,6 +4158,27 @@ void CanvasRenderingContext2D::FillText(const nsAString& aText, double aX,
                                         double aY,
                                         const Optional<double>& aMaxWidth,
                                         ErrorResult& aError) {
+  // We try to match the most commonly observed strings used by canvas
+  // fingerprinting scripts. We do a prefix match, because that means having to
+  // match fewer bytes and sometimes the strings is followed by a few random
+  // characters.
+  // - Cwm fjordbank gly
+  //   Used by FingerprintJS
+  //   (https://github.com/fingerprintjs/fingerprintjs/blob/4c4b2c8455e701b8341b2b766d1939cf5de4b615/src/sources/canvas.ts#L119)
+  //   and others
+  // - Hel$&?6%){mZ+#@
+  // - <@nv45. F1n63r,Pr1n71n6!
+  // Usually there are at most a handful (usually ~1/2) fillText calls by
+  // fingerprinters
+  if (mFillTextCalls <= 5) {
+    if (StringBeginsWith(aText, u"Cwm fjord"_ns) ||
+        StringBeginsWith(aText, u"Hel$&?6%"_ns) ||
+        StringBeginsWith(aText, u"<@nv45. "_ns)) {
+      mFeatureUsage |= CanvasFeatureUsage::KnownFingerprintText;
+    }
+    mFillTextCalls++;
+  }
+
   DebugOnly<TextMetrics*> metrics = DrawOrMeasureText(
       aText, aX, aY, aMaxWidth, TextDrawOperation::FILL, aError);
   MOZ_ASSERT(!metrics);  // drawing operation never returns TextMetrics
@@ -5974,7 +6001,9 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
   if (!usePlaceholder &&
       ShouldResistFingerprinting(RFPTarget::CanvasRandomization)) {
     needRandomizePixels = true;
-    readback = CreateDataSourceSurfaceByCloning(readback);
+    if (readback) {
+      readback = CreateDataSourceSurfaceByCloning(readback);
+    }
   }
 
   DataSourceSurface::MappedSurface rawData;
@@ -5995,9 +6024,9 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
       // holder.
 
       const IntSize size = readback->GetSize();
-      nsRFPService::RandomizePixels(GetCookieJarSettings(), rawData.mData,
-                                    size.height * size.width * 4,
-                                    SurfaceFormat::A8R8G8B8_UINT32);
+      nsRFPService::RandomizePixels(
+          GetCookieJarSettings(), rawData.mData, size.width, size.height,
+          size.height * size.width * 4, SurfaceFormat::A8R8G8B8_UINT32);
     }
 
     JS::AutoCheckCannotGC nogc;
@@ -6231,10 +6260,9 @@ static already_AddRefed<ImageData> CreateImageData(
   }
 
   // Create the fast typed array; it's initialized to 0 by default.
-  JSObject* darray = Uint8ClampedArray::Create(aCx, aContext, len.value());
-  if (!darray) {
-    // TODO: Should use OOMReporter.
-    aError.Throw(NS_ERROR_OUT_OF_MEMORY);
+  JSObject* darray =
+      Uint8ClampedArray::Create(aCx, aContext, len.value(), aError);
+  if (aError.Failed()) {
     return nullptr;
   }
 

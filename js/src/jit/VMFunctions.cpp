@@ -45,6 +45,7 @@
 #include "jit/VMFunctionList-inl.h"
 #include "vm/Interpreter-inl.h"
 #include "vm/JSAtomUtils-inl.h"  // TypeName
+#include "vm/JSContext-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/PlainObject-inl.h"  // js::CreateThis
@@ -387,6 +388,46 @@ static DynFn GetVMFunctionTarget(VMFunctionId id) {
   return DynFn{vmFunctionTargets[size_t(id)]};
 }
 
+size_t NumVMFunctions() { return size_t(VMFunctionId::Count); }
+
+size_t VMFunctionData::sizeOfOutParamStackSlot() const {
+  switch (outParam) {
+    case Type_Value:
+      return sizeof(Value);
+
+    case Type_Pointer:
+    case Type_Int32:
+    case Type_Bool:
+      return sizeof(uintptr_t);
+
+    case Type_Double:
+      return sizeof(double);
+
+    case Type_Handle:
+      switch (outParamRootType) {
+        case RootNone:
+          MOZ_CRASH("Handle must have root type");
+        case RootObject:
+        case RootString:
+        case RootCell:
+        case RootBigInt:
+        case RootId:
+          return sizeof(uintptr_t);
+        case RootValue:
+          return sizeof(Value);
+      }
+      MOZ_CRASH("Invalid type");
+
+    case Type_Void:
+      return 0;
+
+    case Type_Cell:
+      MOZ_CRASH("Unexpected outparam type");
+  }
+
+  MOZ_CRASH("Invalid type");
+}
+
 bool JitRuntime::generateVMWrappers(JSContext* cx, MacroAssembler& masm,
                                     PerfSpewerRangeRecorder& rangeRecorder) {
   // Generate all VM function wrappers.
@@ -417,7 +458,8 @@ bool JitRuntime::generateVMWrappers(JSContext* cx, MacroAssembler& masm,
     JitSpew(JitSpew_Codegen, "# VM function wrapper (%s)", fun.name());
 
     uint32_t offset;
-    if (!generateVMWrapper(cx, masm, fun, GetVMFunctionTarget(id), &offset)) {
+    if (!generateVMWrapper(cx, masm, id, fun, GetVMFunctionTarget(id),
+                           &offset)) {
       return false;
     }
 #if defined(JS_ION_PERF)
@@ -581,10 +623,18 @@ bool MutatePrototype(JSContext* cx, Handle<PlainObject*> obj,
 template <EqualityKind Kind>
 bool StringsEqual(JSContext* cx, HandleString lhs, HandleString rhs,
                   bool* res) {
-  if (!js::EqualStrings(cx, lhs, rhs, res)) {
+  JSLinearString* linearLhs = lhs->ensureLinear(cx);
+  if (!linearLhs) {
     return false;
   }
-  if (Kind != EqualityKind::Equal) {
+  JSLinearString* linearRhs = rhs->ensureLinear(cx);
+  if (!linearRhs) {
+    return false;
+  }
+
+  *res = EqualChars(linearLhs, linearRhs);
+
+  if constexpr (Kind == EqualityKind::NotEqual) {
     *res = !*res;
   }
   return true;
@@ -677,7 +727,7 @@ JSLinearString* StringFromCharCode(JSContext* cx, int32_t code) {
   //   return cx->staticStrings().getUnit(c);
   // }
 
-  return NewStringCopyNDontDeflate<CanGC>(cx, &c, 1);
+  return NewInlineString<CanGC>(cx, {c}, 1);
 }
 
 JSLinearString* StringFromCharCodeNoGC(JSContext* cx, int32_t code) {
@@ -690,7 +740,7 @@ JSLinearString* StringFromCharCodeNoGC(JSContext* cx, int32_t code) {
   //   return cx->staticStrings().getUnit(c);
   // }
 
-  return NewStringCopyNDontDeflate<NoGC>(cx, &c, 1);
+  return NewInlineString<NoGC>(cx, {c}, 1);
 }
 
 JSString* StringFromCodePoint(JSContext* cx, int32_t codePoint) {

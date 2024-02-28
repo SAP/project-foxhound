@@ -6,7 +6,7 @@
 /**
  * Tests that the fakespot link has the expected url and utm parameters.
  */
-add_task(async function test_shopping_settings_learn_more() {
+add_task(async function test_shopping_settings_fakespot_learn_more() {
   await BrowserTestUtils.withNewTab(
     {
       url: "about:shoppingsidebar",
@@ -22,9 +22,7 @@ add_task(async function test_shopping_settings_learn_more() {
               "shopping-container"
             ).wrappedJSObject;
 
-          let href = shoppingContainer.settingsEl.shadowRoot.querySelector(
-            "a[data-l10n-name=fakespot-link]"
-          ).href;
+          let href = shoppingContainer.settingsEl.fakespotLearnMoreLinkEl.href;
           let url = new URL(href);
           is(url.pathname, "/our-mission");
           is(url.origin, "https://www.fakespot.com");
@@ -32,6 +30,41 @@ add_task(async function test_shopping_settings_learn_more() {
           let qs = url.searchParams;
           is(qs.get("utm_source"), "review-checker");
           is(qs.get("utm_campaign"), "fakespot-by-mozilla");
+          is(qs.get("utm_medium"), "inproduct");
+          is(qs.get("utm_term"), "core-sidebar");
+        }
+      );
+    }
+  );
+});
+
+/**
+ * Tests that the ads link has the expected utm parameters.
+ */
+add_task(async function test_shopping_settings_ads_learn_more() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.shopping.experience2023.ads.enabled", true]],
+  });
+
+  await BrowserTestUtils.withNewTab(
+    {
+      url: "about:shoppingsidebar",
+      gBrowser,
+    },
+    async browser => {
+      await SpecialPowers.spawn(
+        browser,
+        [MOCK_ANALYZED_PRODUCT_RESPONSE],
+        async mockData => {
+          let shoppingContainer =
+            content.document.querySelector(
+              "shopping-container"
+            ).wrappedJSObject;
+
+          let href = shoppingContainer.settingsEl.adsLearnMoreLinkEl.href;
+          let qs = new URL(href).searchParams;
+
+          is(qs.get("utm_campaign"), "learn-more");
           is(qs.get("utm_medium"), "inproduct");
           is(qs.get("utm_term"), "core-sidebar");
         }
@@ -55,17 +88,32 @@ add_task(async function test_shopping_settings_ads_enabled() {
       gBrowser,
     },
     async browser => {
-      let shoppingSettings = await getSettingsDetails(
+      await SpecialPowers.spawn(
         browser,
-        MOCK_POPULATED_DATA
+        [MOCK_ANALYZED_PRODUCT_RESPONSE],
+        async mockData => {
+          let shoppingContainer =
+            content.document.querySelector(
+              "shopping-container"
+            ).wrappedJSObject;
+
+          shoppingContainer.data = Cu.cloneInto(mockData, content);
+          // TODO: Until we have proper mocks of data passed from ShoppingSidebarChild,
+          // hardcode `adsEnabled` to be passed to settings.mjs so that we can test
+          // toggle for ad visibility.
+          shoppingContainer.adsEnabled = true;
+          await shoppingContainer.updateComplete;
+
+          let shoppingSettings = shoppingContainer.settingsEl;
+          ok(shoppingSettings, "Got the shopping-settings element");
+
+          let toggle = shoppingSettings.recommendationsToggleEl;
+          ok(toggle, "There should be a toggle");
+
+          let optOutButton = shoppingSettings.optOutButtonEl;
+          ok(optOutButton, "There should be an opt-out button");
+        }
       );
-      ok(shoppingSettings.settingsEl, "Got the shopping-settings element");
-
-      let toggle = shoppingSettings.recommendationsToggleEl;
-      ok(toggle, "There should be a toggle");
-
-      let optOutButton = shoppingSettings.optOutButtonEl;
-      ok(optOutButton, "There should be an opt-out button");
     }
   );
 
@@ -108,8 +156,6 @@ add_task(async function test_shopping_settings_ads_disabled() {
  * Tests that the shopping-settings ads toggle and ad render correctly, even with
  * multiple tabs. If `browser.shopping.experience2023.ads.userEnabled`
  * is false in one tab, it should be false for all other tabs with the shopping sidebar open.
- *
- * Temporarily disabled; see bug 1851891 for details.
  */
 add_task(async function test_settings_toggle_ad_and_multiple_tabs() {
   await SpecialPowers.pushPrefEnv({
@@ -154,6 +200,34 @@ add_task(async function test_settings_toggle_ad_and_multiple_tabs() {
 
     await shoppingContainer.updateComplete;
     await adVisiblePromise;
+
+    let adEl = shoppingContainer.recommendedAdEl;
+    await adEl.updateComplete;
+    is(
+      adEl.priceEl.textContent,
+      "$" + mockRecommendationData[0].price,
+      "Price is shown correctly"
+    );
+    is(
+      adEl.linkEl.title,
+      mockRecommendationData[0].name,
+      "Title in link is shown correctly"
+    );
+    is(
+      adEl.linkEl.href,
+      mockRecommendationData[0].url,
+      "URL for link is correct"
+    );
+    is(
+      adEl.ratingEl.rating,
+      mockRecommendationData[0].adjusted_rating,
+      "MozFiveStar rating is shown correctly"
+    );
+    is(
+      adEl.letterGradeEl.letter,
+      mockRecommendationData[0].grade,
+      "LetterGrade letter is shown correctly"
+    );
 
     let shoppingSettings = shoppingContainer.settingsEl;
     ok(shoppingSettings, "Got the shopping-settings element");
@@ -226,4 +300,4 @@ add_task(async function test_settings_toggle_ad_and_multiple_tabs() {
 
   await SpecialPowers.popPrefEnv();
   await SpecialPowers.popPrefEnv();
-}).skip();
+});

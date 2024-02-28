@@ -22,6 +22,8 @@ skip-if = ["apple_silicon && !debug"]
 
 ["browser_ignore_invisible_fields.js"]
 
+["browser_ignore_unfocusable_fields.js"]
+
 ["browser_label_rules.js"]
 
 ["browser_multiple_section.js"]
@@ -30,9 +32,10 @@ skip-if = ["apple_silicon && !debug"]
 
 ["browser_parse_creditcard_expiry_fields.js"]
 
+["browser_parse_name_fields.js"]
+
 ["browser_parse_street_address_fields.js"]
 
 ["browser_section_validation_address.js"]
 
 ["browser_sections_by_name.js"]
-

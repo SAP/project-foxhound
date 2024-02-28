@@ -141,6 +141,9 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   void DisableSpdy() override;
   void DisableHttp2ForProxy() override;
   void DoNotRemoveAltSvc() override { mDoNotRemoveAltSvc = true; }
+  void DoNotResetIPFamilyPreference() override {
+    mDoNotResetIPFamilyPreference = true;
+  }
   void DisableHttp3(bool aAllowRetryHTTPSRR) override;
 
   nsHttpTransaction* QueryHttpTransaction() override { return this; }
@@ -463,6 +466,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   bool mDeferredSendProgress{false};
   bool mWaitingOnPipeOut{false};
   bool mDoNotRemoveAltSvc{false};
+  bool mDoNotResetIPFamilyPreference{false};
   bool mIsHttp2Websocket{false};
 
   // mClosed           := transaction has been explicitly closed

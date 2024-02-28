@@ -18,7 +18,6 @@
 
 // Local Includes
 #include "Navigator.h"
-#include "mozilla/Encoding.h"
 #include "nsContentSecurityManager.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsScreen.h"
@@ -96,6 +95,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Likely.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Unused.h"
@@ -1265,7 +1265,7 @@ const nsOuterWindowProxy nsOuterWindowProxy::singleton;
 
 class nsChromeOuterWindowProxy : public nsOuterWindowProxy {
  public:
-  constexpr nsChromeOuterWindowProxy() : nsOuterWindowProxy() {}
+  constexpr nsChromeOuterWindowProxy() = default;
 
   const char* className(JSContext* cx,
                         JS::Handle<JSObject*> wrapper) const override;
@@ -1328,7 +1328,7 @@ nsGlobalWindowOuter::nsGlobalWindowOuter(uint64_t aWindowID)
       mCanSkipCCGeneration(0),
       mAutoActivateVRDisplayID(0) {
   AssertIsOnMainThread();
-
+  SetIsOnMainThread();
   nsLayoutStatics::AddRef();
 
   // Initialize the PRCList (this).
@@ -2035,8 +2035,6 @@ static nsresult CreateNativeGlobalForInner(
 
   SelectZone(aCx, principal, aNewInner, creationOptions);
 
-  creationOptions.setSecureContext(aIsSecureContext);
-
   // Define the SharedArrayBuffer global constructor property only if shared
   // memory may be used and structured-cloned (e.g. through postMessage).
   //
@@ -2047,7 +2045,7 @@ static nsresult CreateNativeGlobalForInner(
       aDefineSharedArrayBufferConstructor);
 
   xpc::InitGlobalObjectOptions(
-      options, principal->IsSystemPrincipal(),
+      options, principal->IsSystemPrincipal(), aIsSecureContext,
       aDocument->ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
       aDocument->ShouldResistFingerprinting(RFPTarget::JSMathFdlibm),
       aDocument->ShouldResistFingerprinting(RFPTarget::JSLocale));
@@ -2420,6 +2418,8 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
 
   MOZ_RELEASE_ASSERT(newInnerWindow->mDoc == aDocument);
 
+  newInnerWindow->RefreshReduceTimerPrecisionCallerType();
+
   if (!aState) {
     if (reUseInnerWindow) {
       // The StorageAccess state may have changed. Invalidate the cached
@@ -2494,7 +2494,7 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
         &nsGlobalWindowInner::FireOnNewGlobalObject));
   }
 
-  if (newInnerWindow && !newInnerWindow->mHasNotifiedGlobalCreated && mDoc) {
+  if (!newInnerWindow->mHasNotifiedGlobalCreated && mDoc) {
     // We should probably notify. However if this is the, arguably bad,
     // situation when we're creating a temporary non-chrome-about-blank
     // document in a chrome docshell, don't notify just yet. Instead wait
@@ -3041,7 +3041,7 @@ Navigator* nsGlobalWindowOuter::GetNavigator() {
 }
 
 nsScreen* nsGlobalWindowOuter::GetScreen() {
-  FORWARD_TO_INNER(GetScreen, (IgnoreErrors()), nullptr);
+  FORWARD_TO_INNER(Screen, (), nullptr);
 }
 
 void nsPIDOMWindowOuter::ActivateMediaComponents() {
@@ -3770,9 +3770,9 @@ void nsGlobalWindowOuter::CheckSecurityLeftAndTop(int32_t* aLeft, int32_t* aTop,
 
       // Get the screen dimensions
       // XXX This should use nsIScreenManager once it's fully fleshed out.
-      int32_t screenLeft = screen->GetAvailLeft(IgnoreErrors());
-      int32_t screenWidth = screen->GetAvailWidth(IgnoreErrors());
-      int32_t screenHeight = screen->GetAvailHeight(IgnoreErrors());
+      int32_t screenLeft = screen->AvailLeft();
+      int32_t screenWidth = screen->AvailWidth();
+      int32_t screenHeight = screen->AvailHeight();
 #if defined(XP_MACOSX)
       /* The mac's coordinate system is different from the assumed Windows'
          system. It offsets by the height of the menubar so that a window
@@ -3781,9 +3781,9 @@ void nsGlobalWindowOuter::CheckSecurityLeftAndTop(int32_t* aLeft, int32_t* aTop,
          the Avail... coordinates is overloaded. Here we allow a window
          to be placed at (0,0) because it does make sense to do so.
       */
-      int32_t screenTop = screen->GetTop(IgnoreErrors());
+      int32_t screenTop = screen->Top();
 #else
-      int32_t screenTop = screen->GetAvailTop(IgnoreErrors());
+      int32_t screenTop = screen->AvailTop();
 #endif
 
       if (aLeft) {
@@ -4097,10 +4097,18 @@ FullscreenTransitionTask::Run() {
     // If the widget has been destroyed before we get here, don't try to
     // do anything more. Just let it go and release ourselves.
     NS_WARNING("The widget to fullscreen has been destroyed");
+    mWindow->mIsInFullScreenTransition = false;
     return NS_OK;
   }
   if (stage == eBeforeToggle) {
     PROFILER_MARKER_UNTYPED("Fullscreen transition start", DOM);
+
+    mWindow->mIsInFullScreenTransition = true;
+
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    NS_ENSURE_TRUE(obs, NS_ERROR_FAILURE);
+    obs->NotifyObservers(nullptr, "fullscreen-transition-start", nullptr);
+
     mWidget->PerformFullscreenTransition(nsIWidget::eBeforeFullscreenToggle,
                                          mDuration.mFadeIn, mTransitionData,
                                          this);
@@ -4141,6 +4149,13 @@ FullscreenTransitionTask::Run() {
                                          this);
   } else if (stage == eEnd) {
     PROFILER_MARKER_UNTYPED("Fullscreen transition end", DOM);
+
+    mWindow->mIsInFullScreenTransition = false;
+
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    NS_ENSURE_TRUE(obs, NS_ERROR_FAILURE);
+    obs->NotifyObservers(nullptr, "fullscreen-transition-end", nullptr);
+
     mWidget->CleanupFullscreenTransition();
   }
   return NS_OK;
@@ -4964,6 +4979,11 @@ void nsGlobalWindowOuter::StopOuter(ErrorResult& aError) {
 void nsGlobalWindowOuter::PrintOuter(ErrorResult& aError) {
   if (!AreDialogsEnabled()) {
     // Per spec, silently return. https://github.com/whatwg/html/commit/21a1de1
+    return;
+  }
+
+  // Printing is disabled, silently return.
+  if (!StaticPrefs::print_enabled()) {
     return;
   }
 
@@ -5879,8 +5899,7 @@ class nsCloseEvent : public Runnable {
  public:
   static nsresult PostCloseEvent(nsGlobalWindowOuter* aWindow, bool aIndirect) {
     nsCOMPtr<nsIRunnable> ev = new nsCloseEvent(aWindow, aIndirect);
-    nsresult rv = aWindow->Dispatch(TaskCategory::Other, ev.forget());
-    return rv;
+    return aWindow->Dispatch(ev.forget());
   }
 
   NS_IMETHOD Run() override {
@@ -6244,7 +6263,7 @@ bool nsGlobalWindowOuter::IsInModalState() {
 void nsGlobalWindowOuter::NotifyWindowIDDestroyed(const char* aTopic) {
   nsCOMPtr<nsIRunnable> runnable =
       new WindowDestroyedEvent(this, mWindowID, aTopic);
-  Dispatch(TaskCategory::Other, runnable.forget());
+  Dispatch(runnable.forget());
 }
 
 Element* nsGlobalWindowOuter::GetFrameElement(nsIPrincipal& aSubjectPrincipal) {
@@ -6684,7 +6703,7 @@ class AutoUnblockScriptClosing {
         &nsGlobalWindowOuter::UnblockScriptedClosing;
     nsCOMPtr<nsIRunnable> caller = NewRunnableMethod(
         "AutoUnblockScriptClosing::~AutoUnblockScriptClosing", mWin, run);
-    mWin->Dispatch(TaskCategory::Other, caller.forget());
+    mWin->Dispatch(caller.forget());
   }
 };
 
@@ -7242,7 +7261,7 @@ void nsGlobalWindowOuter::InitWasOffline() { mWasOffline = NS_IsOffline(); }
 
 #if defined(_WINDOWS_) && !defined(MOZ_WRAPPED_WINDOWS_H)
 #  pragma message( \
-          "wrapper failure reason: " MOZ_WINDOWS_WRAPPER_DISABLED_REASON)
+      "wrapper failure reason: " MOZ_WINDOWS_WRAPPER_DISABLED_REASON)
 #  error "Never include unwrapped windows.h in this file!"
 #endif
 
@@ -7261,30 +7280,14 @@ void nsGlobalWindowOuter::CheckForDPIChange() {
 }
 
 nsresult nsGlobalWindowOuter::Dispatch(
-    TaskCategory aCategory, already_AddRefed<nsIRunnable>&& aRunnable) {
+    already_AddRefed<nsIRunnable>&& aRunnable) const {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
-  if (GetDocGroup()) {
-    return GetDocGroup()->Dispatch(aCategory, std::move(aRunnable));
-  }
-  return DispatcherTrait::Dispatch(aCategory, std::move(aRunnable));
+  return NS_DispatchToCurrentThread(std::move(aRunnable));
 }
 
-nsISerialEventTarget* nsGlobalWindowOuter::EventTargetFor(
-    TaskCategory aCategory) const {
+nsISerialEventTarget* nsGlobalWindowOuter::SerialEventTarget() const {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
-  if (GetDocGroup()) {
-    return GetDocGroup()->EventTargetFor(aCategory);
-  }
-  return DispatcherTrait::EventTargetFor(aCategory);
-}
-
-AbstractThread* nsGlobalWindowOuter::AbstractMainThreadFor(
-    TaskCategory aCategory) {
-  MOZ_RELEASE_ASSERT(NS_IsMainThread());
-  if (GetDocGroup()) {
-    return GetDocGroup()->AbstractMainThreadFor(aCategory);
-  }
-  return DispatcherTrait::AbstractMainThreadFor(aCategory);
+  return GetMainThreadSerialEventTarget();
 }
 
 void nsGlobalWindowOuter::MaybeResetWindowName(Document* aNewDocument) {

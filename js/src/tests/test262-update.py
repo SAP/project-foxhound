@@ -27,8 +27,9 @@ UNSUPPORTED_FEATURES = set(
         "json-modules",  # Bug 1670176
         "resizable-arraybuffer",  # Bug 1670026
         "regexp-duplicate-named-groups",  # Bug 1773135
-        "symbols-as-weakmap-keys",  # Bug 1710433
         "json-parse-with-source",  # Bug 1658310
+        "import-attributes",  # Bug 1835669
+        "set-methods",  # Bug 1805038
     ]
 )
 FEATURE_CHECK_NEEDED = {
@@ -37,9 +38,10 @@ FEATURE_CHECK_NEEDED = {
     "SharedArrayBuffer": "!this.hasOwnProperty('SharedArrayBuffer')",
     "Temporal": "!this.hasOwnProperty('Temporal')",
     "WeakRef": "!this.hasOwnProperty('WeakRef')",
-    "decorators": "!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration()['decorators'])",  # Bug 1435869
+    "decorators": "!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration('decorators'))",  # Bug 1435869
     "iterator-helpers": "!this.hasOwnProperty('Iterator')",  # Bug 1568906
     "arraybuffer-transfer": "!ArrayBuffer.prototype.transfer",  # Bug 1519163
+    "symbols-as-weakmap-keys": "!(this.hasOwnProperty('getBuildConfiguration')&&!getBuildConfiguration('release_or_beta'))",
 }
 RELEASE_OR_BETA = set([])
 SHELL_OPTIONS = {
@@ -47,6 +49,7 @@ SHELL_OPTIONS = {
     "ShadowRealm": "--enable-shadow-realms",
     "iterator-helpers": "--enable-iterator-helpers",
     "arraybuffer-transfer": "--enable-arraybuffer-transfer",
+    "symbols-as-weakmap-keys": "--enable-symbols-as-weakmap-keys",
 }
 
 
@@ -364,7 +367,7 @@ def convertTestFile(test262parser, testSource, testName, includeSet, strictTests
                 refTestSkipIf.append(
                     (
                         "(this.hasOwnProperty('getBuildConfiguration')"
-                        "&&getBuildConfiguration()['arm64-simulator'])",
+                        "&&getBuildConfiguration('arm64-simulator'))",
                         "ARM64 Simulator cannot emulate atomics",
                     )
                 )

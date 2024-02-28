@@ -16,12 +16,18 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Unused.h"
+#include "mozilla/Try.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
+
+namespace mozilla::default_agent {
 
 using BrowserResult = mozilla::WindowsErrorResult<Browser>;
 
+constexpr std::string_view kUnknownBrowserString = "";
+
 constexpr std::pair<std::string_view, Browser> kStringBrowserMap[]{
-    {"", Browser::Unknown},
+    {"error", Browser::Error},
+    {kUnknownBrowserString, Browser::Unknown},
     {"firefox", Browser::Firefox},
     {"chrome", Browser::Chrome},
     {"edge", Browser::EdgeWithEdgeHTML},
@@ -45,7 +51,7 @@ std::string GetStringForBrowser(Browser browser) {
     }
   }
 
-  return std::string("");
+  return std::string(kUnknownBrowserString);
 }
 
 Browser GetBrowserFromString(const std::string& browserString) {
@@ -115,6 +121,15 @@ static BrowserResult GetDefaultBrowser() {
       {L"DuckDuckGo", Browser::DuckDuckGo},
   };
 
+  // We should have one prefix for every browser we track, minus exceptions
+  // listed below.
+  // Error - not a real browser.
+  // Unknown - not a real browser.
+  // EdgeWithEdgeHTML - duplicate friendly name with EdgeWithBlink with special
+  //   handling below.
+  static_assert(mozilla::ArrayLength(kFriendlyNamePrefixes) ==
+                kBrowserCount - 3);
+
   for (const auto& [prefix, browser] : kFriendlyNamePrefixes) {
     // Find matching Friendly Name prefix.
     if (!wcsnicmp(friendlyName.data(), prefix.data(), prefix.length())) {
@@ -167,18 +182,9 @@ static BrowserResult GetPreviousDefaultBrowser(Browser currentDefault) {
 DefaultBrowserResult GetDefaultBrowserInfo() {
   DefaultBrowserInfo browserInfo;
 
-  BrowserResult defaultBrowserResult = GetDefaultBrowser();
-  if (defaultBrowserResult.isErr()) {
-    return DefaultBrowserResult(defaultBrowserResult.unwrapErr());
-  }
-  browserInfo.currentDefaultBrowser = defaultBrowserResult.unwrap();
-
-  BrowserResult previousDefaultBrowserResult =
-      GetPreviousDefaultBrowser(browserInfo.currentDefaultBrowser);
-  if (previousDefaultBrowserResult.isErr()) {
-    return DefaultBrowserResult(previousDefaultBrowserResult.unwrapErr());
-  }
-  browserInfo.previousDefaultBrowser = previousDefaultBrowserResult.unwrap();
+  MOZ_TRY_VAR(browserInfo.currentDefaultBrowser, GetDefaultBrowser());
+  MOZ_TRY_VAR(browserInfo.previousDefaultBrowser,
+              GetPreviousDefaultBrowser(browserInfo.currentDefaultBrowser));
 
   return browserInfo;
 }
@@ -216,3 +222,5 @@ void MaybeMigrateCurrentDefault() {
                                               value.c_str());
   }
 }
+
+}  // namespace mozilla::default_agent

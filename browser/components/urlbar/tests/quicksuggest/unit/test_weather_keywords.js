@@ -14,14 +14,13 @@ const { WEATHER_RS_DATA, WEATHER_SUGGESTION } = MerinoTestUtils;
 
 add_task(async function init() {
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
-    remoteSettingsResults: [
+    remoteSettingsRecords: [
       {
         type: "weather",
         weather: WEATHER_RS_DATA,
       },
     ],
   });
-  UrlbarPrefs.set("quicksuggest.enabled", true);
   await MerinoTestUtils.initWeather();
 });
 
@@ -748,7 +747,7 @@ async function doKeywordsTest({
     nimbusCleanup = await UrlbarTestUtils.initNimbusFeature(nimbusValues);
   }
 
-  await QuickSuggestTestUtils.setRemoteSettingsResults([
+  await QuickSuggestTestUtils.setRemoteSettingsRecords([
     {
       type: "weather",
       weather: settingsData,
@@ -791,7 +790,7 @@ async function doKeywordsTest({
   if (!QuickSuggest.weather.suggestion) {
     fetchPromise = QuickSuggest.weather.waitForFetches();
   }
-  await QuickSuggestTestUtils.setRemoteSettingsResults([
+  await QuickSuggestTestUtils.setRemoteSettingsRecords([
     {
       type: "weather",
       weather: MerinoTestUtils.WEATHER_RS_DATA,
@@ -822,7 +821,7 @@ async function doMatchingQuickSuggestTest(pref, isSponsored) {
 
   // Add a remote settings result to quick suggest.
   UrlbarPrefs.set(pref, true);
-  await QuickSuggestTestUtils.setRemoteSettingsResults([
+  await QuickSuggestTestUtils.setRemoteSettingsRecords([
     {
       type: "data",
       attachment: [
@@ -875,15 +874,11 @@ async function doMatchingQuickSuggestTest(pref, isSponsored) {
             : undefined,
           helpUrl: QuickSuggest.HELP_URL,
           helpL10n: {
-            id: UrlbarPrefs.get("resultMenu")
-              ? "urlbar-result-menu-learn-more-about-firefox-suggest"
-              : "firefox-suggest-urlbar-learn-more",
+            id: "urlbar-result-menu-learn-more-about-firefox-suggest",
           },
-          isBlockable: UrlbarPrefs.get("quickSuggestBlockingEnabled"),
+          isBlockable: true,
           blockL10n: {
-            id: UrlbarPrefs.get("resultMenu")
-              ? "urlbar-result-menu-dismiss-firefox-suggest"
-              : "firefox-suggest-urlbar-block",
+            id: "urlbar-result-menu-dismiss-firefox-suggest",
           },
           source: "remote-settings",
           provider: "AdmWikipedia",
@@ -1263,7 +1258,7 @@ async function doIncrementTest({ desc, setup, tests }) {
     nimbusCleanup = await UrlbarTestUtils.initNimbusFeature(nimbusValues);
   }
 
-  await QuickSuggestTestUtils.setRemoteSettingsResults([
+  await QuickSuggestTestUtils.setRemoteSettingsRecords([
     {
       type: "weather",
       weather: settingsData,
@@ -1326,7 +1321,7 @@ async function doIncrementTest({ desc, setup, tests }) {
   if (!QuickSuggest.weather.suggestion) {
     fetchPromise = QuickSuggest.weather.waitForFetches();
   }
-  await QuickSuggestTestUtils.setRemoteSettingsResults([
+  await QuickSuggestTestUtils.setRemoteSettingsRecords([
     {
       type: "weather",
       weather: MerinoTestUtils.WEATHER_RS_DATA,
@@ -1355,17 +1350,6 @@ function makeExpectedResult({
       url: WEATHER_SUGGESTION.url,
       iconId: "6",
       helpUrl: QuickSuggest.HELP_URL,
-      helpL10n: {
-        id: UrlbarPrefs.get("resultMenu")
-          ? "urlbar-result-menu-learn-more-about-firefox-suggest"
-          : "firefox-suggest-urlbar-learn-more",
-      },
-      isBlockable: true,
-      blockL10n: {
-        id: UrlbarPrefs.get("resultMenu")
-          ? "urlbar-result-menu-dismiss-firefox-suggest"
-          : "firefox-suggest-urlbar-block",
-      },
       requestId: MerinoTestUtils.server.response.body.request_id,
       source: "merino",
       provider: "accuweather",

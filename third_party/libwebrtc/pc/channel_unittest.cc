@@ -49,7 +49,8 @@
 #include "test/scoped_key_value_config.h"
 
 using cricket::DtlsTransportInternal;
-using cricket::FakeVoiceMediaChannel;
+using cricket::FakeVoiceMediaReceiveChannel;
+using cricket::FakeVoiceMediaSendChannel;
 using cricket::RidDescription;
 using cricket::RidDirection;
 using cricket::StreamParams;
@@ -57,11 +58,15 @@ using webrtc::RtpTransceiverDirection;
 using webrtc::SdpType;
 
 namespace {
-const cricket::AudioCodec kPcmuCodec(0, "PCMU", 64000, 8000, 1);
-const cricket::AudioCodec kPcmaCodec(8, "PCMA", 64000, 8000, 1);
-const cricket::AudioCodec kIsacCodec(103, "ISAC", 40000, 16000, 1);
-const cricket::VideoCodec kH264Codec(97, "H264");
-const cricket::VideoCodec kH264SvcCodec(99, "H264-SVC");
+const cricket::AudioCodec kPcmuCodec =
+    cricket::CreateAudioCodec(0, "PCMU", 64000, 1);
+const cricket::AudioCodec kPcmaCodec =
+    cricket::CreateAudioCodec(8, "PCMA", 64000, 1);
+const cricket::AudioCodec kIsacCodec =
+    cricket::CreateAudioCodec(103, "ISAC", 40000, 1);
+const cricket::VideoCodec kH264Codec = cricket::CreateVideoCodec(97, "H264");
+const cricket::VideoCodec kH264SvcCodec =
+    cricket::CreateVideoCodec(99, "H264-SVC");
 const uint32_t kSsrc1 = 0x1111;
 const uint32_t kSsrc2 = 0x2222;
 const uint32_t kSsrc3 = 0x3333;
@@ -73,9 +78,10 @@ enum class NetworkIsWorker { Yes, No };
 }  // namespace
 
 template <class ChannelT,
-          class MediaChannelT,
           class MediaSendChannelT,
           class MediaReceiveChannelT,
+          class MediaSendChannelInterfaceT,
+          class MediaReceiveChannelInterfaceT,
           class ContentT,
           class CodecT,
           class MediaInfoT,
@@ -83,9 +89,10 @@ template <class ChannelT,
 class Traits {
  public:
   typedef ChannelT Channel;
-  typedef MediaChannelT MediaChannel;
   typedef MediaSendChannelT MediaSendChannel;
   typedef MediaReceiveChannelT MediaReceiveChannel;
+  typedef MediaSendChannelInterfaceT MediaSendChannelInterface;
+  typedef MediaReceiveChannelInterfaceT MediaReceiveChannelInterface;
   typedef ContentT Content;
   typedef CodecT Codec;
   typedef MediaInfoT MediaInfo;
@@ -93,7 +100,8 @@ class Traits {
 };
 
 class VoiceTraits : public Traits<cricket::VoiceChannel,
-                                  cricket::FakeVoiceMediaChannel,
+                                  cricket::FakeVoiceMediaSendChannel,
+                                  cricket::FakeVoiceMediaReceiveChannel,
                                   cricket::VoiceMediaSendChannelInterface,
                                   cricket::VoiceMediaReceiveChannelInterface,
                                   cricket::AudioContentDescription,
@@ -102,7 +110,8 @@ class VoiceTraits : public Traits<cricket::VoiceChannel,
                                   cricket::AudioOptions> {};
 
 class VideoTraits : public Traits<cricket::VideoChannel,
-                                  cricket::FakeVideoMediaChannel,
+                                  cricket::FakeVideoMediaSendChannel,
+                                  cricket::FakeVideoMediaReceiveChannel,
                                   cricket::VideoMediaSendChannelInterface,
                                   cricket::VideoMediaReceiveChannelInterface,
                                   cricket::VideoContentDescription,
@@ -150,24 +159,20 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
   }
 
   void CreateChannels(int flags1, int flags2) {
-    CreateChannels(std::make_unique<typename T::MediaChannel>(
-                       cricket::MediaChannel::Role::kSend, nullptr,
+    CreateChannels(std::make_unique<typename T::MediaSendChannel>(
                        typename T::Options(), network_thread_),
-                   std::make_unique<typename T::MediaChannel>(
-                       cricket::MediaChannel::Role::kReceive, nullptr,
+                   std::make_unique<typename T::MediaReceiveChannel>(
                        typename T::Options(), network_thread_),
-                   std::make_unique<typename T::MediaChannel>(
-                       cricket::MediaChannel::Role::kSend, nullptr,
+                   std::make_unique<typename T::MediaSendChannel>(
                        typename T::Options(), network_thread_),
-                   std::make_unique<typename T::MediaChannel>(
-                       cricket::MediaChannel::Role::kReceive, nullptr,
+                   std::make_unique<typename T::MediaReceiveChannel>(
                        typename T::Options(), network_thread_),
                    flags1, flags2);
   }
-  void CreateChannels(std::unique_ptr<typename T::MediaChannel> ch1s,
-                      std::unique_ptr<typename T::MediaChannel> ch1r,
-                      std::unique_ptr<typename T::MediaChannel> ch2s,
-                      std::unique_ptr<typename T::MediaChannel> ch2r,
+  void CreateChannels(std::unique_ptr<typename T::MediaSendChannel> ch1s,
+                      std::unique_ptr<typename T::MediaReceiveChannel> ch1r,
+                      std::unique_ptr<typename T::MediaSendChannel> ch2s,
+                      std::unique_ptr<typename T::MediaReceiveChannel> ch2r,
                       int flags1,
                       int flags2) {
     RTC_DCHECK(!channel1_);
@@ -271,8 +276,8 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
   std::unique_ptr<typename T::Channel> CreateChannel(
       rtc::Thread* worker_thread,
       rtc::Thread* network_thread,
-      std::unique_ptr<typename T::MediaChannel> ch_send,
-      std::unique_ptr<typename T::MediaChannel> ch_receive,
+      std::unique_ptr<typename T::MediaSendChannel> ch_send,
+      std::unique_ptr<typename T::MediaReceiveChannel> ch_receive,
       webrtc::RtpTransportInternal* rtp_transport,
       int flags);
 
@@ -435,11 +440,11 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
     return result;
   }
 
-  void SendRtp(typename T::MediaChannel* media_channel, rtc::Buffer data) {
+  void SendRtp(typename T::MediaSendChannel* media_channel, rtc::Buffer data) {
     network_thread_->PostTask(webrtc::SafeTask(
         network_thread_safety_, [media_channel, data = std::move(data)]() {
-          media_channel->SendRtp(data.data(), data.size(),
-                                 rtc::PacketOptions());
+          media_channel->SendPacket(data.data(), data.size(),
+                                    rtc::PacketOptions());
         }));
   }
 
@@ -582,7 +587,7 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
     if (verify_playout_) {
       EXPECT_FALSE(media_receive_channel1_impl()->playout());
     }
-    EXPECT_TRUE(media_send_channel1_impl()->codecs().empty());
+    EXPECT_TRUE(media_send_channel1_impl()->send_codecs().empty());
     EXPECT_TRUE(media_receive_channel1_impl()->recv_streams().empty());
     EXPECT_TRUE(media_send_channel1_impl()->rtp_packets().empty());
     // Basic sanity test for send and receive channel objects
@@ -602,11 +607,11 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
     CreateContent(0, kPcmuCodec, kH264Codec, &content);
     std::string err;
     EXPECT_TRUE(channel1_->SetLocalContent(&content, SdpType::kOffer, err));
-    EXPECT_EQ(0U, media_send_channel1_impl()->codecs().size());
+    EXPECT_EQ(0U, media_send_channel1_impl()->send_codecs().size());
     EXPECT_TRUE(channel1_->SetRemoteContent(&content, SdpType::kAnswer, err));
-    ASSERT_EQ(1U, media_send_channel1_impl()->codecs().size());
+    ASSERT_EQ(1U, media_send_channel1_impl()->send_codecs().size());
     EXPECT_TRUE(CodecMatches(content.codecs()[0],
-                             media_send_channel1_impl()->codecs()[0]));
+                             media_send_channel1_impl()->send_codecs()[0]));
   }
 
   // Test that SetLocalContent and SetRemoteContent properly configure
@@ -650,11 +655,11 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
     std::string err;
     EXPECT_TRUE(channel1_->SetLocalContent(&content, SdpType::kOffer, err));
     CreateContent(0, kPcmuCodec, kH264Codec, &content);
-    EXPECT_EQ(0U, media_send_channel1_impl()->codecs().size());
+    EXPECT_EQ(0U, media_send_channel1_impl()->send_codecs().size());
     EXPECT_TRUE(channel1_->SetRemoteContent(&content, SdpType::kAnswer, err));
-    ASSERT_EQ(1U, media_send_channel1_impl()->codecs().size());
+    ASSERT_EQ(1U, media_send_channel1_impl()->send_codecs().size());
     EXPECT_TRUE(CodecMatches(content.codecs()[0],
-                             media_send_channel1_impl()->codecs()[0]));
+                             media_send_channel1_impl()->send_codecs()[0]));
   }
 
   // Test that SetLocalContent and SetRemoteContent properly set RTCP
@@ -907,7 +912,7 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
     CreateChannels(DTLS, DTLS);
     SendInitiate();
 
-    typename T::MediaChannel* media_send_channel1_impl =
+    typename T::MediaSendChannel* media_send_channel1_impl =
         this->media_send_channel1_impl();
     ASSERT_TRUE(media_send_channel1_impl);
 
@@ -969,12 +974,12 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
     EXPECT_TRUE(SendAccept());
     EXPECT_FALSE(IsSrtpActive(channel1_));
     EXPECT_TRUE(media_send_channel1_impl()->sending());
-    EXPECT_EQ(1U, media_send_channel1_impl()->codecs().size());
+    EXPECT_EQ(1U, media_send_channel1_impl()->send_codecs().size());
     if (verify_playout_) {
       EXPECT_TRUE(media_receive_channel2_impl()->playout());
     }
     EXPECT_TRUE(media_send_channel2_impl()->sending());
-    EXPECT_EQ(1U, media_send_channel2_impl()->codecs().size());
+    EXPECT_EQ(1U, media_send_channel2_impl()->send_codecs().size());
   }
 
   // Send voice RTP data to the other side and ensure it gets there.
@@ -1453,48 +1458,48 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
   }
 
   // Accessors that return the standard VideoMedia{Send|Receive}ChannelInterface
-  typename T::MediaSendChannel* media_send_channel1() {
+  typename T::MediaSendChannelInterface* media_send_channel1() {
     return channel1_->media_send_channel();
   }
-  typename T::MediaSendChannel* media_send_channel2() {
+  typename T::MediaSendChannelInterface* media_send_channel2() {
     return channel2_->media_send_channel();
   }
-  typename T::MediaReceiveChannel* media_receive_channel1() {
+  typename T::MediaReceiveChannelInterface* media_receive_channel1() {
     return channel1_->media_receive_channel();
   }
-  typename T::MediaReceiveChannel* media_receive_channel2() {
+  typename T::MediaReceiveChannelInterface* media_receive_channel2() {
     return channel2_->media_receive_channel();
   }
 
-  // Accessors that return the FakeMedia<type>Channel object.
+  // Accessors that return the FakeMedia<type>SendChannel object.
   // Note that these depend on getting the object back that was
   // passed to the channel constructor.
-  // T::MediaChannel is either FakeVoiceMediaChannel or FakeVideoMediaChannel.
-  typename T::MediaChannel* media_send_channel1_impl() {
+  // T::MediaSendChannel is either FakeVoiceMediaSendChannel or
+  // FakeVideoMediaSendChannel.
+  typename T::MediaSendChannel* media_send_channel1_impl() {
     RTC_DCHECK(channel1_);
-    RTC_DCHECK(channel1_->media_send_channel());
-    return static_cast<typename T::MediaChannel*>(
-        channel1_->media_send_channel()->ImplForTesting());
+    return static_cast<typename T::MediaSendChannel*>(
+        channel1_->media_send_channel());
   }
 
-  typename T::MediaChannel* media_send_channel2_impl() {
+  typename T::MediaSendChannel* media_send_channel2_impl() {
     RTC_DCHECK(channel2_);
     RTC_DCHECK(channel2_->media_send_channel());
-    return static_cast<typename T::MediaChannel*>(
-        channel2_->media_send_channel()->ImplForTesting());
+    return static_cast<typename T::MediaSendChannel*>(
+        channel2_->media_send_channel());
   }
-  typename T::MediaChannel* media_receive_channel1_impl() {
+  typename T::MediaReceiveChannel* media_receive_channel1_impl() {
     RTC_DCHECK(channel1_);
     RTC_DCHECK(channel1_->media_receive_channel());
-    return static_cast<typename T::MediaChannel*>(
-        channel1_->media_receive_channel()->ImplForTesting());
+    return static_cast<typename T::MediaReceiveChannel*>(
+        channel1_->media_receive_channel());
   }
 
-  typename T::MediaChannel* media_receive_channel2_impl() {
+  typename T::MediaReceiveChannel* media_receive_channel2_impl() {
     RTC_DCHECK(channel2_);
     RTC_DCHECK(channel2_->media_receive_channel());
-    return static_cast<typename T::MediaChannel*>(
-        channel2_->media_receive_channel()->ImplForTesting());
+    return static_cast<typename T::MediaReceiveChannel*>(
+        channel2_->media_receive_channel());
   }
 
   rtc::AutoThread main_thread_;
@@ -1535,8 +1540,8 @@ template <>
 std::unique_ptr<cricket::VoiceChannel> ChannelTest<VoiceTraits>::CreateChannel(
     rtc::Thread* worker_thread,
     rtc::Thread* network_thread,
-    std::unique_ptr<cricket::FakeVoiceMediaChannel> send_ch,
-    std::unique_ptr<cricket::FakeVoiceMediaChannel> receive_ch,
+    std::unique_ptr<cricket::FakeVoiceMediaSendChannel> send_ch,
+    std::unique_ptr<cricket::FakeVoiceMediaReceiveChannel> receive_ch,
     webrtc::RtpTransportInternal* rtp_transport,
     int flags) {
   rtc::Thread* signaling_thread = rtc::Thread::Current();
@@ -1622,8 +1627,8 @@ template <>
 std::unique_ptr<cricket::VideoChannel> ChannelTest<VideoTraits>::CreateChannel(
     rtc::Thread* worker_thread,
     rtc::Thread* network_thread,
-    std::unique_ptr<cricket::FakeVideoMediaChannel> send_ch,
-    std::unique_ptr<cricket::FakeVideoMediaChannel> receive_ch,
+    std::unique_ptr<cricket::FakeVideoMediaSendChannel> send_ch,
+    std::unique_ptr<cricket::FakeVideoMediaReceiveChannel> receive_ch,
     webrtc::RtpTransportInternal* rtp_transport,
     int flags) {
   rtc::Thread* signaling_thread = rtc::Thread::Current();
@@ -2096,8 +2101,8 @@ TEST_F(VideoChannelSingleThreadTest, UpdateLocalStreamsWithSimulcast) {
 }
 
 TEST_F(VideoChannelSingleThreadTest, TestSetLocalOfferWithPacketization) {
-  const cricket::VideoCodec kVp8Codec(97, "VP8");
-  cricket::VideoCodec vp9_codec(98, "VP9");
+  const cricket::VideoCodec kVp8Codec = cricket::CreateVideoCodec(97, "VP8");
+  cricket::VideoCodec vp9_codec = cricket::CreateVideoCodec(98, "VP9");
   vp9_codec.packetization = cricket::kPacketizationParamRaw;
   cricket::VideoContentDescription video;
   video.set_codecs({kVp8Codec, vp9_codec});
@@ -2119,8 +2124,8 @@ TEST_F(VideoChannelSingleThreadTest, TestSetLocalOfferWithPacketization) {
 }
 
 TEST_F(VideoChannelSingleThreadTest, TestSetRemoteOfferWithPacketization) {
-  const cricket::VideoCodec kVp8Codec(97, "VP8");
-  cricket::VideoCodec vp9_codec(98, "VP9");
+  const cricket::VideoCodec kVp8Codec = cricket::CreateVideoCodec(97, "VP8");
+  cricket::VideoCodec vp9_codec = cricket::CreateVideoCodec(98, "VP9");
   vp9_codec.packetization = cricket::kPacketizationParamRaw;
   cricket::VideoContentDescription video;
   video.set_codecs({kVp8Codec, vp9_codec});
@@ -2143,8 +2148,8 @@ TEST_F(VideoChannelSingleThreadTest, TestSetRemoteOfferWithPacketization) {
 }
 
 TEST_F(VideoChannelSingleThreadTest, TestSetAnswerWithPacketization) {
-  const cricket::VideoCodec kVp8Codec(97, "VP8");
-  cricket::VideoCodec vp9_codec(98, "VP9");
+  const cricket::VideoCodec kVp8Codec = cricket::CreateVideoCodec(97, "VP8");
+  cricket::VideoCodec vp9_codec = cricket::CreateVideoCodec(98, "VP9");
   vp9_codec.packetization = cricket::kPacketizationParamRaw;
   cricket::VideoContentDescription video;
   video.set_codecs({kVp8Codec, vp9_codec});
@@ -2177,8 +2182,8 @@ TEST_F(VideoChannelSingleThreadTest, TestSetAnswerWithPacketization) {
 }
 
 TEST_F(VideoChannelSingleThreadTest, TestSetLocalAnswerWithoutPacketization) {
-  const cricket::VideoCodec kLocalCodec(98, "VP8");
-  cricket::VideoCodec remote_codec(99, "VP8");
+  const cricket::VideoCodec kLocalCodec = cricket::CreateVideoCodec(98, "VP8");
+  cricket::VideoCodec remote_codec = cricket::CreateVideoCodec(99, "VP8");
   remote_codec.packetization = cricket::kPacketizationParamRaw;
   cricket::VideoContentDescription local_video;
   local_video.set_codecs({kLocalCodec});
@@ -2199,9 +2204,9 @@ TEST_F(VideoChannelSingleThreadTest, TestSetLocalAnswerWithoutPacketization) {
 }
 
 TEST_F(VideoChannelSingleThreadTest, TestSetRemoteAnswerWithoutPacketization) {
-  cricket::VideoCodec local_codec(98, "VP8");
+  cricket::VideoCodec local_codec = cricket::CreateVideoCodec(98, "VP8");
   local_codec.packetization = cricket::kPacketizationParamRaw;
-  const cricket::VideoCodec kRemoteCodec(99, "VP8");
+  const cricket::VideoCodec kRemoteCodec = cricket::CreateVideoCodec(99, "VP8");
   cricket::VideoContentDescription local_video;
   local_video.set_codecs({local_codec});
   cricket::VideoContentDescription remote_video;
@@ -2223,9 +2228,9 @@ TEST_F(VideoChannelSingleThreadTest, TestSetRemoteAnswerWithoutPacketization) {
 
 TEST_F(VideoChannelSingleThreadTest,
        TestSetRemoteAnswerWithInvalidPacketization) {
-  cricket::VideoCodec local_codec(98, "VP8");
+  cricket::VideoCodec local_codec = cricket::CreateVideoCodec(98, "VP8");
   local_codec.packetization = cricket::kPacketizationParamRaw;
-  cricket::VideoCodec remote_codec(99, "VP8");
+  cricket::VideoCodec remote_codec = cricket::CreateVideoCodec(99, "VP8");
   remote_codec.packetization = "unknownpacketizationattributevalue";
   cricket::VideoContentDescription local_video;
   local_video.set_codecs({local_codec});
@@ -2248,9 +2253,9 @@ TEST_F(VideoChannelSingleThreadTest,
 
 TEST_F(VideoChannelSingleThreadTest,
        TestSetLocalAnswerWithInvalidPacketization) {
-  cricket::VideoCodec local_codec(98, "VP8");
+  cricket::VideoCodec local_codec = cricket::CreateVideoCodec(98, "VP8");
   local_codec.packetization = cricket::kPacketizationParamRaw;
-  const cricket::VideoCodec kRemoteCodec(99, "VP8");
+  const cricket::VideoCodec kRemoteCodec = cricket::CreateVideoCodec(99, "VP8");
   cricket::VideoContentDescription local_video;
   local_video.set_codecs({local_codec});
   cricket::VideoContentDescription remote_video;

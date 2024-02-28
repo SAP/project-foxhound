@@ -14,6 +14,7 @@
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/StaticPrefs_extensions.h"
+#include "mozilla/Try.h"
 #include "nsContentUtils.h"
 #include "nsEscape.h"
 #include "nsGlobalWindowInner.h"
@@ -90,7 +91,7 @@ bool ParseGlobs(GlobalObject& aGlobal,
       aResult.AppendElement(elem.GetAsMatchGlob()->Core());
     } else {
       RefPtr<MatchGlobCore> glob =
-          new MatchGlobCore(elem.GetAsUTF8String(), true, aRv);
+          new MatchGlobCore(elem.GetAsUTF8String(), true, false, aRv);
       if (aRv.Failed()) {
         return false;
       }
@@ -804,18 +805,35 @@ bool MozDocumentMatcher::Matches(const DocInfo& aDoc,
     }
   }
 
+  // TODO bug 1411641: we should account for precursorPrincipal if
+  // match_origin_as_fallback is specified (see also bug 1853411).
   if (!mMatchAboutBlank && aDoc.URL().InheritsPrincipal()) {
     return false;
   }
 
-  // Top-level about:blank is a special case. We treat it as a match if
-  // matchAboutBlank is true and it has the null principal. In all other
-  // cases, we test the URL of the principal that it inherits.
+  // Top-level about:blank is a special case. Unlike about:blank frames/windows
+  // opened by web pages, these do not have an origin that could be matched by
+  // a match pattern (they have a null principal instead). To allow extensions
+  // that intend to run scripts "everywhere", consider the document matched if
+  // the match pattern describe a very broad pattern (such as "<all_urls>").
   if (mMatchAboutBlank && aDoc.IsTopLevel() &&
       (aDoc.URL().Spec().EqualsLiteral("about:blank") ||
        aDoc.URL().Scheme() == nsGkAtoms::data) &&
       aDoc.Principal() && aDoc.Principal()->GetIsNullPrincipal()) {
-    return true;
+    if (StaticPrefs::extensions_script_about_blank_without_permission()) {
+      return true;
+    }
+    if (mHasActiveTabPermission) {
+      return true;
+    }
+    if (mMatches->MatchesAllWebUrls() && mIncludeGlobs.IsNull()) {
+      // When mIncludeGlobs is present, mMatches does not necessarily match
+      // everything (except possibly if include_globs is just ["*"]). So we
+      // only match if mMatches is present without mIncludeGlobs.
+      return true;
+    }
+    // Null principal is never going to match, so we may as well return now.
+    return false;
   }
 
   if (mRestricted && WebExtensionPolicy::IsRestrictedDoc(aDoc)) {

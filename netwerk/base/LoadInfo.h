@@ -195,6 +195,12 @@ class LoadInfo final : public nsILoadInfo {
     mIsThirdPartyContextToTopWindow.reset();
   }
 
+#ifdef DEBUG
+  void MarkOverriddenFingerprintingSettingsAsSet() {
+    mOverriddenFingerprintingSettingsIsSet = true;
+  }
+#endif
+
  private:
   // private constructor that is only allowed to be called from within
   // HttpChannelParent and FTPChannelParent declared as friends undeneath.
@@ -240,12 +246,13 @@ class LoadInfo final : public nsILoadInfo {
       bool aHasValidUserGestureActivation, bool aAllowDeprecatedSystemRequests,
       bool aIsInDevToolsContext, bool aParserCreatedScript,
       nsILoadInfo::StoragePermissionState aStoragePermission,
+      const Maybe<RFPTarget>& aOverriddenFingerprintingSettings,
       bool aIsMetaRefresh, uint32_t aRequestBlockingReason,
       nsINode* aLoadingContext,
       nsILoadInfo::CrossOriginEmbedderPolicy aLoadingEmbedderPolicy,
       bool aIsOriginTrialCoepCredentiallessEnabledForTopLevel,
       nsIURI* aUnstrippedURI, nsIInterceptionInfo* aInterceptionInfo,
-      bool aHasInjectedCookieForCookieBannerHandling);
+      bool aHasInjectedCookieForCookieBannerHandling, bool aWasSchemelessInput);
   LoadInfo(const LoadInfo& rhs);
 
   NS_IMETHOD GetRedirects(JSContext* aCx,
@@ -357,6 +364,12 @@ class LoadInfo final : public nsILoadInfo {
   bool mParserCreatedScript = false;
   nsILoadInfo::StoragePermissionState mStoragePermission =
       nsILoadInfo::NoStoragePermission;
+  Maybe<RFPTarget> mOverriddenFingerprintingSettings;
+#ifdef DEBUG
+  // A boolean used to ensure the mOverriddenFingerprintingSettings is set
+  // before use it.
+  bool mOverriddenFingerprintingSettingsIsSet = false;
+#endif
   bool mIsMetaRefresh = false;
 
   // Is true if this load was triggered by processing the attributes of the
@@ -387,6 +400,7 @@ class LoadInfo final : public nsILoadInfo {
   nsCOMPtr<nsIInterceptionInfo> mInterceptionInfo;
 
   bool mHasInjectedCookieForCookieBannerHandling = false;
+  bool mWasSchemelessInput = false;
 };
 
 // This is exposed solely for testing purposes and should not be used outside of

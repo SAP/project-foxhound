@@ -3,47 +3,6 @@
 
 "use strict";
 
-const PRODUCT_TEST_URL = "https://example.com/Some-Product/dp/ABCDEFG123";
-const OTHER_PRODUCT_TEST_URL =
-  "https://example.com/Another-Product/dp/HIJKLMN456";
-const BAD_PRODUCT_TEST_URL = "https://example.com/Bad-Product/dp/0000000000";
-
-async function verifyProductInfo(sidebar, expectedProductInfo) {
-  await SpecialPowers.spawn(
-    sidebar.querySelector("browser"),
-    [expectedProductInfo],
-    async prodInfo => {
-      let doc = content.document;
-      let container = doc.querySelector("shopping-container");
-      let root = container.shadowRoot;
-      let reviewReliability = root.querySelector("review-reliability");
-      // The async fetch could take some time.
-      while (!reviewReliability) {
-        info("Waiting for update.");
-        await container.updateComplete;
-      }
-      let adjustedRating = root.querySelector("adjusted-rating");
-      Assert.equal(
-        reviewReliability.getAttribute("letter"),
-        prodInfo.letterGrade,
-        `Should have correct letter grade for product ${prodInfo.id}.`
-      );
-      Assert.equal(
-        adjustedRating.getAttribute("rating"),
-        prodInfo.adjustedRating,
-        `Should have correct adjusted rating for product ${prodInfo.id}.`
-      );
-      Assert.equal(
-        content.windowGlobalChild
-          .getExistingActor("ShoppingSidebar")
-          ?.getProductURI()?.spec,
-        prodInfo.productURL,
-        `Should have correct url in the child.`
-      );
-    }
-  );
-}
-
 add_task(async function test_sidebar_navigation() {
   // Disable OHTTP for now to get this landed; we'll re-enable with proper
   // mocking in the near future.
@@ -281,7 +240,9 @@ add_task(async function test_sidebar_button_open_close() {
   });
 });
 
-add_task(async function test_sidebar_error() {
+add_task(async function test_no_reliability_available() {
+  Services.fog.testResetFOG();
+  await Services.fog.testFlushAllChildren();
   // Disable OHTTP for now to get this landed; we'll re-enable with proper
   // mocking in the near future.
   await SpecialPowers.pushPrefEnv({
@@ -290,7 +251,7 @@ add_task(async function test_sidebar_error() {
       ["toolkit.shopping.ohttpConfigURL", ""],
     ],
   });
-  await BrowserTestUtils.withNewTab(BAD_PRODUCT_TEST_URL, async browser => {
+  await BrowserTestUtils.withNewTab(NEEDS_ANALYSIS_TEST_URL, async browser => {
     let sidebar = gBrowser.getPanel(browser).querySelector("shopping-sidebar");
 
     Assert.ok(sidebar, "Sidebar should exist");
@@ -300,27 +261,17 @@ add_task(async function test_sidebar_error() {
       "Sidebar should be visible."
     );
     info("Waiting for sidebar to update.");
-    await promiseSidebarUpdated(sidebar, BAD_PRODUCT_TEST_URL);
-
-    info("Verifying a generic error is shown.");
-    await SpecialPowers.spawn(
-      sidebar.querySelector("browser"),
-      [],
-      async prodInfo => {
-        let doc = content.document;
-        let shoppingContainer =
-          doc.querySelector("shopping-container").wrappedJSObject;
-
-        ok(
-          shoppingContainer.shoppingMessageBarEl,
-          "Got shopping-message-bar element"
-        );
-        is(
-          shoppingContainer.shoppingMessageBarEl.getAttribute("type"),
-          "generic-error",
-          "generic-error type should be correct"
-        );
-      }
-    );
+    await promiseSidebarUpdated(sidebar, NEEDS_ANALYSIS_TEST_URL);
   });
+
+  await Services.fog.testFlushAllChildren();
+  var sawPageEvents =
+    Glean.shopping.surfaceNoReviewReliabilityAvailable.testGetValue();
+
+  Assert.equal(sawPageEvents.length, 1);
+  Assert.equal(sawPageEvents[0].category, "shopping");
+  Assert.equal(
+    sawPageEvents[0].name,
+    "surface_no_review_reliability_available"
+  );
 });

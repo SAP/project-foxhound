@@ -154,13 +154,6 @@ class DXGIYCbCrTextureData : public TextureData {
 
  public:
   static DXGIYCbCrTextureData* Create(
-      IDirect3DTexture9* aTextureY, IDirect3DTexture9* aTextureCb,
-      IDirect3DTexture9* aTextureCr, HANDLE aHandleY, HANDLE aHandleCb,
-      HANDLE aHandleCr, const gfx::IntSize& aSize, const gfx::IntSize& aSizeY,
-      const gfx::IntSize& aSizeCbCr, gfx::ColorDepth aColorDepth,
-      gfx::YUVColorSpace aYUVColorSpace, gfx::ColorRange aColorRange);
-
-  static DXGIYCbCrTextureData* Create(
       ID3D11Texture2D* aTextureCb, ID3D11Texture2D* aTextureY,
       ID3D11Texture2D* aTextureCr, const gfx::IntSize& aSize,
       const gfx::IntSize& aSizeY, const gfx::IntSize& aSizeCbCr,
@@ -389,7 +382,7 @@ class DXGITextureHostD3D11 : public TextureHost {
   uint32_t mArrayIndex = 0;
   RefPtr<DataTextureSourceD3D11> mTextureSource;
   gfx::IntSize mSize;
-  WindowsHandle mHandle;
+  HANDLE mHandle;
   gfx::SurfaceFormat mFormat;
   bool mHasKeyedMutex;
 
@@ -442,21 +435,13 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
 
   bool SupportsExternalCompositing(WebRenderBackend aBackend) override;
 
- private:
-  bool EnsureTextureSource();
-
  protected:
-  RefPtr<ID3D11Device> GetDevice();
-
-  bool EnsureTexture();
-
   RefPtr<ID3D11Texture2D> mTextures[3];
-  RefPtr<DataTextureSourceD3D11> mTextureSources[3];
 
   gfx::IntSize mSize;
   gfx::IntSize mSizeY;
   gfx::IntSize mSizeCbCr;
-  WindowsHandle mHandles[3];
+  HANDLE mHandles[3];
   bool mIsLocked;
   gfx::ColorDepth mColorDepth;
   gfx::YUVColorSpace mYUVColorSpace;
@@ -597,51 +582,6 @@ class D3D11MTAutoEnter {
 
  private:
   RefPtr<ID3D10Multithread> mMT;
-};
-
-/**
- * A class to manage ID3D11Texture2Ds that is shared without using shared handle
- * in GPU process. On some GPUs, ID3D11Texture2Ds of hardware decoded video
- * frames with zero video frame copy could not use shared handle.
- */
-class GpuProcessD3D11TextureMap {
- public:
-  static void Init();
-  static void Shutdown();
-  static GpuProcessD3D11TextureMap* Get() { return sInstance; }
-  static GpuProcessTextureId GetNextTextureId();
-
-  GpuProcessD3D11TextureMap();
-  ~GpuProcessD3D11TextureMap();
-
-  void Register(GpuProcessTextureId aTextureId, ID3D11Texture2D* aTexture,
-                uint32_t aArrayIndex, const gfx::IntSize& aSize,
-                RefPtr<IMFSampleUsageInfo> aUsageInfo);
-  void Unregister(GpuProcessTextureId aTextureId);
-
-  RefPtr<ID3D11Texture2D> GetTexture(GpuProcessTextureId aTextureId);
-  Maybe<HANDLE> GetSharedHandleOfCopiedTexture(GpuProcessTextureId aTextureId);
-
- private:
-  struct TextureHolder {
-    TextureHolder(ID3D11Texture2D* aTexture, uint32_t aArrayIndex,
-                  const gfx::IntSize& aSize,
-                  RefPtr<IMFSampleUsageInfo> aUsageInfo);
-    TextureHolder() = default;
-
-    RefPtr<ID3D11Texture2D> mTexture;
-    uint32_t mArrayIndex = 0;
-    gfx::IntSize mSize;
-    RefPtr<IMFSampleUsageInfo> mIMFSampleUsageInfo;
-    RefPtr<ID3D11Texture2D> mCopiedTexture;
-    Maybe<HANDLE> mCopiedTextureSharedHandle;
-  };
-
-  DataMutex<std::unordered_map<GpuProcessTextureId, TextureHolder,
-                               GpuProcessTextureId::HashFn>>
-      mD3D11TexturesById;
-
-  static StaticAutoPtr<GpuProcessD3D11TextureMap> sInstance;
 };
 
 }  // namespace layers

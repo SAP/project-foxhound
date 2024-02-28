@@ -207,7 +207,7 @@ void MultiCodecReceiveTest::RunTestWithCodecs(
           return VP9Encoder::Create();
         }
         if (format.name == "H264") {
-          return H264Encoder::Create(cricket::VideoCodec("H264"));
+          return H264Encoder::Create();
         }
         RTC_DCHECK_NOTREACHED() << format.name;
         return nullptr;
@@ -254,6 +254,7 @@ void MultiCodecReceiveTest::RunTestWithCodecs(
       GetVideoSendStream()->Start();
       CreateFrameGeneratorCapturer(kFps, kWidth / 2, kHeight / 2);
       ConnectVideoSourcesToStreams();
+      StartVideoSources();
     });
     EXPECT_TRUE(observer_.Wait()) << "Timed out waiting for frames.";
   }

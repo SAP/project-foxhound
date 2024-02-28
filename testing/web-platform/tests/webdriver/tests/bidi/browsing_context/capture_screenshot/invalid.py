@@ -3,7 +3,7 @@ import pytest
 from ... import get_viewport_dimensions
 
 import webdriver.bidi.error as error
-from webdriver.bidi.modules.browsing_context import ElementOptions, ViewportOptions
+from webdriver.bidi.modules.browsing_context import ElementOptions, BoxOptions
 from webdriver.bidi.modules.script import ContextTarget
 
 pytestmark = pytest.mark.asyncio
@@ -82,23 +82,12 @@ async def test_params_clip_element_sharedId_invalid_value(bidi_session, top_cont
         )
 
 
-@pytest.mark.parametrize("value", [42, "foo", {}, []])
-async def test_params_clip_element_scroll_into_view_invalid_type(
-    bidi_session, top_context, value
-):
-    with pytest.raises(error.InvalidArgumentException):
-        await bidi_session.browsing_context.capture_screenshot(
-            context=top_context["context"],
-            clip=ElementOptions(element={}, scroll_into_view=value),
-        )
-
-
 @pytest.mark.parametrize("value", [None, False, "foo", {}, []])
 async def test_params_clip_viewport_x_invalid_type(bidi_session, top_context, value):
     with pytest.raises(error.InvalidArgumentException):
         await bidi_session.browsing_context.capture_screenshot(
             context=top_context["context"],
-            clip=ViewportOptions(x=value, y=0, width=0, height=0),
+            clip=BoxOptions(x=value, y=0, width=0, height=0),
         )
 
 
@@ -107,7 +96,7 @@ async def test_params_clip_viewport_y_invalid_type(bidi_session, top_context, va
     with pytest.raises(error.InvalidArgumentException):
         await bidi_session.browsing_context.capture_screenshot(
             context=top_context["context"],
-            clip=ViewportOptions(x=0, y=value, width=0, height=0),
+            clip=BoxOptions(x=0, y=value, width=0, height=0),
         )
 
 
@@ -118,7 +107,7 @@ async def test_params_clip_viewport_width_invalid_type(
     with pytest.raises(error.InvalidArgumentException):
         await bidi_session.browsing_context.capture_screenshot(
             context=top_context["context"],
-            clip=ViewportOptions(x=0, y=0, width=value, height=0),
+            clip=BoxOptions(x=0, y=0, width=value, height=0),
         )
 
 
@@ -129,7 +118,7 @@ async def test_params_clip_viewport_height_invalid_type(
     with pytest.raises(error.InvalidArgumentException):
         await bidi_session.browsing_context.capture_screenshot(
             context=top_context["context"],
-            clip=ViewportOptions(x=0, y=0, width=0, height=value),
+            clip=BoxOptions(x=0, y=0, width=0, height=value),
         )
 
 
@@ -137,7 +126,7 @@ async def test_params_clip_viewport_dimensions_invalid_value(bidi_session, top_c
     with pytest.raises(error.UnableToCaptureScreenException):
         await bidi_session.browsing_context.capture_screenshot(
             context=top_context["context"],
-            clip=ViewportOptions(x=0, y=0, width=0, height=0),
+            clip=BoxOptions(x=0, y=0, width=0, height=0),
         )
 
 
@@ -149,7 +138,7 @@ async def test_params_clip_viewport_outside_of_window_viewport(
     with pytest.raises(error.UnableToCaptureScreenException):
         await bidi_session.browsing_context.capture_screenshot(
             context=top_context["context"],
-            clip=ViewportOptions(
+            clip=BoxOptions(
                 x=viewport_dimensions["width"],
                 y=viewport_dimensions["height"],
                 width=1,

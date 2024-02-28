@@ -331,7 +331,6 @@ bool IsPrivateBrowsing(nsPIDOMWindowInner* aWindow) {
 PeerConnectionImpl::PeerConnectionImpl(const GlobalObject* aGlobal)
     : mTimeCard(MOZ_LOG_TEST(logModuleInfo, LogLevel::Error) ? create_timecard()
                                                              : nullptr),
-      mJsConfiguration(),
       mSignalingState(RTCSignalingState::Stable),
       mIceConnectionState(RTCIceConnectionState::New),
       mIceGatheringState(RTCIceGatheringState::New),
@@ -818,8 +817,7 @@ PeerConnectionImpl::EnsureDataConnection(uint16_t aLocalPort,
     return NS_OK;
   }
 
-  nsCOMPtr<nsISerialEventTarget> target =
-      mWindow ? mWindow->EventTargetFor(TaskCategory::Other) : nullptr;
+  nsCOMPtr<nsISerialEventTarget> target = GetMainThreadSerialEventTarget();
   Maybe<uint64_t> mms = aMMSSet ? Some(aMaxMessageSize) : Nothing();
   if (auto res = DataChannelConnection::Create(this, target, mTransportHandler,
                                                aLocalPort, aNumstreams, mms)) {
@@ -1119,8 +1117,21 @@ PeerConnectionImpl::CreateDataChannel(
   MOZ_ASSERT(aRetval);
 
   RefPtr<DataChannel> dataChannel;
-  DataChannelConnection::Type theType =
-      static_cast<DataChannelConnection::Type>(aType);
+  DataChannelReliabilityPolicy prPolicy;
+  switch (aType) {
+    case IPeerConnection::kDataChannelReliable:
+      prPolicy = DataChannelReliabilityPolicy::Reliable;
+      break;
+    case IPeerConnection::kDataChannelPartialReliableRexmit:
+      prPolicy = DataChannelReliabilityPolicy::LimitedRetransmissions;
+      break;
+    case IPeerConnection::kDataChannelPartialReliableTimed:
+      prPolicy = DataChannelReliabilityPolicy::LimitedLifetime;
+      break;
+    default:
+      MOZ_ASSERT(false);
+      return NS_ERROR_FAILURE;
+  }
 
   nsresult rv = EnsureDataConnection(
       WEBRTC_DATACHANNEL_PORT_DEFAULT, WEBRTC_DATACHANNEL_STREAMS_DEFAULT,
@@ -1129,12 +1140,13 @@ PeerConnectionImpl::CreateDataChannel(
     return rv;
   }
   dataChannel = mDataConnection->Open(
-      NS_ConvertUTF16toUTF8(aLabel), NS_ConvertUTF16toUTF8(aProtocol), theType,
+      NS_ConvertUTF16toUTF8(aLabel), NS_ConvertUTF16toUTF8(aProtocol), prPolicy,
       ordered,
-      aType == DataChannelConnection::PARTIAL_RELIABLE_REXMIT
+      prPolicy == DataChannelReliabilityPolicy::LimitedRetransmissions
           ? aMaxNum
-          : (aType == DataChannelConnection::PARTIAL_RELIABLE_TIMED ? aMaxTime
-                                                                    : 0),
+          : (prPolicy == DataChannelReliabilityPolicy::LimitedLifetime
+                 ? aMaxTime
+                 : 0),
       nullptr, nullptr, aExternalNegotiated, aStream);
   NS_ENSURE_TRUE(dataChannel, NS_ERROR_NOT_AVAILABLE);
 
@@ -2364,7 +2376,7 @@ void PeerConnectionImpl::SetupPreferredRtpExtensions(
 }
 
 nsresult PeerConnectionImpl::CalculateFingerprint(
-    const std::string& algorithm, std::vector<uint8_t>* fingerprint) const {
+    const nsACString& algorithm, std::vector<uint8_t>* fingerprint) const {
   DtlsDigest digest(algorithm);
 
   MOZ_ASSERT(fingerprint);
@@ -4074,9 +4086,8 @@ void PeerConnectionImpl::UpdateTransport(const JsepTransceiver& aTransceiver,
   DtlsDigestList digests;
   for (const auto& fingerprint :
        transport.mDtls->GetFingerprints().mFingerprints) {
-    std::ostringstream ss;
-    ss << fingerprint.hashFunc;
-    digests.emplace_back(ss.str(), fingerprint.fingerprint);
+    digests.emplace_back(ToString(fingerprint.hashFunc),
+                         fingerprint.fingerprint);
   }
 
   mTransportHandler->ActivateTransport(

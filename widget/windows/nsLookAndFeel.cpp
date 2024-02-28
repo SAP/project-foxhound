@@ -38,12 +38,18 @@ static int32_t GetSystemParam(long flag, int32_t def) {
   return ::SystemParametersInfo(flag, 0, &value, 0) ? value : def;
 }
 
-static nsresult SystemWantsDarkTheme(int32_t& darkThemeEnabled) {
+static bool SystemWantsDarkTheme() {
+  if (nsUXThemeData::IsHighContrastOn()) {
+    return LookAndFeel::IsDarkColor(
+        LookAndFeel::Color(StyleSystemColor::Window, ColorScheme::Light,
+                           LookAndFeel::UseStandins::No));
+  }
+
   nsresult rv = NS_OK;
   nsCOMPtr<nsIWindowsRegKey> personalizeKey =
       do_CreateInstance("@mozilla.org/windows-registry-key;1", &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    return false;
   }
 
   rv = personalizeKey->Open(
@@ -52,17 +58,16 @@ static nsresult SystemWantsDarkTheme(int32_t& darkThemeEnabled) {
           u"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
       nsIWindowsRegKey::ACCESS_QUERY_VALUE);
   if (NS_FAILED(rv)) {
-    return rv;
+    return false;
   }
 
   uint32_t lightThemeEnabled;
   rv =
       personalizeKey->ReadIntValue(u"AppsUseLightTheme"_ns, &lightThemeEnabled);
-  if (NS_SUCCEEDED(rv)) {
-    darkThemeEnabled = !lightThemeEnabled;
+  if (NS_FAILED(rv)) {
+    return false;
   }
-
-  return rv;
+  return !lightThemeEnabled;
 }
 
 static int32_t SystemColorFilter() {
@@ -357,6 +362,8 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::MozComboboxtext:
       idx = COLOR_WINDOWTEXT;
       break;
+    case ColorID::MozHeaderbar:
+    case ColorID::MozHeaderbarinactive:
     case ColorID::MozDialog:
       idx = COLOR_3DFACE;
       break;
@@ -366,6 +373,8 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::Accentcolortext:
       aColor = mColorAccentText;
       return NS_OK;
+    case ColorID::MozHeaderbartext:
+    case ColorID::MozHeaderbarinactivetext:
     case ColorID::MozDialogtext:
     case ColorID::MozColheadertext:
     case ColorID::MozColheaderhovertext:
@@ -551,7 +560,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = 2;
       break;
     case IntID::SystemUsesDarkTheme:
-      res = SystemWantsDarkTheme(aResult);
+      aResult = SystemWantsDarkTheme();
       break;
     case IntID::SystemScrollbarSize:
       aResult = std::max(WinUtils::GetSystemMetricsForDpi(SM_CXVSCROLL, 96),
@@ -871,10 +880,6 @@ auto nsLookAndFeel::ComputeTitlebarColors() -> TitlebarColors {
   result.mActiveDark.mBorder = result.mActiveLight.mBorder = *result.mAccent;
   result.mInactiveDark.mBorder = result.mInactiveLight.mBorder =
       result.mAccentInactive.valueOr(NS_RGB(57, 57, 57));
-  if (!StaticPrefs::widget_windows_titlebar_accent_enabled()) {
-    return result;
-  }
-
   result.mActiveLight.mBg = result.mActiveDark.mBg = *result.mAccent;
   result.mActiveLight.mFg = result.mActiveDark.mFg = *result.mAccentText;
   if (result.mAccentInactive) {
@@ -883,18 +888,28 @@ auto nsLookAndFeel::ComputeTitlebarColors() -> TitlebarColors {
     result.mInactiveLight.mFg = result.mInactiveDark.mFg =
         *result.mAccentInactiveText;
   } else {
-    // The 153 matches the .6 opacity from browser-aero.css, which says it
-    // was calculated to match the opacity change of Windows Explorer
-    // titlebar text change for inactive windows.
+    // The 153 matches the .6 opacity the front-end uses, which was calculated
+    // to match the opacity change of Windows Explorer titlebar text change
+    // for inactive windows.
+    constexpr uint8_t kTextAlpha = 153;
+    // This is hand-picked to .8 to change the accent color a bit but not too
+    // much.
+    constexpr uint8_t kBgAlpha = 208;
+    const auto BlendWithAlpha = [](nscolor aBg, nscolor aFg,
+                                   uint8_t aAlpha) -> nscolor {
+      return NS_ComposeColors(
+          aBg, NS_RGBA(NS_GET_R(aFg), NS_GET_G(aFg), NS_GET_B(aFg), aAlpha));
+    };
+
     result.mInactiveLight.mBg =
-        NS_ComposeColors(*result.mAccent, NS_RGBA(255, 255, 255, 153));
+        BlendWithAlpha(NS_RGB(255, 255, 255), *result.mAccent, kBgAlpha);
     result.mInactiveLight.mFg =
-        NS_ComposeColors(*result.mAccentText, NS_RGBA(255, 255, 255, 153));
+        BlendWithAlpha(*result.mAccent, *result.mAccentText, kTextAlpha);
 
     result.mInactiveDark.mBg =
-        NS_ComposeColors(*result.mAccent, NS_RGBA(0, 0, 0, 153));
+        BlendWithAlpha(NS_RGB(0, 0, 0), *result.mAccent, kBgAlpha);
     result.mInactiveDark.mFg =
-        NS_ComposeColors(*result.mAccentText, NS_RGBA(0, 0, 0, 153));
+        BlendWithAlpha(*result.mAccent, *result.mAccentText, kTextAlpha);
   }
   return result;
 }

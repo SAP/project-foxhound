@@ -195,6 +195,7 @@ nsFrameLoader::nsFrameLoader(Element* aOwner, BrowsingContext* aBrowsingContext,
       mIsRemoteFrame(aIsRemoteFrame),
       mWillChangeProcess(false),
       mObservingOwnerContent(false),
+      mHadDetachedFrame(false),
       mTabProcessCrashFired(false) {
   nsCOMPtr<nsFrameLoaderOwner> owner = do_QueryInterface(aOwner);
   owner->AttachFrameLoader(this);
@@ -542,15 +543,19 @@ void nsFrameLoader::LoadFrame(bool aOriginalSrc) {
     return;
   }
 
-  nsIURI* base_uri = mOwnerContent->GetBaseURI();
+  // If we are being loaded by a lazy loaded iframe, use its base URI first
+  // instead of the current base URI.
+  auto* lazyBaseURI = GetLazyLoadFrameResumptionState().mBaseURI.get();
+  nsIURI* baseURI = lazyBaseURI ? lazyBaseURI : mOwnerContent->GetBaseURI();
+
   auto encoding = doc->GetDocumentCharacterSet();
 
   nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), src, encoding, base_uri);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), src, encoding, baseURI);
 
   // If the URI was malformed, try to recover by loading about:blank.
   if (rv == NS_ERROR_MALFORMED_URI) {
-    rv = NS_NewURI(getter_AddRefs(uri), u"about:blank"_ns, encoding, base_uri);
+    rv = NS_NewURI(getter_AddRefs(uri), u"about:blank"_ns, encoding, baseURI);
   }
 
   if (NS_SUCCEEDED(rv)) {
@@ -691,7 +696,8 @@ nsresult nsFrameLoader::ReallyStartLoadingInternal() {
       loadState->SetBaseURI(mOwnerContent->GetBaseURI());
     }
 
-    auto referrerInfo = MakeRefPtr<ReferrerInfo>(*mOwnerContent);
+    auto referrerInfo = MakeRefPtr<ReferrerInfo>(
+        *mOwnerContent, GetLazyLoadFrameResumptionState().mReferrerPolicy);
     loadState->SetReferrerInfo(referrerInfo);
 
     loadState->SetIsFromProcessingFrameAttributes();
@@ -707,6 +713,12 @@ nsresult nsFrameLoader::ReallyStartLoadingInternal() {
     loadState->SetLoadFlags(flags);
 
     loadState->SetFirstParty(false);
+
+    Document* ownerDoc = mOwnerContent->OwnerDoc();
+    if (ownerDoc) {
+      loadState->SetTriggeringStorageAccess(ownerDoc->UsingStorageAccess());
+      loadState->SetTriggeringWindowId(ownerDoc->InnerWindowID());
+    }
 
     // If we're loading the default about:blank document in a <browser> element,
     // prevent the load from causing a process switch by explicitly overriding
@@ -1888,7 +1900,7 @@ void nsFrameLoader::StartDestroy(bool aForProcessSwitch) {
     MaybeUpdatePrimaryBrowserParent(eBrowserParentRemoved);
 
     nsCOMPtr<nsFrameLoaderOwner> owner = do_QueryInterface(mOwnerContent);
-    owner->FrameLoaderDestroying(this);
+    owner->FrameLoaderDestroying(this, !aForProcessSwitch);
     SetOwnerContent(nullptr);
   }
 
@@ -2951,8 +2963,7 @@ class nsAsyncMessageToChild : public nsSameProcessAsyncMessageBase,
                               public Runnable {
  public:
   explicit nsAsyncMessageToChild(nsFrameLoader* aFrameLoader)
-      : nsSameProcessAsyncMessageBase(),
-        mozilla::Runnable("nsAsyncMessageToChild"),
+      : mozilla::Runnable("nsAsyncMessageToChild"),
         mFrameLoader(aFrameLoader) {}
 
   NS_IMETHOD Run() override {
@@ -3085,15 +3096,24 @@ already_AddRefed<Element> nsFrameLoader::GetOwnerElement() {
   return do_AddRef(mOwnerContent);
 }
 
-void nsFrameLoader::SetDetachedSubdocFrame(nsIFrame* aDetachedFrame,
-                                           Document* aContainerDoc) {
-  mDetachedSubdocFrame = aDetachedFrame;
-  mContainerDocWhileDetached = aContainerDoc;
+const LazyLoadFrameResumptionState&
+nsFrameLoader::GetLazyLoadFrameResumptionState() {
+  static const LazyLoadFrameResumptionState sEmpty;
+  if (auto* iframe = HTMLIFrameElement::FromNode(*mOwnerContent)) {
+    return iframe->GetLazyLoadFrameResumptionState();
+  }
+  return sEmpty;
 }
 
-nsIFrame* nsFrameLoader::GetDetachedSubdocFrame(
-    Document** aContainerDoc) const {
-  NS_IF_ADDREF(*aContainerDoc = mContainerDocWhileDetached);
+void nsFrameLoader::SetDetachedSubdocFrame(nsIFrame* aDetachedFrame) {
+  mDetachedSubdocFrame = aDetachedFrame;
+  mHadDetachedFrame = !!aDetachedFrame;
+}
+
+nsIFrame* nsFrameLoader::GetDetachedSubdocFrame(bool* aOutIsSet) const {
+  if (aOutIsSet) {
+    *aOutIsSet = mHadDetachedFrame;
+  }
   return mDetachedSubdocFrame.GetFrame();
 }
 

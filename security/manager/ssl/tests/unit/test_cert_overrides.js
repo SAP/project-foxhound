@@ -13,6 +13,13 @@
 
 do_get_profile();
 
+// Enable the collection (during test) for all products so even products
+// that don't collect the data will be able to run the test without failure.
+Services.prefs.setBoolPref(
+  "toolkit.telemetry.testing.overrideProductsCheck",
+  true
+);
+
 function check_telemetry() {
   let histogram = Services.telemetry
     .getHistogramById("SSL_CERT_ERROR_OVERRIDES")

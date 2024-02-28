@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "Attr.h"
 #include "jsapi.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
@@ -29,9 +30,11 @@
 #include "nsCOMArray.h"
 #include "nsContentList.h"
 #include "nsContentUtils.h"
+#include "nsDOMAttributeMap.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
 #include "nsError.h"
+#include "nsFocusManager.h"
 #include "nsGkAtoms.h"
 #include "nsHTMLDocument.h"
 #include "nsIFormControlFrame.h"
@@ -49,7 +52,6 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_prompts.h"
-#include "mozilla/StaticPrefs_signon.h"
 #include "nsCategoryManagerUtils.h"
 #include "nsIContentInlines.h"
 #include "nsISimpleEnumerator.h"
@@ -146,28 +148,25 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLFormElement,
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPastNameLookupTable)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRelList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTargetContext)
-  RadioGroupManager::Traverse(tmp, cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLFormElement,
                                                 nsGenericHTMLElement)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mRelList)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mTargetContext)
-  RadioGroupManager::Unlink(tmp);
   tmp->Clear();
   tmp->mExpandoAndGeneration.OwnerUnlinked();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLFormElement,
-                                             nsGenericHTMLElement,
-                                             nsIRadioGroupContainer)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(HTMLFormElement,
+                                               nsGenericHTMLElement)
 
 // EventTarget
 void HTMLFormElement::AsyncEventRunning(AsyncEventDispatcher* aEvent) {
-  if (mFormPasswordEventDispatcher == aEvent) {
-    mFormPasswordEventDispatcher = nullptr;
-  } else if (mFormPossibleUsernameEventDispatcher == aEvent) {
-    mFormPossibleUsernameEventDispatcher = nullptr;
+  if (aEvent->mEventType == u"DOMFormHasPassword"_ns) {
+    mHasPendingPasswordEvent = false;
+  } else if (aEvent->mEventType == u"DOMFormHasPossibleUsername"_ns) {
+    mHasPendingPossibleUsernameEvent = false;
   }
 }
 
@@ -210,6 +209,41 @@ void HTMLFormElement::GetMethod(nsAString& aValue) {
   GetEnumAttr(nsGkAtoms::method, kFormDefaultMethod->tag, aValue);
 }
 
+void HTMLFormElement::ReportInvalidUnfocusableElements() {
+  RefPtr<nsFocusManager> focusManager = nsFocusManager::GetFocusManager();
+  MOZ_ASSERT(focusManager);
+
+  // This shouldn't be called recursively, so use a rather large value
+  // for the preallocated buffer.
+  AutoTArray<RefPtr<nsGenericHTMLFormElement>, 100> sortedControls;
+  if (NS_FAILED(mControls->GetSortedControls(sortedControls))) {
+    return;
+  }
+
+  for (auto& _e : sortedControls) {
+    // MOZ_CAN_RUN_SCRIPT requires explicit copy, Bug 1620312
+    RefPtr<nsGenericHTMLFormElement> element = _e;
+    bool isFocusable = false;
+    focusManager->ElementIsFocusable(element, 0, &isFocusable);
+    if (!isFocusable) {
+      nsTArray<nsString> params;
+      nsAutoCString messageName("InvalidFormControlUnfocusable");
+
+      if (Attr* nameAttr = element->GetAttributes()->GetNamedItem(u"name"_ns)) {
+        nsAutoString name;
+        nameAttr->GetValue(name);
+        params.AppendElement(name);
+        messageName = "InvalidNamedFormControlUnfocusable";
+      }
+
+      nsContentUtils::ReportToConsole(
+          nsIScriptError::errorFlag, "DOM"_ns, element->GetOwnerDocument(),
+          nsContentUtils::eDOM_PROPERTIES, messageName.get(), params,
+          element->GetBaseURI());
+    }
+  }
+}
+
 // https://html.spec.whatwg.org/multipage/forms.html#concept-form-submit
 void HTMLFormElement::MaybeSubmit(Element* aSubmitter) {
 #ifdef DEBUG
@@ -245,6 +279,7 @@ void HTMLFormElement::MaybeSubmit(Element* aSubmitter) {
       HasAttr(nsGkAtoms::novalidate) ||
       (aSubmitter && aSubmitter->HasAttr(nsGkAtoms::formnovalidate));
   if (!noValidateState && !CheckValidFormSubmission()) {
+    ReportInvalidUnfocusableElements();
     return;
   }
 
@@ -1138,34 +1173,6 @@ void HTMLFormElement::AssertDocumentOrder(
 }
 #endif
 
-void HTMLFormElement::PostPasswordEvent() {
-  // Don't fire another add event if we have a pending add event.
-  if (mFormPasswordEventDispatcher.get()) {
-    return;
-  }
-
-  mFormPasswordEventDispatcher =
-      new AsyncEventDispatcher(this, u"DOMFormHasPassword"_ns, CanBubble::eYes,
-                               ChromeOnlyDispatch::eYes);
-  mFormPasswordEventDispatcher->PostDOMEvent();
-}
-
-void HTMLFormElement::PostPossibleUsernameEvent() {
-  if (!StaticPrefs::signon_usernameOnlyForm_enabled()) {
-    return;
-  }
-
-  // Don't fire another event if we have a pending event.
-  if (mFormPossibleUsernameEventDispatcher) {
-    return;
-  }
-
-  mFormPossibleUsernameEventDispatcher =
-      new AsyncEventDispatcher(this, u"DOMFormHasPossibleUsername"_ns,
-                               CanBubble::eYes, ChromeOnlyDispatch::eYes);
-  mFormPossibleUsernameEventDispatcher->PostDOMEvent();
-}
-
 nsresult HTMLFormElement::AddElement(nsGenericHTMLFormElement* aChild,
                                      bool aUpdateValidity, bool aNotify) {
   // If an element has a @form, we can assume it *might* be able to not have
@@ -1188,16 +1195,6 @@ nsresult HTMLFormElement::AddElement(nsGenericHTMLFormElement* aChild,
 #endif
 
   auto type = fc->ControlType();
-
-  // If it is a password control, inform the password manager.
-  if (type == FormControlType::InputPassword) {
-    PostPasswordEvent();
-    // If the type is email or text, it is a username compatible input,
-    // inform the password manager.
-  } else if (type == FormControlType::InputEmail ||
-             type == FormControlType::InputText) {
-    PostPossibleUsernameEvent();
-  }
 
   // Default submit element handling
   if (fc->IsSubmitControl()) {
@@ -1252,7 +1249,7 @@ nsresult HTMLFormElement::AddElement(nsGenericHTMLFormElement* aChild,
   // being count twice.
   if (type == FormControlType::InputRadio) {
     RefPtr<HTMLInputElement> radio = static_cast<HTMLInputElement*>(aChild);
-    radio->AddedToRadioGroup();
+    radio->AddToRadioGroup();
   }
 
   return NS_OK;
@@ -1288,7 +1285,7 @@ nsresult HTMLFormElement::RemoveElement(nsGenericHTMLFormElement* aChild,
   MOZ_ASSERT(fc);
   if (fc->ControlType() == FormControlType::InputRadio) {
     RefPtr<HTMLInputElement> radio = static_cast<HTMLInputElement*>(aChild);
-    radio->WillRemoveFromRadioGroup();
+    radio->RemoveFromRadioGroup();
   }
 
   // Determine whether to remove the child from the elements list
@@ -1859,59 +1856,6 @@ void HTMLFormElement::UpdateValidity(bool aElementValidity) {
 int32_t HTMLFormElement::IndexOfContent(nsIContent* aContent) {
   int32_t index = 0;
   return mControls->IndexOfContent(aContent, &index) == NS_OK ? index : 0;
-}
-
-void HTMLFormElement::SetCurrentRadioButton(const nsAString& aName,
-                                            HTMLInputElement* aRadio) {
-  RadioGroupManager::SetCurrentRadioButton(aName, aRadio);
-}
-
-HTMLInputElement* HTMLFormElement::GetCurrentRadioButton(
-    const nsAString& aName) {
-  return RadioGroupManager::GetCurrentRadioButton(aName);
-}
-
-NS_IMETHODIMP
-HTMLFormElement::GetNextRadioButton(const nsAString& aName,
-                                    const bool aPrevious,
-                                    HTMLInputElement* aFocusedRadio,
-                                    HTMLInputElement** aRadioOut) {
-  return RadioGroupManager::GetNextRadioButton(aName, aPrevious, aFocusedRadio,
-                                               aRadioOut);
-}
-
-NS_IMETHODIMP
-HTMLFormElement::WalkRadioGroup(const nsAString& aName,
-                                nsIRadioVisitor* aVisitor) {
-  return RadioGroupManager::WalkRadioGroup(aName, aVisitor);
-}
-
-void HTMLFormElement::AddToRadioGroup(const nsAString& aName,
-                                      HTMLInputElement* aRadio) {
-  RadioGroupManager::AddToRadioGroup(aName, aRadio, this);
-}
-
-void HTMLFormElement::RemoveFromRadioGroup(const nsAString& aName,
-                                           HTMLInputElement* aRadio) {
-  RadioGroupManager::RemoveFromRadioGroup(aName, aRadio);
-}
-
-uint32_t HTMLFormElement::GetRequiredRadioCount(const nsAString& aName) const {
-  return RadioGroupManager::GetRequiredRadioCount(aName);
-}
-
-void HTMLFormElement::RadioRequiredWillChange(const nsAString& aName,
-                                              bool aRequiredAdded) {
-  RadioGroupManager::RadioRequiredWillChange(aName, aRequiredAdded);
-}
-
-bool HTMLFormElement::GetValueMissingState(const nsAString& aName) const {
-  return RadioGroupManager::GetValueMissingState(aName);
-}
-
-void HTMLFormElement::SetValueMissingState(const nsAString& aName,
-                                           bool aValue) {
-  RadioGroupManager::SetValueMissingState(aName, aValue);
 }
 
 void HTMLFormElement::Clear() {

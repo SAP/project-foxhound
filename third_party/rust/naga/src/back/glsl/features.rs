@@ -1,7 +1,7 @@
 use super::{BackendResult, Error, Version, Writer};
 use crate::{
-    AddressSpace, Binding, Bytes, Expression, Handle, ImageClass, ImageDimension, Interpolation,
-    Sampling, ScalarKind, ShaderStage, StorageFormat, Type, TypeInner,
+    AddressSpace, Binding, Expression, Handle, ImageClass, ImageDimension, Interpolation, Sampling,
+    Scalar, ScalarKind, ShaderStage, StorageFormat, Type, TypeInner,
 };
 use std::fmt::Write;
 
@@ -64,8 +64,7 @@ impl FeaturesManager {
     }
 
     /// Checks that all required [`Features`] are available for the specified
-    /// [`Version`](super::Version) otherwise returns an
-    /// [`Error::MissingFeatures`](super::Error::MissingFeatures)
+    /// [`Version`] otherwise returns an [`Error::MissingFeatures`].
     pub fn check_availability(&self, version: Version) -> BackendResult {
         // Will store all the features that are unavailable
         let mut missing = Features::empty();
@@ -98,7 +97,6 @@ impl FeaturesManager {
         check_feature!(MULTISAMPLED_TEXTURE_ARRAYS, 150, 310);
         check_feature!(ARRAY_OF_ARRAYS, 120, 310);
         check_feature!(IMAGE_LOAD_STORE, 130, 310);
-        check_feature!(CONSERVATIVE_DEPTH, 130, 300);
         check_feature!(CONSERVATIVE_DEPTH, 130, 300);
         check_feature!(NOPERSPECTIVE_QUALIFIER, 130);
         check_feature!(SAMPLE_QUALIFIER, 400, 320);
@@ -209,11 +207,6 @@ impl FeaturesManager {
             writeln!(out, "#extension GL_OES_sample_variables : require")?;
         }
 
-        if self.0.contains(Features::SAMPLE_VARIABLES) && version.is_es() {
-            // https://www.khronos.org/registry/OpenGL/extensions/OES/OES_sample_variables.txt
-            writeln!(out, "#extension GL_OES_sample_variables : require")?;
-        }
-
         if self.0.contains(Features::MULTI_VIEW) {
             if let Version::Embedded { is_webgl: true, .. } = version {
                 // https://www.khronos.org/registry/OpenGL/extensions/OVR/OVR_multiview2.txt
@@ -250,7 +243,7 @@ impl<'a, W> Writer<'a, W> {
     ///
     /// # Errors
     /// If the version doesn't support any of the needed [`Features`] a
-    /// [`Error::MissingFeatures`](super::Error::MissingFeatures) will be returned
+    /// [`Error::MissingFeatures`] will be returned
     pub(super) fn collect_required_features(&mut self) -> BackendResult {
         let ep_info = self.info.get_entry_point(self.entry_point_idx as usize);
 
@@ -282,10 +275,10 @@ impl<'a, W> Writer<'a, W> {
 
         for (ty_handle, ty) in self.module.types.iter() {
             match ty.inner {
-                TypeInner::Scalar { kind, width } => self.scalar_required_features(kind, width),
-                TypeInner::Vector { kind, width, .. } => self.scalar_required_features(kind, width),
+                TypeInner::Scalar(scalar) => self.scalar_required_features(scalar),
+                TypeInner::Vector { scalar, .. } => self.scalar_required_features(scalar),
                 TypeInner::Matrix { width, .. } => {
-                    self.scalar_required_features(ScalarKind::Float, width)
+                    self.scalar_required_features(Scalar::float(width))
                 }
                 TypeInner::Array { base, size, .. } => {
                     if let TypeInner::Array { .. } = self.module.types[base].inner {
@@ -362,6 +355,7 @@ impl<'a, W> Writer<'a, W> {
                             | StorageFormat::Rg16Uint
                             | StorageFormat::Rg16Sint
                             | StorageFormat::Rg16Float
+                            | StorageFormat::Rgb10a2Uint
                             | StorageFormat::Rgb10a2Unorm
                             | StorageFormat::Rg11b10Float
                             | StorageFormat::Rg32Uint
@@ -469,8 +463,8 @@ impl<'a, W> Writer<'a, W> {
     }
 
     /// Helper method that checks the [`Features`] needed by a scalar
-    fn scalar_required_features(&mut self, kind: ScalarKind, width: Bytes) {
-        if kind == ScalarKind::Float && width == 8 {
+    fn scalar_required_features(&mut self, scalar: Scalar) {
+        if scalar.kind == ScalarKind::Float && scalar.width == 8 {
             self.features.request(Features::DOUBLE_TYPE);
         }
     }

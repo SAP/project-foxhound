@@ -87,12 +87,10 @@
 
     static get inheritedAttributes() {
       return {
-        "#label-box": "native",
-        image: "src=image,native",
-        "#label": "value=label,crop,accesskey,highlightable,native",
-        "#highlightable-label":
-          "text=label,crop,accesskey,highlightable,native",
-        dropmarker: "disabled,open,native",
+        image: "src=image",
+        "#label": "value=label,crop,accesskey",
+        "#highlightable-label": "text=label,crop,accesskey",
+        dropmarker: "disabled,open",
       };
     }
 
@@ -107,7 +105,7 @@
           <label id="label" part="label" crop="end" flex="1" role="none"/>
           <label id="highlightable-label" part="label" crop="end" flex="1" role="none"/>
         </hbox>
-        <dropmarker part="dropmarker" exportparts="icon: dropmarker-icon" type="menu" role="none"/>
+        <dropmarker part="dropmarker" type="menu" role="none"/>
         <html:slot/>
     `;
     }

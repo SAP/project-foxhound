@@ -65,6 +65,16 @@ inactive-css-highlight-pseudo-elements-not-supported = <strong>{ $property }</st
 
 inactive-css-cue-pseudo-element-not-supported = <strong>{ $property }</strong> is not supported on ::cue pseudo-elements.
 
+# Variables:
+#   $lineCount (integer) - The number of lines the element has.
+inactive-css-text-wrap-balance-lines-exceeded =
+    { $lineCount ->
+         [one] <strong>{ $property }</strong> has no effect on this element because it has more than { $lineCount } line.
+        *[other] <strong>{ $property }</strong> has no effect on this element because it has more than { $lineCount } lines.
+     }
+
+inactive-css-text-wrap-balance-fragmented = <strong>{ $property }</strong> has no effect on this element because it is fragmented, i.e. its content is split across multiple columns or pages.
+
 ## In the Rule View when a CSS property cannot be successfully applied we display
 ## an icon. When this icon is hovered this message is displayed to explain how
 ## the problem can be solved.
@@ -111,6 +121,10 @@ inactive-css-border-image-fix = On the parent table element, remove the property
 
 inactive-css-ruby-element-fix = Try changing the <strong>font-size</strong> of the ruby text. { learn-more }
 
+inactive-css-text-wrap-balance-lines-exceeded-fix = Try to reduce the number of lines. { learn-more }
+
+inactive-css-text-wrap-balance-fragmented-fix = Avoid splitting the element’s content e.g. by removing the columns or by using <strong>page-break-inside:avoid</strong>. { learn-more }
+
 ## In the Rule View when a CSS property may have compatibility issues with other browsers
 ## we display an icon. When this icon is hovered this message is displayed to explain why
 ## the property is incompatible and the platforms it is incompatible on.
@@ -133,3 +147,10 @@ css-compatibility-experimental-message = <strong>{ $property }</strong> is an ex
 css-compatibility-experimental-supported-message = <strong>{ $property }</strong> is an experimental property.
 
 css-compatibility-learn-more-message = <span data-l10n-name="link">Learn more</span> about <strong>{ $rootProperty }</strong>
+
+## In the Rule View when a rule selector can causes issues, we display an icon.
+## When this icon is hovered one or more of those messages are displayed to explain what
+## the issue are.
+
+# :has() should not be translated
+css-selector-warning-unconstrained-has = This selector uses unconstrained <strong>:has()</strong>, which can be slow

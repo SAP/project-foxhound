@@ -576,6 +576,9 @@ DOMHighResTimeStamp Performance::ResolveStartTimeForMeasure(
 
 static std::string GetMarkerFilename() {
   std::stringstream s;
+  if (char* markerDir = getenv("MOZ_PERFORMANCE_MARKER_DIR")) {
+    s << markerDir << "/";
+  }
 #ifdef XP_WIN
   s << "marker-" << GetCurrentProcessId() << ".txt";
 #else
@@ -998,10 +1001,10 @@ void Performance::RunNotificationObserversTask() {
   mPendingNotificationObserversTask = true;
   nsCOMPtr<nsIRunnable> task = new NotifyObserversTask(this);
   nsresult rv;
-  if (GetOwnerGlobal()) {
-    rv = GetOwnerGlobal()->Dispatch(TaskCategory::Other, task.forget());
+  if (nsIGlobalObject* global = GetOwnerGlobal()) {
+    rv = global->Dispatch(task.forget());
   } else {
-    rv = NS_DispatchToCurrentThread(task);
+    rv = NS_DispatchToCurrentThread(task.forget());
   }
   if (NS_WARN_IF(NS_FAILED(rv))) {
     mPendingNotificationObserversTask = false;

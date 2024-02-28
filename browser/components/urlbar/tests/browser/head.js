@@ -1,10 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/**
- * These tests unit test the result/url loading functionality of UrlbarController.
- */
-
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -18,6 +14,7 @@ ChromeUtils.defineESModuleGetters(this, {
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   UrlbarController: "resource:///modules/UrlbarController.sys.mjs",
+  UrlbarEventBufferer: "resource:///modules/UrlbarEventBufferer.sys.mjs",
   UrlbarQueryContext: "resource:///modules/UrlbarUtils.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
@@ -56,37 +53,36 @@ async function selectAndPaste(str, win = window) {
 }
 
 /**
- * Waits for a load in any browser or a timeout, whichever comes first.
+ * Waits for a load starting in any browser or a timeout, whichever comes first.
  *
  * @param {window} win
  *   The top-level browser window to listen in.
  * @param {number} timeoutMs
  *   The timeout in ms.
- * @returns {event|null}
- *   If a load event was detected before the timeout fired, then the event is
- *   returned.  event.target will be the browser in which the load occurred.  If
- *   the timeout fired before a load was detected, null is returned.
+ * @returns {Promise} resolved to the loading uri in case of load, rejected in
+ *   case of timeout.
  */
-async function waitForLoadOrTimeout(win = window, timeoutMs = 1000) {
-  let event;
+function waitForLoadStartOrTimeout(win = window, timeoutMs = 1000) {
   let listener;
   let timeout;
-  let eventName = "BrowserTestUtils:ContentEvent:load";
-  try {
-    event = await Promise.race([
-      new Promise(resolve => {
-        listener = resolve;
-        win.addEventListener(eventName, listener, true);
-      }),
-      new Promise(resolve => {
-        timeout = win.setTimeout(resolve, timeoutMs);
-      }),
-    ]);
-  } finally {
-    win.removeEventListener(eventName, listener, true);
+  return Promise.race([
+    new Promise(resolve => {
+      listener = {
+        onStateChange(browser, webprogress, request, flags, status) {
+          if (flags & Ci.nsIWebProgressListener.STATE_START) {
+            resolve(request.QueryInterface(Ci.nsIChannel).URI);
+          }
+        },
+      };
+      win.gBrowser.addTabsProgressListener(listener);
+    }),
+    new Promise((resolve, reject) => {
+      timeout = win.setTimeout(() => reject("timed out"), timeoutMs);
+    }),
+  ]).finally(() => {
+    win.gBrowser.removeTabsProgressListener(listener);
     win.clearTimeout(timeout);
-  }
-  return event || null;
+  });
 }
 
 /**
@@ -178,21 +174,28 @@ async function search({
   // autofill before the search completes.
   UrlbarTestUtils.fireInputEvent(window);
 
+  // Subtract the protocol length, when the searchString contains the https://
+  // protocol and trimHttps is enabled.
+  let trimmedProtocolWSlashes = UrlbarTestUtils.getTrimmedProtocolWithSlashes();
+  let selectionOffset = searchString.includes(trimmedProtocolWSlashes)
+    ? trimmedProtocolWSlashes.length
+    : 0;
+
   // Check the input value and selection immediately, before waiting on the
   // search to complete.
   Assert.equal(
     gURLBar.value,
-    valueBefore,
+    UrlbarTestUtils.trimURL(valueBefore),
     "gURLBar.value before the search completes"
   );
   Assert.equal(
     gURLBar.selectionStart,
-    searchString.length,
+    searchString.length - selectionOffset,
     "gURLBar.selectionStart before the search completes"
   );
   Assert.equal(
     gURLBar.selectionEnd,
-    valueBefore.length,
+    valueBefore.length - selectionOffset,
     "gURLBar.selectionEnd before the search completes"
   );
 
@@ -203,17 +206,17 @@ async function search({
   // Check the final value after the results arrived.
   Assert.equal(
     gURLBar.value,
-    valueAfter,
+    UrlbarTestUtils.trimURL(valueAfter),
     "gURLBar.value after the search completes"
   );
   Assert.equal(
     gURLBar.selectionStart,
-    searchString.length,
+    searchString.length - selectionOffset,
     "gURLBar.selectionStart after the search completes"
   );
   Assert.equal(
     gURLBar.selectionEnd,
-    valueAfter.length,
+    valueAfter.length - selectionOffset,
     "gURLBar.selectionEnd after the search completes"
   );
 
@@ -225,7 +228,7 @@ async function search({
     );
     Assert.strictEqual(
       gURLBar._autofillPlaceholder.value,
-      placeholderAfter,
+      UrlbarTestUtils.trimURL(placeholderAfter),
       "gURLBar._autofillPlaceholder.value after the search completes"
     );
   } else {

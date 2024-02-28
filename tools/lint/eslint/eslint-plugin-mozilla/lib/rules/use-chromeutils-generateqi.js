@@ -43,12 +43,12 @@ function funcToGenerateQI(context, node) {
 module.exports = {
   meta: {
     docs: {
-      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/use-chromeutils-generateqi.html",
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/use-chromeutils-generateqi.html",
     },
     fixable: "code",
     messages: {
       noJSQueryInterface:
-        "Please use ChromeUtils.generateQI rather than" +
+        "Please use ChromeUtils.generateQI rather than " +
         "manually creating JavaScript QueryInterface functions",
       noXpcomUtilsGenerateQI:
         "Please use ChromeUtils.generateQI instead of XPCOMUtils.generateQI",

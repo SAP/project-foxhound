@@ -42,6 +42,7 @@
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryEventEnums.h"
+#include "mozilla/Try.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/URLPreloader.h"
 #include "mozilla/Variant.h"
@@ -1361,7 +1362,7 @@ class CallbackNode {
         mData(aData),
         mNextAndMatchKind(aMatchKind) {}
 
-  CallbackNode(const char** aDomains, PrefChangedFunc aFunc, void* aData,
+  CallbackNode(const char* const* aDomains, PrefChangedFunc aFunc, void* aData,
                Preferences::MatchKind aMatchKind)
       : mDomain(AsVariant(aDomains)),
         mFunc(aFunc),
@@ -1370,7 +1371,9 @@ class CallbackNode {
 
   // mDomain is a UniquePtr<>, so any uses of Domain() should only be temporary
   // borrows.
-  const Variant<nsCString, const char**>& Domain() const { return mDomain; }
+  const Variant<nsCString, const char* const*>& Domain() const {
+    return mDomain;
+  }
 
   PrefChangedFunc Func() const { return mFunc; }
   void ClearFunc() { mFunc = nullptr; }
@@ -1386,7 +1389,7 @@ class CallbackNode {
     return mDomain.is<nsCString>() && mDomain.as<nsCString>() == aDomain;
   }
 
-  bool DomainIs(const char** aPrefs) const {
+  bool DomainIs(const char* const* aPrefs) const {
     return mDomain == AsVariant(aPrefs);
   }
 
@@ -1400,7 +1403,8 @@ class CallbackNode {
     if (mDomain.is<nsCString>()) {
       return match(mDomain.as<nsCString>());
     }
-    for (const char** ptr = mDomain.as<const char**>(); *ptr; ptr++) {
+    for (const char* const* ptr = mDomain.as<const char* const*>(); *ptr;
+         ptr++) {
       if (match(nsDependentCString(*ptr))) {
         return true;
       }
@@ -1431,7 +1435,7 @@ class CallbackNode {
   static const uintptr_t kMatchKindMask = uintptr_t(0x1);
   static const uintptr_t kNextMask = ~kMatchKindMask;
 
-  Variant<nsCString, const char**> mDomain;
+  Variant<nsCString, const char* const*> mDomain;
 
   // If someone attempts to remove the node from the callback list while
   // NotifyCallbacks() is running, |func| is set to nullptr. Such nodes will
@@ -2289,10 +2293,7 @@ class nsPrefLocalizedString final : public nsIPrefLocalizedString {
 //----------------------------------------------------------------------------
 
 nsPrefBranch::nsPrefBranch(const char* aPrefRoot, PrefValueKind aKind)
-    : mPrefRoot(aPrefRoot),
-      mKind(aKind),
-      mFreeingObserverList(false),
-      mObservers() {
+    : mPrefRoot(aPrefRoot), mKind(aKind), mFreeingObserverList(false) {
   nsCOMPtr<nsIObserverService> observerService = services::GetObserverService();
   if (observerService) {
     ++mRefCnt;  // must be > 0 when we call this, or we'll get deleted!
@@ -3331,15 +3332,13 @@ class PWRunnable : public Runnable {
         // ref counted pointer off main thread.
         nsresult rvCopy = rv;
         nsCOMPtr<nsIFile> fileCopy(mFile);
-        SchedulerGroup::Dispatch(
-            TaskCategory::Other,
-            NS_NewRunnableFunction("Preferences::WriterRunnable",
-                                   [fileCopy, rvCopy] {
-                                     MOZ_RELEASE_ASSERT(NS_IsMainThread());
-                                     if (NS_FAILED(rvCopy)) {
-                                       Preferences::HandleDirty();
-                                     }
-                                   }));
+        SchedulerGroup::Dispatch(NS_NewRunnableFunction(
+            "Preferences::WriterRunnable", [fileCopy, rvCopy] {
+              MOZ_RELEASE_ASSERT(NS_IsMainThread());
+              if (NS_FAILED(rvCopy)) {
+                Preferences::HandleDirty();
+              }
+            }));
       }
     }
     // We've completed the write to the best of our abilities, whether
@@ -3374,7 +3373,7 @@ void Preferences::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
 }
 
 class PreferenceServiceReporter final : public nsIMemoryReporter {
-  ~PreferenceServiceReporter() {}
+  ~PreferenceServiceReporter() = default;
 
  public:
   NS_DECL_ISUPPORTS
@@ -5338,7 +5337,7 @@ static void AssertNotMallocAllocated(T* aPtr) {
 
 /* static */
 nsresult Preferences::AddStrongObservers(nsIObserver* aObserver,
-                                         const char** aPrefs) {
+                                         const char* const* aPrefs) {
   MOZ_ASSERT(aObserver);
   for (uint32_t i = 0; aPrefs[i]; i++) {
     AssertNotMallocAllocated(aPrefs[i]);
@@ -5353,7 +5352,7 @@ nsresult Preferences::AddStrongObservers(nsIObserver* aObserver,
 
 /* static */
 nsresult Preferences::AddWeakObservers(nsIObserver* aObserver,
-                                       const char** aPrefs) {
+                                       const char* const* aPrefs) {
   MOZ_ASSERT(aObserver);
   for (uint32_t i = 0; aPrefs[i]; i++) {
     AssertNotMallocAllocated(aPrefs[i]);
@@ -5368,7 +5367,7 @@ nsresult Preferences::AddWeakObservers(nsIObserver* aObserver,
 
 /* static */
 nsresult Preferences::RemoveObservers(nsIObserver* aObserver,
-                                      const char** aPrefs) {
+                                      const char* const* aPrefs) {
   MOZ_ASSERT(aObserver);
   if (sShutdown) {
     MOZ_ASSERT(!sPreferences);
@@ -5426,7 +5425,7 @@ nsresult Preferences::RegisterCallback(PrefChangedFunc aCallback,
 
 /* static */
 nsresult Preferences::RegisterCallbacks(PrefChangedFunc aCallback,
-                                        const char** aPrefs, void* aData,
+                                        const char* const* aPrefs, void* aData,
                                         MatchKind aMatchKind) {
   return RegisterCallbackImpl(aCallback, aPrefs, aData, aMatchKind);
 }
@@ -5446,14 +5445,14 @@ nsresult Preferences::RegisterCallbackAndCall(PrefChangedFunc aCallback,
 
 /* static */
 nsresult Preferences::RegisterCallbacksAndCall(PrefChangedFunc aCallback,
-                                               const char** aPrefs,
+                                               const char* const* aPrefs,
                                                void* aClosure) {
   MOZ_ASSERT(aCallback);
 
   nsresult rv =
       RegisterCallbacks(aCallback, aPrefs, aClosure, MatchKind::ExactMatch);
   if (NS_SUCCEEDED(rv)) {
-    for (const char** ptr = aPrefs; *ptr; ptr++) {
+    for (const char* const* ptr = aPrefs; *ptr; ptr++) {
       (*aCallback)(*ptr, aClosure);
     }
   }
@@ -5508,8 +5507,8 @@ nsresult Preferences::UnregisterCallback(PrefChangedFunc aCallback,
 
 /* static */
 nsresult Preferences::UnregisterCallbacks(PrefChangedFunc aCallback,
-                                          const char** aPrefs, void* aData,
-                                          MatchKind aMatchKind) {
+                                          const char* const* aPrefs,
+                                          void* aData, MatchKind aMatchKind) {
   return UnregisterCallbackImpl(aCallback, aPrefs, aData, aMatchKind);
 }
 
@@ -6051,12 +6050,6 @@ static const PrefListEntry sDynamicPrefOverrideList[]{
     PREF_LIST_ENTRY("browser.search.region"),
     PREF_LIST_ENTRY(
         "browser.tabs.remote.testOnly.failPBrowserCreation.browsingContext"),
-    PREF_LIST_ENTRY("browser.translation.bing.authURL"),
-    PREF_LIST_ENTRY("browser.translation.bing.clientIdOverride"),
-    PREF_LIST_ENTRY("browser.translation.bing.translateArrayURL"),
-    PREF_LIST_ENTRY("browser.translation.bing.apiKeyOverride"),
-    PREF_LIST_ENTRY("browser.translation.yandex.apiKeyOverride"),
-    PREF_LIST_ENTRY("browser.translation.yandex.translateURLOverride"),
     PREF_LIST_ENTRY("browser.uitour.testingOrigins"),
     PREF_LIST_ENTRY("browser.urlbar.loglevel"),
     PREF_LIST_ENTRY("browser.urlbar.opencompanionsearch.enabled"),

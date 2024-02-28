@@ -24,6 +24,7 @@
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/Poison.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PreferenceSheet.h"
 #include "mozilla/Printf.h"
 #include "mozilla/ProcessType.h"
 #include "mozilla/ResultExtensions.h"
@@ -122,6 +123,7 @@
 #  include "mozilla/DllPrefetchExperimentRegistryInfo.h"
 #  include "mozilla/WindowsBCryptInitialization.h"
 #  include "mozilla/WindowsDllBlocklist.h"
+#  include "mozilla/WindowsMsctfInitialization.h"
 #  include "mozilla/WindowsProcessMitigations.h"
 #  include "mozilla/WindowsVersion.h"
 #  include "mozilla/WinHeaderOnlyUtils.h"
@@ -326,6 +328,8 @@ bool gIsGtest = false;
 bool gKioskMode = false;
 int gKioskMonitor = -1;
 
+bool gAllowContentAnalysis = false;
+
 nsString gAbsoluteArgv0Path;
 
 #if defined(XP_WIN)
@@ -345,10 +349,6 @@ nsString gProcessStartupShortcut;
 #  endif /* MOZ_X11 */
 #endif
 #include "BinaryPath.h"
-
-#ifdef MOZ_LINKER
-extern "C" MFBT_API bool IsSignalHandlingBroken();
-#endif
 
 #ifdef FUZZING
 #  include "FuzzerRunner.h"
@@ -445,21 +445,13 @@ bool IsWaylandEnabled() {
         return true;
       }
     }
-#  ifdef EARLY_BETA_OR_EARLIER
     // Enable by default when we're running on a recent enough GTK version. We'd
     // like to check further details like compositor version and so on ideally
     // to make sure we don't enable it on old Mutter or what not, but we can't,
     // so let's assume that if the user is running on a Wayland session by
     // default we're ok, since either the distro has enabled Wayland by default,
     // or the user has gone out of their way to use Wayland.
-    //
-    // TODO(emilio): If users hit problems, we might be able to restrict it to
-    // GNOME / KDE  / known-good-desktop environments by checking
-    // XDG_CURRENT_DESKTOP or so...
     return !gtk_check_version(3, 24, 30);
-#  else
-    return false;
-#  endif
   }();
   return isWaylandEnabled;
 }
@@ -1600,15 +1592,15 @@ nsXULAppInfo::GetRestartedByOS(bool* aResult) {
 
 NS_IMETHODIMP
 nsXULAppInfo::GetChromeColorSchemeIsDark(bool* aResult) {
-  LookAndFeel::EnsureColorSchemesInitialized();
-  *aResult = LookAndFeel::ColorSchemeForChrome() == ColorScheme::Dark;
+  PreferenceSheet::EnsureInitialized();
+  *aResult = PreferenceSheet::ColorSchemeForChrome() == ColorScheme::Dark;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsXULAppInfo::GetContentThemeDerivedColorSchemeIsDark(bool* aResult) {
   *aResult =
-      LookAndFeel::ThemeDerivedColorSchemeForContent() == ColorScheme::Dark;
+      PreferenceSheet::ThemeDerivedColorSchemeForContent() == ColorScheme::Dark;
   return NS_OK;
 }
 
@@ -4009,6 +4001,9 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
     gKioskMonitor = atoi(kioskMonitorNumber);
   }
 
+  gAllowContentAnalysis = CheckArg("allow-content-analysis", nullptr,
+                                   CheckArgFlag::RemoveArg) == ARG_FOUND;
+
   nsresult rv;
   ArgResult ar;
 
@@ -4156,11 +4151,6 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
     nsDependentCString releaseChannel(MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL));
     CrashReporter::AnnotateCrashReport(
         CrashReporter::Annotation::ReleaseChannel, releaseChannel);
-#ifdef MOZ_LINKER
-    CrashReporter::AnnotateCrashReport(
-        CrashReporter::Annotation::CrashAddressLikelyWrong,
-        IsSignalHandlingBroken());
-#endif
 
 #ifdef XP_WIN
     nsAutoString appInitDLLs;
@@ -5841,6 +5831,14 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
     DebugOnly<bool> result = WindowsBCryptInitialization();
     MOZ_ASSERT(result);
   }
+
+#  if defined(_M_IX86) || defined(_M_X64)
+  {
+    DebugOnly<bool> result = WindowsMsctfInitialization();
+    MOZ_ASSERT(result);
+  }
+#  endif  // _M_IX86 || _M_X64
+
 #endif  // defined(XP_WIN)
 
   // Once we unset the exception handler, we lose the ability to properly
@@ -6048,9 +6046,12 @@ bool XRE_UseNativeEventProcessing() {
 #  if defined(XP_WIN)
       auto upc = mozilla::ipc::UtilityProcessChild::Get();
       MOZ_ASSERT(upc);
-      // WindowsUtils is for Windows APIs, which typically require a Windows
-      // native event loop.
-      return upc->mSandbox == mozilla::ipc::SandboxingKind::WINDOWS_UTILS;
+
+      using SboxKind = mozilla::ipc::SandboxingKind;
+      // These processes are used as external hosts for accessing Windows
+      // APIs which (may) require a Windows native event loop.
+      return upc->mSandbox == SboxKind::WINDOWS_UTILS ||
+             upc->mSandbox == SboxKind::WINDOWS_FILE_DIALOG;
 #  else
       return false;
 #  endif  // defined(XP_WIN)

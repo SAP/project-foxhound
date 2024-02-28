@@ -15,15 +15,15 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/Range.h"
 
-#include "gc/Allocator.h"
+#include "gc/GCEnum.h"
 #include "gc/MaybeRooted.h"
 #include "gc/StoreBuffer.h"
 #include "js/UniquePtr.h"
-#include "vm/JSContext.h"
 #include "vm/StaticStrings.h"
 
 #include "gc/GCContext-inl.h"
 #include "gc/StoreBuffer-inl.h"
+#include "vm/JSContext-inl.h"
 
 
 namespace js {
@@ -73,6 +73,44 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
   str->initTaint();
 
   mozilla::PodCopy(storage, chars.begin().get(), len);
+  return str;
+}
+
+// Create a thin inline string if possible, and a fat inline string if not.
+template <AllowGC allowGC, typename CharT, size_t N>
+static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
+    JSContext* cx, const CharT (&chars)[N], size_t len,
+    js::gc::Heap heap = js::gc::Heap::Default) {
+  MOZ_ASSERT(len <= N);
+
+  /*
+   * Don't bother trying to find a static atom; measurement shows that not
+   * many get here (for one, Atomize is catching them).
+   */
+
+  CharT* storage;
+  JSInlineString* str = AllocateInlineString<allowGC>(cx, len, &storage, heap);
+  if (!str) {
+    return nullptr;
+  }
+
+  if (JSThinInlineString::lengthFits<CharT>(len)) {
+    constexpr size_t MaxLength = std::is_same_v<CharT, Latin1Char>
+                                     ? JSThinInlineString::MAX_LENGTH_LATIN1
+                                     : JSThinInlineString::MAX_LENGTH_TWO_BYTE;
+
+    // memcpy with a constant length can be optimized more easily by compilers.
+    constexpr size_t toCopy = std::min(N, MaxLength) * sizeof(CharT);
+    std::memcpy(storage, chars, toCopy);
+  } else {
+    constexpr size_t MaxLength = std::is_same_v<CharT, Latin1Char>
+                                     ? JSFatInlineString::MAX_LENGTH_LATIN1
+                                     : JSFatInlineString::MAX_LENGTH_TWO_BYTE;
+
+    // memcpy with a constant length can be optimized more easily by compilers.
+    constexpr size_t toCopy = std::min(N, MaxLength) * sizeof(CharT);
+    std::memcpy(storage, chars, toCopy);
+  }
   return str;
 }
 
@@ -175,7 +213,16 @@ inline JSRope::JSRope(JSString* left, JSString* right, size_t length) {
   // JITs expect rope children aren't empty.
   MOZ_ASSERT(!left->empty() && !right->empty());
 
-  if (left->hasLatin1Chars() && right->hasLatin1Chars()) {
+  // |length| must be the sum of the length of both child nodes.
+  MOZ_ASSERT(left->length() + right->length() == length);
+
+  bool isLatin1 = left->hasLatin1Chars() && right->hasLatin1Chars();
+
+  // Do not try to make a rope that could fit inline.
+  MOZ_ASSERT_IF(!isLatin1, !JSInlineString::lengthFits<char16_t>(length));
+  MOZ_ASSERT_IF(isLatin1, !JSInlineString::lengthFits<JS::Latin1Char>(length));
+
+  if (isLatin1) {
     setLengthAndFlags(length, INIT_ROPE_FLAGS | LATIN1_CHARS_BIT);
   } else {
     setLengthAndFlags(length, INIT_ROPE_FLAGS);
@@ -242,6 +289,12 @@ inline JSDependentString::JSDependentString(JSLinearString* base, size_t start,
 MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
     JSContext* cx, JSLinearString* baseArg, size_t start, size_t length,
     js::gc::Heap heap) {
+  // Do not try to make a dependent string that could fit inline.
+  MOZ_ASSERT_IF(baseArg->hasTwoByteChars(),
+                !JSInlineString::lengthFits<char16_t>(length));
+  MOZ_ASSERT_IF(!baseArg->hasTwoByteChars(),
+                !JSInlineString::lengthFits<JS::Latin1Char>(length));
+
   /*
    * Try to avoid long chains of dependent strings. We can't avoid these
    * entirely, however, due to how ropes are flattened.
@@ -255,21 +308,6 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
   }
 
   MOZ_ASSERT(start + length <= baseArg->length());
-
-  /*
-   * Do not create a string dependent on inline chars from another string,
-   * both to avoid the awkward moving-GC hazard this introduces and because it
-   * is more efficient to immediately undepend here.
-   */
-  bool useInline = baseArg->hasTwoByteChars()
-                       ? JSInlineString::lengthFits<char16_t>(length)
-                       : JSInlineString::lengthFits<JS::Latin1Char>(length);
-  if (useInline) {
-    JS::Rooted<JSLinearString*> base(cx, baseArg);
-    return baseArg->hasLatin1Chars()
-      ? js::NewInlineString<JS::Latin1Char>(cx, base, start, length, &taint, heap)
-      : js::NewInlineString<char16_t>(cx, base, start, length, &taint, heap);
-  }
 
   JSDependentString* str =
       cx->newCell<JSDependentString, js::NoGC>(heap, baseArg, start, length, &taint);
@@ -323,6 +361,8 @@ MOZ_ALWAYS_INLINE JSLinearString* JSLinearString::newValidLength(
     JSContext* cx, js::UniquePtr<CharT[], JS::FreePolicy> chars, size_t length,
     js::gc::Heap heap) {
   MOZ_ASSERT(!cx->zone()->isAtomsZone());
+  MOZ_ASSERT(!JSInlineString::lengthFits<CharT>(length));
+
   JSLinearString* str =
       cx->newCell<JSLinearString, allowGC>(heap, chars.get(), length);
   if (!str) {
@@ -342,7 +382,6 @@ MOZ_ALWAYS_INLINE JSLinearString* JSLinearString::newValidLength(
       return nullptr;
     }
   } else {
-    // This can happen off the main thread for the atoms zone.
     cx->zone()->addCellMemory(str, length * sizeof(CharT),
                               js::MemoryUse::StringContents);
   }
@@ -542,6 +581,14 @@ inline js::FatInlineAtom::FatInlineAtom(size_t length, char16_t** chars,
   initTaint();
 }
 
+inline JSLinearString* js::StaticStrings::getUnitString(JSContext* cx,
+                                                        char16_t c) {
+  if (c < UNIT_STATIC_LIMIT) {
+    return getUnit(c);
+  }
+  return js::NewInlineString<CanGC>(cx, {c}, 1);
+}
+
 inline JSLinearString* js::StaticStrings::getUnitStringForElement(
     JSContext* cx, JSString* str, size_t index) {
   MOZ_ASSERT(index < str->length());
@@ -550,11 +597,15 @@ inline JSLinearString* js::StaticStrings::getUnitStringForElement(
   if (!str->getChar(cx, index, &c)) {
     return nullptr;
   }
-  if (c < UNIT_STATIC_LIMIT) {
-    return getUnit(c);
-  }
-  return js::NewInlineString<CanGC>(cx, mozilla::Range<const char16_t>(&c, 1),
-                                    js::gc::Heap::Default);
+  return getUnitString(cx, c);
+}
+
+inline JSLinearString* js::StaticStrings::getUnitStringForElement(
+    JSContext* cx, JSLinearString* str, size_t index) {
+  MOZ_ASSERT(index < str->length());
+
+  char16_t c = str->latin1OrTwoByteChar(index);
+  return getUnitString(cx, c);
 }
 
 MOZ_ALWAYS_INLINE void JSString::finalize(JS::GCContext* gcx) {

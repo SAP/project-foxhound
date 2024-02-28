@@ -21,6 +21,7 @@ from tryselect.selectors.perf import (
     Variants,
     run,
 )
+from tryselect.selectors.perf_preview import plain_display
 from tryselect.selectors.perfselector.classification import (
     check_for_live_sites,
     check_for_profile,
@@ -96,6 +97,7 @@ TEST_CATEGORIES = {
         },
         "suites": [Suites.RAPTOR.value],
         "tasks": [],
+        "description": "",
     },
     "Pageload (essential)": {
         "query": {
@@ -104,6 +106,7 @@ TEST_CATEGORIES = {
         "variant-restrictions": {Suites.RAPTOR.value: [Variants.FISSION.value]},
         "suites": [Suites.RAPTOR.value],
         "tasks": [],
+        "description": "",
     },
     "Responsiveness": {
         "query": {
@@ -112,6 +115,7 @@ TEST_CATEGORIES = {
         "suites": [Suites.RAPTOR.value],
         "variant-restrictions": {Suites.RAPTOR.value: []},
         "tasks": [],
+        "description": "",
     },
     "Benchmarks": {
         "query": {
@@ -120,6 +124,7 @@ TEST_CATEGORIES = {
         "suites": [Suites.RAPTOR.value],
         "variant-restrictions": {Suites.RAPTOR.value: []},
         "tasks": [],
+        "description": "",
     },
     "DAMP (Devtools)": {
         "query": {
@@ -127,6 +132,7 @@ TEST_CATEGORIES = {
         },
         "suites": [Suites.TALOS.value],
         "tasks": [],
+        "description": "",
     },
     "Talos PerfTests": {
         "query": {
@@ -134,6 +140,7 @@ TEST_CATEGORIES = {
         },
         "suites": [Suites.TALOS.value],
         "tasks": [],
+        "description": "",
     },
     "Resource Usage": {
         "query": {
@@ -152,6 +159,7 @@ TEST_CATEGORIES = {
             Suites.TALOS.value: [Apps.FIREFOX.value],
         },
         "tasks": [],
+        "description": "",
     },
     "Graphics, & Media Playback": {
         "query": {
@@ -162,6 +170,7 @@ TEST_CATEGORIES = {
         "suites": [Suites.TALOS.value, Suites.RAPTOR.value],
         "variant-restrictions": {Suites.RAPTOR.value: [Variants.FISSION.value]},
         "tasks": [],
+        "description": "",
     },
 }
 
@@ -185,7 +194,7 @@ TEST_CATEGORIES = {
                         "!profil",
                         "!chrom",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ]
                 },
                 "Pageload macosx": {
@@ -197,7 +206,7 @@ TEST_CATEGORIES = {
                         "!profil",
                         "!chrom",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ]
                 },
                 "Resource Usage desktop": {
@@ -210,7 +219,7 @@ TEST_CATEGORIES = {
                         "!profil",
                         "!chrom",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ],
                     "talos": [
                         "'talos 'xperf | 'tp5",
@@ -237,7 +246,7 @@ TEST_CATEGORIES = {
                         "!profil",
                         "!chrom",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ]
                 },
                 "Pageload macosx": {
@@ -248,7 +257,7 @@ TEST_CATEGORIES = {
                         "!profil",
                         "!chrom",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ]
                 },
                 "Pageload macosx live-sites": {
@@ -260,7 +269,7 @@ TEST_CATEGORIES = {
                         "!profil",
                         "!chrom",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ],
                 },
             },
@@ -285,7 +294,7 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!profil",
                         "!chrom",
-                        "!custom-car",
+                        "!m-car",
                     ]
                 },
                 "Pageload macosx safari": {
@@ -324,7 +333,7 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!profil",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ]
                 },
                 "Pageload macosx live-sites": {
@@ -335,7 +344,7 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!profil",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ],
                 },
                 "Benchmarks desktop chromium": {
@@ -367,7 +376,7 @@ TEST_CATEGORIES = {
                         "!profil",
                         "!chrom",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ],
                 },
                 "Responsiveness android-a51 geckoview": {
@@ -398,7 +407,7 @@ TEST_CATEGORIES = {
                         "!live",
                         "!profil",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ],
                 },
                 "Responsiveness android-a51 chrome-m": {
@@ -425,7 +434,7 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!live",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ]
                 },
                 "Talos PerfTests desktop profiling": {
@@ -454,7 +463,7 @@ TEST_CATEGORIES = {
                     "raptor": [
                         "'browsertime 'benchmark",
                         "!-32 'windows 'shippable",
-                        "!chrom !geckoview !fenix !safari !custom-car",
+                        "!chrom !geckoview !fenix !safari !m-car",
                         "!bytecode",
                         "!live",
                         "!profil",
@@ -664,7 +673,7 @@ TEST_CATEGORIES = {
                     "raptor": [
                         "'browsertime 'responsive",
                         "!-32 'windows 'shippable",
-                        "!chrom !geckoview !fenix !safari !custom-car",
+                        "!chrom !geckoview !fenix !safari !m-car",
                         "!bytecode",
                         "!live",
                         "!profil",
@@ -686,7 +695,7 @@ TEST_CATEGORIES = {
                     "raptor": [
                         "'browsertime 'responsive",
                         "!-32 'windows 'shippable",
-                        "!chrom !geckoview !fenix !safari !custom-car",
+                        "!chrom !geckoview !fenix !safari !m-car",
                         "!bytecode",
                         "!profil",
                     ],
@@ -700,7 +709,7 @@ TEST_CATEGORIES = {
                         "!profil",
                         "!chrom",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ],
                 },
                 "Graphics, & Media Playback windows": {
@@ -711,7 +720,7 @@ TEST_CATEGORIES = {
                         "!profil",
                         "!chrom",
                         "!safari",
-                        "!custom-car",
+                        "!m-car",
                     ],
                     "talos": [
                         "'talos 'svgr | 'bcv | 'webgl",
@@ -909,7 +918,7 @@ def test_full_run(options, call_counts, log_ind, expected_log_message):
             1,
             (
                 "Executing raptor queries: 'browsertime 'benchmark, !clang 'linux "
-                "'shippable, !bytecode, !live, !profil, !chrom, !safari, !custom-car"
+                "'shippable, !bytecode, !live, !profil, !chrom, !safari, !m-car"
             ),
             InvalidRegressionDetectorQuery,
         ),
@@ -1289,6 +1298,64 @@ def test_artifact_mode_autodisable(try_config, selected_tasks, expected_try_conf
     assert (
         try_config["use-artifact-builds"] == expected_try_config["use-artifact-builds"]
     )
+
+
+def test_build_category_description():
+    base_cmd = ["--preview", '-t "{+f}"']
+
+    with mock.patch("tryselect.selectors.perf.json.dump") as dump:
+        PerfParser.build_category_description(base_cmd, "")
+
+        assert dump.call_count == 1
+        assert str(base_cmd).count("-d") == 1
+        assert str(base_cmd).count("-l") == 1
+
+
+@pytest.mark.parametrize(
+    "options, call_count",
+    [
+        ({}, [1, 1, 2]),
+        ({"show_all": True}, [0, 0, 1]),
+    ],
+)
+def test_preview_description(options, call_count):
+    with mock.patch("tryselect.selectors.perf.PerfParser.perf_push_to_try"), mock.patch(
+        "tryselect.selectors.perf.fzf_bootstrap"
+    ), mock.patch(
+        "tryselect.selectors.perf.PerfParser.get_perf_tasks"
+    ) as get_perf_tasks, mock.patch(
+        "tryselect.selectors.perf.PerfParser.get_tasks"
+    ), mock.patch(
+        "tryselect.selectors.perf.PerfParser.build_category_description"
+    ) as bcd:
+        get_perf_tasks.return_value = [], [], []
+
+        run(**options)
+
+        assert bcd.call_count == call_count[0]
+
+    base_cmd = ["--preview", '-t "{+f}"']
+    option = base_cmd[base_cmd.index("--preview") + 1].split(" ")
+    description, line = None, None
+    if call_count[0] == 1:
+        PerfParser.build_category_description(base_cmd, "")
+        option = base_cmd[base_cmd.index("--preview") + 1].split(" ")
+        description = option[option.index("-d") + 1]
+        line = "Current line"
+
+    taskfile = option[option.index("-t") + 1]
+
+    with mock.patch("tryselect.selectors.perf_preview.open"), mock.patch(
+        "tryselect.selectors.perf_preview.pathlib.Path.open"
+    ), mock.patch("tryselect.selectors.perf_preview.json.load") as load, mock.patch(
+        "tryselect.selectors.perf_preview.print"
+    ) as preview_print:
+        load.return_value = {line: "test description"}
+
+        plain_display(taskfile, description, line)
+
+        assert load.call_count == call_count[1]
+        assert preview_print.call_count == call_count[2]
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/Try.h"
 
 #include "nsXULPrototypeCache.h"
 #include "nsXULElement.h"
@@ -174,8 +175,7 @@ void PrototypeDocumentContentSink::ContinueInterruptedParsingAsync() {
   nsCOMPtr<nsIRunnable> ev = NewRunnableMethod(
       "PrototypeDocumentContentSink::ContinueInterruptedParsingIfEnabled", this,
       &PrototypeDocumentContentSink::ContinueInterruptedParsingIfEnabled);
-
-  mDocument->Dispatch(mozilla::TaskCategory::Other, ev.forget());
+  mDocument->Dispatch(ev.forget());
 }
 
 //----------------------------------------------------------------------

@@ -31,7 +31,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_html5.h"
 #include "mozilla/StaticPrefs_intl.h"
-#include "mozilla/TaskCategory.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TextUtils.h"
 
 #include "mozilla/UniquePtrExtensions.h"
@@ -169,8 +169,7 @@ class nsHtml5ExecutorFlusher : public Runnable {
         // Possible early paint pending, reuse the runnable and try to
         // call RunFlushLoop later.
         nsCOMPtr<nsIRunnable> flusher = this;
-        if (NS_SUCCEEDED(
-                doc->Dispatch(TaskCategory::Network, flusher.forget()))) {
+        if (NS_SUCCEEDED(doc->Dispatch(flusher.forget()))) {
           PROFILER_MARKER_UNTYPED("HighPrio blocking parser flushing(1)", DOM);
           return NS_OK;
         }
@@ -1207,16 +1206,8 @@ nsresult nsHtml5StreamParser::OnStartRequest(nsIRequest* aRequest) {
 
   rv = NS_OK;
 
-  mNetworkEventTarget =
-      mExecutor->GetDocument()->EventTargetFor(TaskCategory::Network);
-
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(mRequest, &rv));
   if (NS_SUCCEEDED(rv)) {
-    // Non-HTTP channels are bogus enough that we let them work with unlabeled
-    // runnables for now. Asserting for HTTP channels only.
-    MOZ_ASSERT(mNetworkEventTarget || mMode == LOAD_AS_DATA,
-               "How come the network event target is still null?");
-
     nsAutoCString method;
     Unused << httpChannel->GetRequestMethod(method);
     // XXX does Necko have a way to renavigate POST, etc. without hitting
@@ -1241,8 +1232,7 @@ nsresult nsHtml5StreamParser::OnStartRequest(nsIRequest* aRequest) {
       // the request.
       nsCOMPtr<nsIRunnable> runnable =
           new MaybeRunCollector(mExecutor->GetDocument()->GetDocShell());
-      mozilla::SchedulerGroup::Dispatch(
-          mozilla::TaskCategory::GarbageCollection, runnable.forget());
+      mozilla::SchedulerGroup::Dispatch(runnable.forget());
     }
   }
 
@@ -1415,13 +1405,57 @@ class nsHtml5RequestStopper : public Runnable {
   }
 };
 
-nsresult nsHtml5StreamParser::OnStopRequest(nsIRequest* aRequest,
-                                            nsresult status) {
-  MOZ_ASSERT(mRequest == aRequest, "Got Stop on wrong stream.");
-  MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
-  nsCOMPtr<nsIRunnable> stopper = new nsHtml5RequestStopper(this);
-  if (NS_FAILED(mEventTarget->Dispatch(stopper, nsIThread::DISPATCH_NORMAL))) {
-    NS_WARNING("Dispatching StopRequest event failed.");
+nsresult nsHtml5StreamParser::OnStopRequest(
+    nsIRequest* aRequest, nsresult status,
+    const mozilla::ReentrantMonitorAutoEnter& aProofOfLock) {
+  MOZ_ASSERT_IF(aRequest, mRequest == aRequest);
+  if (mOnStopCalled) {
+    if (mOnDataFinishedTime) {
+      mOnStopRequestTime = TimeStamp::Now();
+    } else {
+      mOnDataFinishedTime = TimeStamp::Now();
+    }
+  } else {
+    mOnStopCalled = true;
+
+    if (MOZ_UNLIKELY(NS_IsMainThread())) {
+      mOnStopRequestTime = TimeStamp::Now();
+      nsCOMPtr<nsIRunnable> stopper = new nsHtml5RequestStopper(this);
+      if (NS_FAILED(
+              mEventTarget->Dispatch(stopper, nsIThread::DISPATCH_NORMAL))) {
+        NS_WARNING("Dispatching StopRequest event failed.");
+      }
+    } else {
+      mOnDataFinishedTime = TimeStamp::Now();
+
+      if (StaticPrefs::network_send_OnDataFinished_html5parser()) {
+        MOZ_ASSERT(IsParserThread(), "Wrong thread!");
+
+        mozilla::MutexAutoLock autoLock(mTokenizerMutex);
+        DoStopRequest();
+        PostLoadFlusher();
+      } else {
+        // Let the MainThread event handle this, even though it will just
+        // send it back to this thread, so we can accurately judge the impact
+        // of this change.   This should eventually be removed
+        mOnStopCalled = false;
+        // don't record any telemetry for this
+        return NS_OK;
+      }
+    }
+  }
+  if (!mOnStopRequestTime.IsNull() && !mOnDataFinishedTime.IsNull()) {
+    TimeDuration delta = (mOnStopRequestTime - mOnDataFinishedTime);
+    if (delta.ToMilliseconds() < 0) {
+      // Because Telemetry can't handle negatives
+      delta = -delta;
+      glean::networking::
+          http_content_html5parser_ondatafinished_to_onstop_delay_negative
+              .AccumulateRawDuration(delta);
+    } else {
+      glean::networking::http_content_html5parser_ondatafinished_to_onstop_delay
+          .AccumulateRawDuration(delta);
+    }
   }
   return NS_OK;
 }
@@ -2915,8 +2949,5 @@ void nsHtml5StreamParser::MarkAsBroken(nsresult aRv) {
 
 nsresult nsHtml5StreamParser::DispatchToMain(
     already_AddRefed<nsIRunnable>&& aRunnable) {
-  if (mNetworkEventTarget) {
-    return mNetworkEventTarget->Dispatch(std::move(aRunnable));
-  }
-  return SchedulerGroup::Dispatch(TaskCategory::Network, std::move(aRunnable));
+  return SchedulerGroup::Dispatch(std::move(aRunnable));
 }

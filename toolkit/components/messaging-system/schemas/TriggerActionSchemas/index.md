@@ -50,6 +50,7 @@ let patterns: string[];
 * [nthTabClosed](#nthtabclosed)
 * [activityAfterIdle](#activityafteridle)
 * [cookieBannerDetected](#cookiebannerdetected)
+* [cookieBannerHandled](#cookiebannerhandled)
 * [messagesLoaded](#messagesloaded)
 
 ### `openArticleURL`
@@ -225,6 +226,15 @@ Happens when the `cookiebannerdetected` window event is dispatched. This event i
 2. The domain has a valid ruleset for automatically engaging with the consent banner, and
 3. The user has not explicitly opted in or out of the Cookie Banner Handling feature.
 
+### `cookieBannerHandled`
+
+Happens when the `cookiebannerhandled` window event is dispatched. This event is dispatched when the following conditions are true:
+
+1. The user is presented with a cookie consent banner on the webpage they're viewing,
+2. The domain has a valid ruleset for automatically engaging with the consent banner, and
+3. The user is opted into the Cookie Banner Handling feature (this is by default in private windows), and
+4. Firefox succeeds in automatically engaging with the consent banner.
+
 ### `messagesLoaded`
 
 Happens as soon as a message is loaded. This trigger does not require any user interaction, and may happen potentially as early as app launch, or at some time after experiment enrollment. Generally intended for use in reach experiments, because most messages cannot be routed unless the surfaces they display in are instantiated in a tabbed browser window (a reach message will not be displayed but its trigger will still be recorded). However, it is still possible to safely use this trigger for a normal message, with some caveats. This is potentially relevant on macOS, where the app can be running with no browser windows open, or even on Windows, where closing all browser windows but leaving open a non-browser window (e.g. the Library) causes the app to remain running.
@@ -235,5 +245,16 @@ A `toast_notification` or `update_action` message can function normally under th
 {
   trigger: { id: "messagesLoaded" },
   targeting: "browser && browserWindow"
+}
+```
+
+### `pageActionInUrlbar`
+
+Happens when a page action appears in the location bar. The specific page action(s) to watch for can be specified by id in the targeting expression. For example, to trigger when the reader mode button appears:
+
+```js
+{
+  trigger: { id: "pageActionInUrlbar" },
+  targeting: "pageAction == 'reader-mode-button'"
 }
 ```

@@ -181,7 +181,7 @@ impl<E> WithSpan<E> {
     }
 
     /// Iterator over stored [`SpanContext`]s.
-    pub fn spans(&self) -> impl Iterator<Item = &SpanContext> + ExactSizeIterator {
+    pub fn spans(&self) -> impl ExactSizeIterator<Item = &SpanContext> {
         #[cfg(feature = "span")]
         return self.spans.iter();
         #[cfg(not(feature = "span"))]
@@ -189,7 +189,10 @@ impl<E> WithSpan<E> {
     }
 
     /// Add a new span with description.
-    #[cfg_attr(not(feature = "span"), allow(unused_variables, unused_mut))]
+    #[cfg_attr(
+        not(feature = "span"),
+        allow(unused_variables, unused_mut, clippy::missing_const_for_fn)
+    )]
     pub fn with_span<S>(mut self, span: Span, description: S) -> Self
     where
         S: ToString,
@@ -249,6 +252,7 @@ impl<E> WithSpan<E> {
     }
 
     #[cfg(not(feature = "span"))]
+    #[allow(clippy::missing_const_for_fn)]
     /// Return a [`SourceLocation`] for our first span, if we have one.
     pub fn location(&self, _source: &str) -> Option<SourceLocation> {
         None

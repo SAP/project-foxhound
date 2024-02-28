@@ -251,6 +251,15 @@
         }
       ],
       [
+        "counter",
+        "optimizable_counter_metric",
+        [
+          "metrics"
+        ],
+        "ping",
+        false
+      ],
+      [
         "quantity",
         "quantity_metric",
         [
@@ -293,6 +302,7 @@
       "not-baseline",
       true,
       false,
+      true,
       [
         "background",
         "dirty_startup",
@@ -303,12 +313,14 @@
       "not-deletion-request",
       true,
       true,
+      true,
       []
     ],
     [
       "not-events",
       true,
       false,
+      true,
       [
         "background",
         "max_capacity",
@@ -319,6 +331,7 @@
       "not-metrics",
       true,
       false,
+      true,
       [
         "overdue",
         "reschedule",

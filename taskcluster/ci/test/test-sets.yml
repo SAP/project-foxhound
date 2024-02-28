@@ -18,6 +18,7 @@
 web-platform-tests:
     - web-platform-tests
     - web-platform-tests-crashtest
+    - web-platform-tests-privatebrowsing
     - web-platform-tests-print-reftest
     - web-platform-tests-reftest
     - web-platform-tests-wdspec
@@ -342,6 +343,9 @@ windows-talos:
     - talos-webgl
     # - talos-h1 Bug 1487031 - Disabled for not finding actionable regressions
 
+windows-ref-hw-tests:
+    - mochitest-media
+
 talos-xperf:
     - talos-xperf
 
@@ -364,6 +368,9 @@ macosx1100-64-qr-tests:
     - mochitest-webgl2-ext
     - reftest
     - xpcshell
+
+macosx1100-aarch64-qr-tests:
+    - mochitest-media
 
 macosx1015-64-qr-tests:
     - cppunit
@@ -473,6 +480,7 @@ android-hw-browsertime:
     - browsertime-benchmark-speedometer3-mobile
     - browsertime-youtube-playback-mobile
     - browsertime-benchmark-unity-webgl-mobile
+    - browsertime-benchmark-motionmark
 
 android-hw-browsertime-profiling:
     - browsertime-tp6m-profiling

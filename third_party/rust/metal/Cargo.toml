@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "metal"
-version = "0.26.0"
+version = "0.27.0"
 authors = ["gfx-rs developers"]
 exclude = [
     "guide/**/*",

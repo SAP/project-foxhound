@@ -16,16 +16,16 @@ use super::{
     error::{Error, ErrorKind},
     Span,
 };
-use crate::{proc::Alignment, Handle, Type, TypeInner, UniqueArena};
+use crate::{proc::Alignment, Handle, Scalar, Type, TypeInner, UniqueArena};
 
 /// Struct with information needed for defining a struct member.
 ///
-/// Returned by [`calculate_offset`](calculate_offset)
+/// Returned by [`calculate_offset`].
 #[derive(Debug)]
 pub struct TypeAlignSpan {
     /// The handle to the type, this might be the same handle passed to
-    /// [`calculate_offset`](calculate_offset) or a new such a new array type
-    /// with a different stride set.
+    /// [`calculate_offset`] or a new such a new array type with a different
+    /// stride set.
     pub ty: Handle<Type>,
     /// The alignment required by the type.
     pub align: Alignment,
@@ -33,11 +33,11 @@ pub struct TypeAlignSpan {
     pub span: u32,
 }
 
-/// Returns the type, alignment and span of a struct member according to a [`StructLayout`](StructLayout).
+/// Returns the type, alignment and span of a struct member according to a [`StructLayout`].
 ///
-/// The functions returns a [`TypeAlignSpan`](TypeAlignSpan) which has a `ty` member
-/// this should be used as the struct member type because for example arrays may have to
-/// change the stride and as such need to have a different type.
+/// The functions returns a [`TypeAlignSpan`] which has a `ty` member this
+/// should be used as the struct member type because for example arrays may have
+/// to change the stride and as such need to have a different type.
 pub fn calculate_offset(
     mut ty: Handle<Type>,
     meta: Span,
@@ -53,12 +53,15 @@ pub fn calculate_offset(
     let (align, span) = match types[ty].inner {
         // 1. If the member is a scalar consuming N basic machine units,
         // the base alignment is N.
-        TypeInner::Scalar { width, .. } => (Alignment::from_width(width), width as u32),
+        TypeInner::Scalar(Scalar { width, .. }) => (Alignment::from_width(width), width as u32),
         // 2. If the member is a two- or four-component vector with components
         // consuming N basic machine units, the base alignment is 2N or 4N, respectively.
         // 3. If the member is a three-component vector with components consuming N
         // basic machine units, the base alignment is 4N.
-        TypeInner::Vector { size, width, .. } => (
+        TypeInner::Vector {
+            size,
+            scalar: Scalar { width, .. },
+        } => (
             Alignment::from(size) * Alignment::from_width(width),
             size as u32 * width as u32,
         ),

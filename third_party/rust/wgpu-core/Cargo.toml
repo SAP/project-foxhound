@@ -11,9 +11,10 @@
 
 [package]
 edition = "2021"
+rust-version = "1.65"
 name = "wgpu-core"
-version = "0.17.0"
-authors = ["wgpu developers"]
+version = "0.18.0"
+authors = ["gfx-rs developers"]
 description = "WebGPU core logic on wgpu-hal"
 homepage = "https://wgpu.rs/"
 keywords = ["graphics"]
@@ -47,15 +48,14 @@ smallvec = "1"
 thiserror = "1"
 
 [dependencies.hal]
-version = "0.17"
+version = "0.18.0"
 path = "../wgpu-hal"
 default_features = false
 package = "wgpu-hal"
 
 [dependencies.naga]
-version = "0.13.0"
-git = "https://github.com/gfx-rs/naga"
-rev = "cc87b8f9eb30bb55d0735b89d3df3e099e1a6e7c"
+version = "0.14.0"
+path = "../naga"
 features = [
     "clone",
     "span",
@@ -67,7 +67,7 @@ version = "1"
 default-features = false
 
 [dependencies.raw-window-handle]
-version = "0.5"
+version = "0.6"
 optional = true
 
 [dependencies.ron]
@@ -80,12 +80,11 @@ features = ["serde_derive"]
 optional = true
 
 [dependencies.wgt]
-version = "0.17"
+version = "0.18.0"
 path = "../wgpu-types"
 package = "wgpu-types"
 
 [features]
-angle = ["hal/gles"]
 default = ["link"]
 dx11 = ["hal/dx11"]
 dx12 = ["hal/dx12"]

@@ -228,7 +228,7 @@ MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
 
       if (texture) {
         if (!texture->IsAddedToCompositableClient()) {
-          texture->InitIPDLActor(mKnowsCompositor);
+          texture->InitIPDLActor(mKnowsCompositor, mParent->GetContentId());
           texture->SetAddedToCompositableClient();
         }
         needStorage = true;
@@ -252,7 +252,7 @@ MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
 
       SurfaceDescriptorBuffer sdBuffer;
       nsresult rv = image->BuildSurfaceDescriptorBuffer(
-          sdBuffer, [&](uint32_t aBufferSize) {
+          sdBuffer, Image::BuildSdbFlags::Default, [&](uint32_t aBufferSize) {
             ShmemBuffer buffer = AllocateBuffer(aBufferSize);
             if (buffer.Valid()) {
               return MemoryOrShmem(std::move(buffer.Get()));

@@ -8,7 +8,6 @@
 #include "mozilla/ServoStyleSetInlines.h"
 
 #include "gfxPlatformFontList.h"
-#include "mozilla/AutoRestyleTimelineMarker.h"
 #include "mozilla/DocumentStyleRootIterator.h"
 #include "mozilla/AttributeStyles.h"
 #include "mozilla/EffectCompositor.h"
@@ -103,16 +102,11 @@ class MOZ_RAII AutoSetInServoTraversal {
 class MOZ_RAII AutoPrepareTraversal {
  public:
   explicit AutoPrepareTraversal(ServoStyleSet* aSet)
-      // For markers for animations, we have already set the markers in
-      // RestyleManager::PostRestyleEventForAnimations so that we don't need
-      // to care about animation restyles here.
-      : mTimelineMarker(aSet->mDocument->GetDocShell(), false),
-        mSetInServoTraversal(aSet) {
+      : mSetInServoTraversal(aSet) {
     MOZ_ASSERT(!aSet->StylistNeedsUpdate());
   }
 
  private:
-  AutoRestyleTimelineMarker mTimelineMarker;
   AutoSetInServoTraversal mSetInServoTraversal;
 };
 
@@ -817,9 +811,9 @@ bool ServoStyleSet::StyleDocument(ServoTraversalFlags aFlags) {
                   !parent->HasAnyOfFlags(Element::kAllServoDescendantBits));
 
     postTraversalRequired |=
-        Servo_TraverseSubtree(root, mRawData.get(), &snapshots, aFlags);
-    postTraversalRequired |= root->HasAnyOfFlags(
-        Element::kAllServoDescendantBits | NODE_NEEDS_FRAME);
+        Servo_TraverseSubtree(root, mRawData.get(), &snapshots, aFlags) ||
+        root->HasAnyOfFlags(Element::kAllServoDescendantBits |
+                            NODE_NEEDS_FRAME);
 
     {
       uint32_t existingBits = mDocument->GetServoRestyleRootDirtyBits();
@@ -857,14 +851,13 @@ bool ServoStyleSet::StyleDocument(ServoTraversalFlags aFlags) {
   // traversal caused, for example, the font-size to change, the SMIL style
   // won't be updated until the next tick anyway.
   if (GetPresContext()->EffectCompositor()->PreTraverse(aFlags)) {
-    nsINode* styleRoot = mDocument->GetServoRestyleRoot();
-    Element* root =
-        styleRoot->IsElement() ? styleRoot->AsElement() : rootElement;
-
-    postTraversalRequired |=
-        Servo_TraverseSubtree(root, mRawData.get(), &snapshots, aFlags);
-    postTraversalRequired |= root->HasAnyOfFlags(
-        Element::kAllServoDescendantBits | NODE_NEEDS_FRAME);
+    DocumentStyleRootIterator iter(mDocument->GetServoRestyleRoot());
+    while (Element* root = iter.GetNextStyleRoot()) {
+      postTraversalRequired |=
+          Servo_TraverseSubtree(root, mRawData.get(), &snapshots, aFlags) ||
+          root->HasAnyOfFlags(Element::kAllServoDescendantBits |
+                              NODE_NEEDS_FRAME);
+    }
   }
 
   return postTraversalRequired;
@@ -1386,27 +1379,30 @@ bool ServoStyleSet::MightHaveNthOfClassDependency(const Element& aElement) {
 }
 
 void ServoStyleSet::MaybeInvalidateRelativeSelectorIDDependency(
-    const Element& aElement, nsAtom* aOldID, nsAtom* aNewID) {
+    const Element& aElement, nsAtom* aOldID, nsAtom* aNewID,
+    const ServoElementSnapshotTable& aSnapshots) {
   Servo_StyleSet_MaybeInvalidateRelativeSelectorIDDependency(
-      mRawData.get(), &aElement, aOldID, aNewID);
+      mRawData.get(), &aElement, aOldID, aNewID, &aSnapshots);
 }
 
 void ServoStyleSet::MaybeInvalidateRelativeSelectorClassDependency(
-    const Element& aElement) {
+    const Element& aElement, const ServoElementSnapshotTable& aSnapshots) {
   Servo_StyleSet_MaybeInvalidateRelativeSelectorClassDependency(
-      mRawData.get(), &aElement, &Snapshots());
+      mRawData.get(), &aElement, &aSnapshots);
 }
 
 void ServoStyleSet::MaybeInvalidateRelativeSelectorAttributeDependency(
-    const Element& aElement, nsAtom* aAttribute) {
+    const Element& aElement, nsAtom* aAttribute,
+    const ServoElementSnapshotTable& aSnapshots) {
   Servo_StyleSet_MaybeInvalidateRelativeSelectorAttributeDependency(
-      mRawData.get(), &aElement, aAttribute);
+      mRawData.get(), &aElement, aAttribute, &aSnapshots);
 }
 
 void ServoStyleSet::MaybeInvalidateRelativeSelectorStateDependency(
-    const Element& aElement, ElementState aState) {
+    const Element& aElement, ElementState aState,
+    const ServoElementSnapshotTable& aSnapshots) {
   Servo_StyleSet_MaybeInvalidateRelativeSelectorStateDependency(
-      mRawData.get(), &aElement, aState.GetInternalValue());
+      mRawData.get(), &aElement, aState.GetInternalValue(), &aSnapshots);
 }
 
 void ServoStyleSet::MaybeInvalidateRelativeSelectorForEmptyDependency(
@@ -1505,6 +1501,12 @@ void ServoStyleSet::RegisterProperty(const PropertyDefinition& aDefinition,
                                             : nullptr);
   switch (result) {
     case Result::SuccessfullyRegistered:
+      if (Element* root = mDocument->GetRootElement()) {
+        if (nsPresContext* pc = GetPresContext()) {
+          pc->RestyleManager()->PostRestyleEvent(
+              root, RestyleHint::RecascadeSubtree(), nsChangeHint(0));
+        }
+      }
       break;
     case Result::InvalidName:
       return aRv.ThrowSyntaxError("Invalid name");

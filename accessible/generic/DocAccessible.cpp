@@ -359,7 +359,27 @@ void DocAccessible::QueueCacheUpdate(LocalAccessible* aAcc,
   if (!mIPCDoc) {
     return;
   }
-  uint64_t& domain = mQueuedCacheUpdates.LookupOrInsert(aAcc, 0);
+  // These strong references aren't necessary because WithEntryHandle is
+  // guaranteed to run synchronously. However, static analysis complains without
+  // them.
+  RefPtr<DocAccessible> self = this;
+  RefPtr<LocalAccessible> acc = aAcc;
+  size_t arrayIndex =
+      mQueuedCacheUpdatesHash.WithEntryHandle(aAcc, [self, acc](auto&& entry) {
+        if (entry.HasEntry()) {
+          // This LocalAccessible has already been queued. Return its index in
+          // the queue array so we can update its queued domains.
+          return entry.Data();
+        }
+        // Add this LocalAccessible to the queue array.
+        size_t index = self->mQueuedCacheUpdatesArray.Length();
+        self->mQueuedCacheUpdatesArray.EmplaceBack(std::make_pair(acc, 0));
+        // Also add it to the hash map so we can avoid processing the same
+        // LocalAccessible twice.
+        return entry.Insert(index);
+      });
+  auto& [arrayAcc, domain] = mQueuedCacheUpdatesArray[arrayIndex];
+  MOZ_ASSERT(arrayAcc == aAcc);
   domain |= aNewDomain;
   Controller()->ScheduleProcessing();
 }
@@ -476,10 +496,11 @@ void DocAccessible::Shutdown() {
   }
 
   mChildDocuments.Clear();
-  // mQueuedCacheUpdates can contain a reference to this document (ex. if the
+  // mQueuedCacheUpdates* can contain a reference to this document (ex. if the
   // doc is scrollable and we're sending a scroll position update). Clear the
   // map here to avoid creating ref cycles.
-  mQueuedCacheUpdates.Clear();
+  mQueuedCacheUpdatesArray.Clear();
+  mQueuedCacheUpdatesHash.Clear();
 
   // XXX thinking about ordering?
   if (mIPCDoc) {
@@ -1463,9 +1484,7 @@ void DocAccessible::ProcessQueuedCacheUpdates() {
   // DO NOT ADD CODE ABOVE THIS BLOCK: THIS CODE IS MEASURING TIMINGS.
 
   nsTArray<CacheData> data;
-  for (auto iter = mQueuedCacheUpdates.Iter(); !iter.Done(); iter.Next()) {
-    LocalAccessible* acc = iter.Key();
-    uint64_t domain = iter.UserData();
+  for (auto [acc, domain] : mQueuedCacheUpdatesArray) {
     if (acc && acc->IsInDocument() && !acc->IsDefunct()) {
       RefPtr<AccAttributes> fields =
           acc->BundleFieldsForCache(domain, CacheUpdateType::Update);
@@ -1478,7 +1497,8 @@ void DocAccessible::ProcessQueuedCacheUpdates() {
     }
   }
 
-  mQueuedCacheUpdates.Clear();
+  mQueuedCacheUpdatesArray.Clear();
+  mQueuedCacheUpdatesHash.Clear();
 
   if (mViewportCacheDirty) {
     RefPtr<AccAttributes> fields =
@@ -2624,6 +2644,7 @@ void DocAccessible::UncacheChildrenInSubtree(LocalAccessible* aRoot) {
 }
 
 void DocAccessible::ShutdownChildrenInSubtree(LocalAccessible* aAccessible) {
+  MOZ_ASSERT(!nsAccessibilityService::IsShutdown());
   // Traverse through children and shutdown them before this accessible. When
   // child gets shutdown then it removes itself from children array of its
   // parent. Use jdx index to process the cases if child is not attached to the
@@ -2638,7 +2659,16 @@ void DocAccessible::ShutdownChildrenInSubtree(LocalAccessible* aAccessible) {
 
     // Don't cross document boundaries. The outerdoc shutdown takes care about
     // its subdocument.
-    if (!child->IsDoc()) ShutdownChildrenInSubtree(child);
+    if (!child->IsDoc()) {
+      ShutdownChildrenInSubtree(child);
+      if (nsAccessibilityService::IsShutdown()) {
+        // If XPCOM is the only consumer (devtools & mochitests), shutting down
+        // the child's subtree can cause a11y to shut down because the last
+        // xpcom accessibles will be removed. In that case, return early, our
+        // work is done.
+        return;
+      }
+    }
   }
 
   UnbindFromDocument(aAccessible);

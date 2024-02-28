@@ -239,12 +239,29 @@
       frames: 22050,
       duration: 0.5,
       fuzzMagnitude: 0.04,
+    },
+    {
+      url: "waveformatextensible.wav",
+      valid: true,
+      numberOfChannels: 1,
+      sampleRate: 44100,
+      frames: 472,
+      duration: 0.01
+    },
+    {
+      // A wav file that has 8 channel, but has a channel mask that doesn't
+      // match the channel count.
+      url: "waveformatextensiblebadmask.wav",
+      valid: true,
+      numberOfChannels: 8,
+      sampleRate: 8000,
+      frames: 80,
+      duration: 0.01
     }
   ];
 
   // Returns true if the memory buffers are less different that |fuzz| bytes
   function fuzzyMemcmp(buf1, buf2, fuzz) {
-    var result = true;
     var difference = 0;
     is(buf1.length, buf2.length, "same length");
     for (var i = 0; i < buf1.length; ++i) {
@@ -283,7 +300,7 @@
       is(buffer.numberOfChannels, test.numberOfChannels, "Correct number of channels");
       return;
     }
-    ok(Math.abs(buffer.duration - test.duration) < 1e-3, "Correct duration");
+    ok(Math.abs(buffer.duration - test.duration) < 1e-3, `Correct duration expected ${test.duration} got ${buffer.duration}`);
     if (Math.abs(buffer.duration - test.duration) >= 1e-3) {
       ok(false, "got: " + buffer.duration + ", expected: " + test.duration);
     }
@@ -315,7 +332,7 @@
 
     // Playback the buffer in the original context, to resample back to the
     // original rate and compare with the decoded buffer without resampling.
-    cx = test.nativeContext;
+    let cx = test.nativeContext;
     var expected = cx.createBufferSource();
     expected.buffer = test.expectedBuffer;
     expected.start();

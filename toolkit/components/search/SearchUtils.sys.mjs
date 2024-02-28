@@ -113,8 +113,6 @@ class LoadListener {
 export var SearchUtils = {
   BROWSER_SEARCH_PREF,
 
-  SETTINGS_KEY: "search-config",
-
   /**
    * This is the Remote Settings key that we use to get the ignore lists for
    * engines.
@@ -126,6 +124,32 @@ export var SearchUtils = {
    * overriding the default engines.
    */
   SETTINGS_ALLOWLIST_KEY: "search-default-override-allowlist",
+
+  /**
+   * This is the Remote Settings key for getting the older search engine
+   * configuration. Tests may use `SETTINGS_KEY` if they want to get the key
+   * for the current configuration according to the preference.
+   */
+  OLD_SETTINGS_KEY: "search-config",
+
+  /**
+   * This is the Remote Settings key for getting the newer search engine
+   * configuration. Tests may use `SETTINGS_KEY` if they want to get the key
+   * for the current configuration according to the preference.
+   */
+  NEW_SETTINGS_KEY: "search-config-v2",
+
+  /**
+   * This is the Remote Settings key that we use to get the search engine
+   * configurations.
+   *
+   * @returns {string}
+   */
+  get SETTINGS_KEY() {
+    return SearchUtils.newSearchConfigEnabled
+      ? SearchUtils.NEW_SETTINGS_KEY
+      : SearchUtils.OLD_SETTINGS_KEY;
+  },
 
   /**
    * Topic used for events involving the service itself.
@@ -383,6 +407,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   SearchUtils,
   "loggingEnabled",
   BROWSER_SEARCH_PREF + "log",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  SearchUtils,
+  "newSearchConfigEnabled",
+  "browser.search.newSearchConfig.enabled",
   false
 );
 

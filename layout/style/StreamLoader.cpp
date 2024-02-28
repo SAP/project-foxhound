@@ -16,8 +16,6 @@
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 
-#include <limits>
-
 namespace mozilla::css {
 
 StreamLoader::StreamLoader(SheetLoadData& aSheetLoadData)
@@ -160,6 +158,9 @@ StreamLoader::OnDataAvailable(nsIRequest*, nsIInputStream* aInputStream,
   uint32_t dummy;
   return aInputStream->ReadSegments(WriteSegmentFun, this, aCount, &dummy);
 }
+
+NS_IMETHODIMP
+StreamLoader::OnDataFinished(nsresult aStatus) { return NS_OK; }
 
 void StreamLoader::HandleBOM() {
   MOZ_ASSERT(mEncodingFromBOM.isNothing());

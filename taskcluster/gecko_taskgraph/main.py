@@ -148,7 +148,7 @@ def format_taskgraph(options, parameters, logfile=None):
     if isinstance(parameters, str):
         parameters = parameters_loader(
             parameters,
-            overrides={"target-kind": options.get("target_kind")},
+            overrides={"target-kinds": options.get("target_kinds")},
             strict=False,
         )
 
@@ -327,8 +327,11 @@ def generate_taskgraph(options, parameters, logdir):
     "This is mainly useful with '--diff' to filter out expected differences.",
 )
 @argument(
+    "-k",
     "--target-kind",
-    default=None,
+    dest="target_kinds",
+    action="append",
+    default=[],
     help="only return tasks that are of the given kind, or their dependencies.",
 )
 @argument(
@@ -369,7 +372,11 @@ def show_taskgraph(options):
     output_file = options["output_file"]
 
     if options["diff"]:
-        repo = get_repository(os.getcwd())
+        # --root argument is taskgraph's config at <repo>/taskcluster/ci
+        repo_root = os.getcwd()
+        if options["root"]:
+            repo_root = f"{options['root']}/../.."
+        repo = get_repository(repo_root)
 
         if not repo.working_directory_clean():
             print(
@@ -396,7 +403,7 @@ def show_taskgraph(options):
     parameters: List[Any[str, Parameters]] = options.pop("parameters")
     if not parameters:
         overrides = {
-            "target-kind": options.get("target_kind"),
+            "target-kinds": options.get("target_kinds"),
         }
         parameters = [
             parameters_loader(None, strict=False, overrides=overrides)

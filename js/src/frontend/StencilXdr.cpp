@@ -9,6 +9,7 @@
 #include "mozilla/ArrayUtils.h"             // mozilla::ArrayEqual
 #include "mozilla/OperatorNewExtensions.h"  // mozilla::KnownNotNull
 #include "mozilla/ScopeExit.h"              // mozilla::MakeScopeExit
+#include "mozilla/Try.h"                    // MOZ_TRY
 
 #include <stddef.h>     // size_t
 #include <stdint.h>     // uint8_t, uint16_t, uint32_t
@@ -18,7 +19,6 @@
 #include "ds/LifoAlloc.h"                 // LifoAlloc
 #include "frontend/CompilationStencil.h"  // CompilationStencil, ExtensibleCompilationStencil
 #include "frontend/ScriptIndex.h"  // ScriptIndex
-#include "js/ColumnNumber.h"       // JS::ColumnNumberZeroOrigin
 #include "vm/Scope.h"              // SizeOfParserScopeData
 #include "vm/StencilEnums.h"       // js::ImmutableScriptFlagsEnum
 

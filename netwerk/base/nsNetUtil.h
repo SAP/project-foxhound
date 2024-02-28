@@ -1016,6 +1016,12 @@ bool SchemeIsViewSource(nsIURI* aURI);
 bool SchemeIsResource(nsIURI* aURI);
 bool SchemeIsFTP(nsIURI* aURI);
 
+// Helper functions for SetProtocol methods to follow
+// step 2.1 in https://url.spec.whatwg.org/#scheme-state
+bool SchemeIsSpecial(const nsACString&);
+bool IsSchemeChangePermitted(nsIURI*, const nsACString&);
+already_AddRefed<nsIURI> TryChangeProtocol(nsIURI*, const nsAString&);
+
 struct LinkHeader {
   nsString mHref;
   nsString mRel;
@@ -1030,6 +1036,7 @@ struct LinkHeader {
   nsString mCrossOrigin;
   nsString mReferrerPolicy;
   nsString mAs;
+  nsString mFetchPriority;
 
   LinkHeader();
   void Reset();
@@ -1037,8 +1044,13 @@ struct LinkHeader {
   nsresult NewResolveHref(nsIURI** aOutURI, nsIURI* aBaseURI) const;
 
   bool operator==(const LinkHeader& rhs) const;
+
+  void MaybeUpdateAttribute(const nsAString& aAttribute,
+                            const char16_t* aValue);
 };
 
+// Implements roughly step 2 to 4 of
+// <https://httpwg.org/specs/rfc8288.html#parse-set>.
 nsTArray<LinkHeader> ParseLinkHeader(const nsAString& aLinkData);
 
 enum ASDestination : uint8_t {

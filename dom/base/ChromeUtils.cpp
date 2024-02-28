@@ -162,10 +162,8 @@ void ChromeUtils::Base64URLDecode(GlobalObject& aGlobal,
   }
 
   JS::Rooted<JSObject*> buffer(
-      aGlobal.Context(),
-      ArrayBuffer::Create(aGlobal.Context(), data.Length(), data.Elements()));
-  if (NS_WARN_IF(!buffer)) {
-    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+      aGlobal.Context(), ArrayBuffer::Create(aGlobal.Context(), data, aRv));
+  if (aRv.Failed()) {
     return;
   }
   aRetval.set(buffer);
@@ -1418,8 +1416,7 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
   }
 
   // Now place background request.
-  RefPtr<nsISerialEventTarget> target =
-      global->EventTargetFor(TaskCategory::Performance);
+  RefPtr<nsISerialEventTarget> target = global->SerialEventTarget();
   mozilla::GetProcInfo(std::move(requests))
       ->Then(
           target, __func__,
@@ -1877,8 +1874,9 @@ void ChromeUtils::GetAllPossibleUtilityActorNames(GlobalObject& aGlobal,
 }
 
 /* static */
-bool ChromeUtils::ShouldResistFingerprinting(GlobalObject& aGlobal,
-                                             JSRFPTarget aTarget) {
+bool ChromeUtils::ShouldResistFingerprinting(
+    GlobalObject& aGlobal, JSRFPTarget aTarget,
+    const Nullable<uint64_t>& aOverriddenFingerprintingSettings) {
   RFPTarget target;
   switch (aTarget) {
     case JSRFPTarget::RoundWindowSize:
@@ -1891,7 +1889,14 @@ bool ChromeUtils::ShouldResistFingerprinting(GlobalObject& aGlobal,
       MOZ_CRASH("Unhandled JSRFPTarget enum value");
   }
 
-  return nsRFPService::IsRFPEnabledFor(target);
+  Maybe<RFPTarget> overriddenFingerprintingSettings;
+  if (!aOverriddenFingerprintingSettings.IsNull()) {
+    overriddenFingerprintingSettings.emplace(
+        RFPTarget(aOverriddenFingerprintingSettings.Value()));
+  }
+
+  return nsRFPService::IsRFPEnabledFor(target,
+                                       overriddenFingerprintingSettings);
 }
 
 std::atomic<uint32_t> ChromeUtils::sDevToolsOpenedCount = 0;

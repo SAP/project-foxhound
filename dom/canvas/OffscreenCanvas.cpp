@@ -147,6 +147,23 @@ void OffscreenCanvas::SetHeight(uint32_t aHeight, ErrorResult& aRv) {
   CanvasAttrChanged();
 }
 
+void OffscreenCanvas::SetSize(const nsIntSize& aSize, ErrorResult& aRv) {
+  if (mNeutered) {
+    aRv.ThrowInvalidStateError(
+        "Cannot set dimensions of placeholder canvas transferred to worker.");
+    return;
+  }
+
+  if (NS_WARN_IF(aSize.IsEmpty())) {
+    aRv.ThrowRangeError("OffscreenCanvas size is empty, must be non-empty.");
+    return;
+  }
+
+  mWidth = aSize.width;
+  mHeight = aSize.height;
+  CanvasAttrChanged();
+}
+
 void OffscreenCanvas::GetContext(
     JSContext* aCx, const OffscreenRenderingContextId& aContextId,
     JS::Handle<JS::Value> aContextOptions,
@@ -570,7 +587,7 @@ NS_IMPL_ADDREF_INHERITED(OffscreenCanvas, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(OffscreenCanvas, DOMEventTargetHelper)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(OffscreenCanvas)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, EventTarget)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 }  // namespace mozilla::dom

@@ -26,7 +26,7 @@ class RealtimeTest
       public ::libvpx_test::CodecTestWithParam<libvpx_test::TestMode> {
  protected:
   RealtimeTest() : EncoderTest(GET_PARAM(0)), frame_packets_(0) {}
-  ~RealtimeTest() override {}
+  ~RealtimeTest() override = default;
 
   void SetUp() override {
     InitializeConfig();
@@ -95,7 +95,7 @@ TEST_P(RealtimeTest, IntegerOverflow) { TestIntegerOverflow(2048, 2048); }
 
 TEST_P(RealtimeTest, IntegerOverflowLarge) {
   if (IsVP9()) {
-#if VPX_ARCH_X86_64
+#if VPX_ARCH_AARCH64 || VPX_ARCH_X86_64
     TestIntegerOverflow(16384, 16384);
 #else
     TestIntegerOverflow(4096, 4096);

@@ -58,14 +58,6 @@ async function historyComponentReady(historyComponent) {
   is(expected, actual, `Total number of cards should be ${expected}`);
 }
 
-async function openFirefoxView(win) {
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    "#firefox-view-button",
-    { type: "mousedown" },
-    win.browsingContext
-  );
-}
-
 async function historyTelemetry() {
   await TestUtils.waitForCondition(
     () => {
@@ -153,7 +145,12 @@ async function addHistoryItems(dateAdded) {
 }
 
 add_setup(async () => {
-  await SpecialPowers.pushPrefEnv({ set: [[FXVIEW_NEXT_ENABLED_PREF, true]] });
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [FXVIEW_NEXT_ENABLED_PREF, true],
+      ["browser.firefox-view.search.enabled", true],
+    ],
+  });
   registerCleanupFunction(async () => {
     await SpecialPowers.popPrefEnv();
     await PlacesUtils.history.clear();
@@ -172,7 +169,7 @@ add_task(async function test_list_ordering() {
     const { document } = browser.contentWindow;
     is(document.location.href, "about:firefoxview-next");
 
-    navigateToCategory(document, "history");
+    await navigateToCategoryAndWait(document, "history");
 
     let historyComponent = document.querySelector("view-history");
     historyComponent.profileAge = 8;
@@ -192,10 +189,18 @@ add_task(async function test_list_ordering() {
 
     // Select first history item in first card
     await clearAllParentTelemetryEvents();
+    await TestUtils.waitForCondition(() => {
+      return historyComponent.lists[0].rowEls.length;
+    });
     let firstHistoryLink = historyComponent.lists[0].rowEls[0].mainEl;
+    let promiseHidden = BrowserTestUtils.waitForEvent(
+      document,
+      "visibilitychange"
+    );
     await EventUtils.synthesizeMouseAtCenter(firstHistoryLink, {}, content);
     await historyTelemetry();
-    await switchToFxViewTab(browser.ownerGlobal);
+    await promiseHidden;
+    await openFirefoxViewTab(browser.ownerGlobal);
 
     // Test number of cards when sorted by site/domain
     await clearAllParentTelemetryEvents();
@@ -258,7 +263,7 @@ add_task(async function test_empty_states() {
     const { document } = browser.contentWindow;
     is(document.location.href, "about:firefoxview-next");
 
-    navigateToCategory(document, "history");
+    await navigateToCategoryAndWait(document, "history");
 
     let historyComponent = document.querySelector("view-history");
     historyComponent.profileAge = 8;
@@ -346,20 +351,21 @@ add_task(async function test_observers_removed_when_view_is_hidden() {
   );
   await withFirefoxView({}, async browser => {
     const { document } = browser.contentWindow;
-    navigateToCategory(document, "history");
+    await navigateToCategoryAndWait(document, "history");
     const historyComponent = document.querySelector("view-history");
     historyComponent.profileAge = 8;
-    const visitList = await TestUtils.waitForCondition(() =>
+    let visitList = await TestUtils.waitForCondition(() =>
       historyComponent.cards?.[0]?.querySelector("fxview-tab-list")
     );
     info("The list should show a visit from the new tab.");
-    await BrowserTestUtils.waitForMutationCondition(
-      visitList,
-      { childList: true },
-      () => visitList.rowEls.length === 1
-    );
+    await TestUtils.waitForCondition(() => visitList.rowEls.length === 1);
 
+    let promiseHidden = BrowserTestUtils.waitForEvent(
+      document,
+      "visibilitychange"
+    );
     await BrowserTestUtils.switchTab(gBrowser, tab);
+    await promiseHidden;
     const { date } = await PlacesUtils.history
       .fetch(NEW_TAB_URL, {
         includeVisits: true,
@@ -373,12 +379,11 @@ add_task(async function test_observers_removed_when_view_is_hidden() {
     );
 
     info("The list should update when Firefox View is visible.");
-    await switchToFxViewTab(browser.ownerGlobal);
-    await BrowserTestUtils.waitForMutationCondition(
-      visitList,
-      { childList: true },
-      () => visitList.rowEls.length > 1
+    await openFirefoxViewTab(browser.ownerGlobal);
+    visitList = await TestUtils.waitForCondition(() =>
+      historyComponent.cards?.[0]?.querySelector("fxview-tab-list")
     );
+    await TestUtils.waitForCondition(() => visitList.rowEls.length > 1);
 
     BrowserTestUtils.removeTab(tab);
   });
@@ -396,7 +401,7 @@ add_task(async function test_show_all_history_telemetry() {
     const { document } = browser.contentWindow;
     is(document.location.href, "about:firefoxview-next");
 
-    navigateToCategory(document, "history");
+    await navigateToCategoryAndWait(document, "history");
 
     let historyComponent = document.querySelector("view-history");
     historyComponent.profileAge = 8;
@@ -415,5 +420,54 @@ add_task(async function test_show_all_history_telemetry() {
     let library = Services.wm.getMostRecentWindow("Places:Organizer");
     await BrowserTestUtils.closeWindow(library);
     gBrowser.removeTab(gBrowser.selectedTab);
+  });
+});
+
+add_task(async function test_search_history() {
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await navigateToCategoryAndWait(document, "history");
+    const historyComponent = document.querySelector("view-history");
+    historyComponent.profileAge = 8;
+    await historyComponentReady(historyComponent);
+    const searchTextbox = await TestUtils.waitForCondition(
+      () => historyComponent.searchTextbox,
+      "The search textbox is displayed."
+    );
+
+    info("Input a search query.");
+    EventUtils.synthesizeMouseAtCenter(searchTextbox, {}, content);
+    EventUtils.sendString("Example Domain 1", content);
+    await BrowserTestUtils.waitForMutationCondition(
+      historyComponent.shadowRoot,
+      { childList: true, subtree: true },
+      () =>
+        historyComponent.cards.length === 1 &&
+        document.l10n.getAttributes(
+          historyComponent.cards[0].querySelector("[slot=header]")
+        ).id === "firefoxview-search-results-header"
+    );
+    await TestUtils.waitForCondition(() => {
+      const { rowEls } = historyComponent.lists[0];
+      return rowEls.length === 1 && rowEls[0].mainEl.href === URLs[0];
+    }, "There is one matching search result.");
+
+    info("Input a bogus search query.");
+    EventUtils.synthesizeMouseAtCenter(searchTextbox, {}, content);
+    EventUtils.sendString("Bogus Query", content);
+    await TestUtils.waitForCondition(() => {
+      const tabList = historyComponent.lists[0];
+      return tabList?.shadowRoot.querySelector("fxview-empty-state");
+    }, "There are no matching search results.");
+
+    info("Clear the search query.");
+    EventUtils.synthesizeMouseAtCenter(searchTextbox.clearButton, {}, content);
+    await BrowserTestUtils.waitForMutationCondition(
+      historyComponent.shadowRoot,
+      { childList: true, subtree: true },
+      () =>
+        historyComponent.cards.length ===
+        historyComponent.historyMapByDate.length
+    );
   });
 });

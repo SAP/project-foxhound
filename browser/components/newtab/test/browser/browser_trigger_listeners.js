@@ -3,6 +3,10 @@ const { ASRouterTriggerListeners } = ChromeUtils.import(
   "resource://activity-stream/lib/ASRouterTriggerListeners.jsm"
 );
 
+const { ASRouter } = ChromeUtils.import(
+  "resource://activity-stream/lib/ASRouter.jsm"
+);
+
 const mockIdleService = {
   _observers: new Set(),
   _fireObservers(state) {
@@ -188,6 +192,44 @@ add_task(async function test_cookieBannerDetected() {
   await closeWindow;
 });
 
+add_task(async function test_cookieBannerHandled() {
+  const handlerStub = sinon.stub();
+  const bannerHandledTrigger = ASRouterTriggerListeners.get(
+    "cookieBannerHandled"
+  );
+  bannerHandledTrigger.uninit();
+  bannerHandledTrigger.init(handlerStub);
+
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  win.focus();
+  let eventWait = BrowserTestUtils.waitForEvent(win, "cookiebannerhandled");
+  win.windowUtils.dispatchEventToChromeOnly(
+    win,
+    new CustomEvent("cookiebannerhandled", {
+      bubbles: true,
+      cancelable: false,
+      detail: {
+        windowContext: {
+          rootFrameLoader: { ownerElement: win.gBrowser.selectedBrowser },
+        },
+      },
+    })
+  );
+  await eventWait;
+  let closeWindow = BrowserTestUtils.closeWindow(win);
+
+  Assert.ok(
+    handlerStub.called,
+    "Called after `cookiebannerhandled` event fires"
+  );
+
+  handlerStub.resetHistory();
+  bannerHandledTrigger.uninit();
+
+  Assert.ok(handlerStub.notCalled, "Not called after uninit");
+  await closeWindow;
+});
+
 function getIdleTriggerMock() {
   const idleTrigger = ASRouterTriggerListeners.get("activityAfterIdle");
   idleTrigger.uninit();
@@ -343,4 +385,40 @@ add_task(async function test_formAutofillTrigger() {
 
   sandbox.restore();
   formAutofillTrigger.uninit();
+});
+
+add_task(async function test_pageActionInUrlbarTrigger() {
+  const sandbox = sinon.createSandbox();
+  const receivedTrigger = new Promise(resolve => {
+    sandbox
+      .stub(ASRouter, "sendTriggerMessage")
+      .callsFake(({ id, context }) => {
+        if (
+          id === "pageActionInUrlbar" &&
+          context?.pageAction === "picture-in-picture-button"
+        ) {
+          resolve(true);
+        }
+      });
+  });
+  sandbox
+    .stub(PictureInPicture, "getEligiblePipVideoCount")
+    .returns({ totalPipCount: 1, totalPipDisabled: 0 });
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["media.videocontrols.picture-in-picture.enabled", true],
+      ["media.videocontrols.picture-in-picture.urlbar-button.enabled", true],
+    ],
+  });
+
+  PictureInPicture.updateUrlbarToggle(gBrowser.selectedBrowser);
+
+  let pageAction = await receivedTrigger;
+  ok(pageAction, "pageActionInUrlbar trigger sent with PiP button id");
+
+  await SpecialPowers.popPrefEnv();
+  sandbox.restore();
+
+  PictureInPicture.updateUrlbarToggle(gBrowser.selectedBrowser);
 });

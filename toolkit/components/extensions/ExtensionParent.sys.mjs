@@ -329,6 +329,7 @@ const ProxyMessenger = {
     if (!extension) {
       return Promise.reject({ message: ERROR_NO_RECEIVERS });
     }
+    // TODO bug 1852317: This should not be unconditional.
     await extension.wakeupBackground?.();
 
     arg.sender = this.getSender(extension, sender);
@@ -1117,6 +1118,16 @@ ParentAPIManager = {
     };
 
     try {
+      if (
+        context.isBackgroundContext &&
+        !context.extension.persistentBackground
+      ) {
+        context.extension.emit("background-script-reset-idle", {
+          reason: "parentApiCall",
+          path: data.path,
+        });
+      }
+
       let args = data.args;
       let { isHandlingUserInput = false } = data.options || {};
       let pendingBrowser = context.pendingEventBrowser;

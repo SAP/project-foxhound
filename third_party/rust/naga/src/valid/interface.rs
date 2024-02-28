@@ -33,6 +33,8 @@ pub enum GlobalVariableError {
     ),
     #[error("Initializer doesn't match the variable type")]
     InitializerType,
+    #[error("Initializer can't be used with address space {0:?}")]
+    InitializerNotAllowed(crate::AddressSpace),
     #[error("Storage address space doesn't support write-only access")]
     StorageAddressSpaceWriteOnlyNotSupported,
 }
@@ -90,6 +92,8 @@ pub enum EntryPointError {
     ForbiddenStageOperations,
     #[error("Global variable {0:?} is used incorrectly as {1:?}")]
     InvalidGlobalUsage(Handle<crate::GlobalVariable>, GlobalUse),
+    #[error("More than 1 push constant variable is used")]
+    MoreThanOnePushConstantUsed,
     #[error("Bindings for {0:?} conflict with other resource")]
     BindingCollision(Handle<crate::GlobalVariable>),
     #[error("Argument {0} varying error")]
@@ -138,9 +142,7 @@ impl VaryingContext<'_> {
         ty: Handle<crate::Type>,
         binding: &crate::Binding,
     ) -> Result<(), VaryingError> {
-        use crate::{
-            BuiltIn as Bi, ScalarKind as Sk, ShaderStage as St, TypeInner as Ti, VectorSize as Vs,
-        };
+        use crate::{BuiltIn as Bi, ShaderStage as St, TypeInner as Ti, VectorSize as Vs};
 
         let ty_inner = &self.types[ty].inner;
         match *binding {
@@ -170,44 +172,30 @@ impl VaryingContext<'_> {
                     return Err(VaryingError::UnsupportedCapability(required));
                 }
 
-                let width = 4;
                 let (visible, type_good) = match built_in {
                     Bi::BaseInstance | Bi::BaseVertex | Bi::InstanceIndex | Bi::VertexIndex => (
                         self.stage == St::Vertex && !self.output,
-                        *ty_inner
-                            == Ti::Scalar {
-                                kind: Sk::Uint,
-                                width,
-                            },
+                        *ty_inner == Ti::Scalar(crate::Scalar::U32),
                     ),
                     Bi::ClipDistance | Bi::CullDistance => (
                         self.stage == St::Vertex && self.output,
                         match *ty_inner {
                             Ti::Array { base, .. } => {
-                                self.types[base].inner
-                                    == Ti::Scalar {
-                                        kind: Sk::Float,
-                                        width,
-                                    }
+                                self.types[base].inner == Ti::Scalar(crate::Scalar::F32)
                             }
                             _ => false,
                         },
                     ),
                     Bi::PointSize => (
                         self.stage == St::Vertex && self.output,
-                        *ty_inner
-                            == Ti::Scalar {
-                                kind: Sk::Float,
-                                width,
-                            },
+                        *ty_inner == Ti::Scalar(crate::Scalar::F32),
                     ),
                     Bi::PointCoord => (
                         self.stage == St::Fragment && !self.output,
                         *ty_inner
                             == Ti::Vector {
                                 size: Vs::Bi,
-                                kind: Sk::Float,
-                                width,
+                                scalar: crate::Scalar::F32,
                             },
                     ),
                     Bi::Position { .. } => (
@@ -219,8 +207,7 @@ impl VaryingContext<'_> {
                         *ty_inner
                             == Ti::Vector {
                                 size: Vs::Quad,
-                                kind: Sk::Float,
-                                width,
+                                scalar: crate::Scalar::F32,
                             },
                     ),
                     Bi::ViewIndex => (
@@ -228,59 +215,31 @@ impl VaryingContext<'_> {
                             St::Vertex | St::Fragment => !self.output,
                             St::Compute => false,
                         },
-                        *ty_inner
-                            == Ti::Scalar {
-                                kind: Sk::Sint,
-                                width,
-                            },
+                        *ty_inner == Ti::Scalar(crate::Scalar::I32),
                     ),
                     Bi::FragDepth => (
                         self.stage == St::Fragment && self.output,
-                        *ty_inner
-                            == Ti::Scalar {
-                                kind: Sk::Float,
-                                width,
-                            },
+                        *ty_inner == Ti::Scalar(crate::Scalar::F32),
                     ),
                     Bi::FrontFacing => (
                         self.stage == St::Fragment && !self.output,
-                        *ty_inner
-                            == Ti::Scalar {
-                                kind: Sk::Bool,
-                                width: crate::BOOL_WIDTH,
-                            },
+                        *ty_inner == Ti::Scalar(crate::Scalar::BOOL),
                     ),
                     Bi::PrimitiveIndex => (
                         self.stage == St::Fragment && !self.output,
-                        *ty_inner
-                            == Ti::Scalar {
-                                kind: Sk::Uint,
-                                width,
-                            },
+                        *ty_inner == Ti::Scalar(crate::Scalar::U32),
                     ),
                     Bi::SampleIndex => (
                         self.stage == St::Fragment && !self.output,
-                        *ty_inner
-                            == Ti::Scalar {
-                                kind: Sk::Uint,
-                                width,
-                            },
+                        *ty_inner == Ti::Scalar(crate::Scalar::U32),
                     ),
                     Bi::SampleMask => (
                         self.stage == St::Fragment,
-                        *ty_inner
-                            == Ti::Scalar {
-                                kind: Sk::Uint,
-                                width,
-                            },
+                        *ty_inner == Ti::Scalar(crate::Scalar::U32),
                     ),
                     Bi::LocalInvocationIndex => (
                         self.stage == St::Compute && !self.output,
-                        *ty_inner
-                            == Ti::Scalar {
-                                kind: Sk::Uint,
-                                width,
-                            },
+                        *ty_inner == Ti::Scalar(crate::Scalar::U32),
                     ),
                     Bi::GlobalInvocationId
                     | Bi::LocalInvocationId
@@ -291,8 +250,7 @@ impl VaryingContext<'_> {
                         *ty_inner
                             == Ti::Vector {
                                 size: Vs::Tri,
-                                kind: Sk::Uint,
-                                width,
+                                scalar: crate::Scalar::U32,
                             },
                     ),
                 };
@@ -537,9 +495,8 @@ impl super::Validator {
 
                 (TypeFlags::empty(), true)
             }
-            crate::AddressSpace::Private | crate::AddressSpace::WorkGroup => {
-                (TypeFlags::DATA | TypeFlags::SIZED, false)
-            }
+            crate::AddressSpace::Private => (TypeFlags::CONSTRUCTIBLE, false),
+            crate::AddressSpace::WorkGroup => (TypeFlags::DATA | TypeFlags::SIZED, false),
             crate::AddressSpace::PushConstant => {
                 if !self.capabilities.contains(Capabilities::PUSH_CONSTANT) {
                     return Err(GlobalVariableError::UnsupportedCapability(
@@ -570,6 +527,13 @@ impl super::Validator {
         }
 
         if let Some(init) = var.init {
+            match var.space {
+                crate::AddressSpace::Private | crate::AddressSpace::Function => {}
+                _ => {
+                    return Err(GlobalVariableError::InitializerNotAllowed(var.space));
+                }
+            }
+
             let decl_ty = &gctx.types[var.ty].inner;
             let init_ty = mod_info[init].inner_with(gctx.types);
             if !decl_ty.equivalent(init_ty, gctx.types) {
@@ -697,10 +661,24 @@ impl super::Validator {
             return Err(EntryPointError::MissingVertexOutputPosition.with_span());
         }
 
-        for bg in self.bind_group_masks.iter_mut() {
-            bg.clear();
+        #[cfg(feature = "validate")]
+        {
+            let used_push_constants = module
+                .global_variables
+                .iter()
+                .filter(|&(_, var)| var.space == crate::AddressSpace::PushConstant)
+                .map(|(handle, _)| handle)
+                .filter(|&handle| !info[handle].is_empty());
+            // Check if there is more than one push constant, and error if so.
+            // Use a loop for when returning multiple errors is supported.
+            #[allow(clippy::never_loop)]
+            for handle in used_push_constants.skip(1) {
+                return Err(EntryPointError::MoreThanOnePushConstantUsed
+                    .with_span_handle(handle, &module.global_variables));
+            }
         }
 
+        self.ep_resource_bindings.clear();
         #[cfg(feature = "validate")]
         for (var_handle, var) in module.global_variables.iter() {
             let usage = info[var_handle];
@@ -741,10 +719,7 @@ impl super::Validator {
             }
 
             if let Some(ref bind) = var.binding {
-                while self.bind_group_masks.len() <= bind.group as usize {
-                    self.bind_group_masks.push(BitSet::new());
-                }
-                if !self.bind_group_masks[bind.group as usize].insert(bind.binding as usize) {
+                if !self.ep_resource_bindings.insert(bind.clone()) {
                     if self.flags.contains(super::ValidationFlags::BINDINGS) {
                         return Err(EntryPointError::BindingCollision(var_handle)
                             .with_span_handle(var_handle, &module.global_variables));

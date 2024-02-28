@@ -463,10 +463,6 @@ class ContentParent final : public PContentParent,
 
   PRemoteSpellcheckEngineParent* AllocPRemoteSpellcheckEngineParent();
 
-  mozilla::ipc::IPCResult RecvRecordingDeviceEvents(
-      const nsAString& aRecordingStatus, const nsAString& aPageURL,
-      const bool& aIsAudio, const bool& aIsVideo);
-
   bool CycleCollectWithLogs(bool aDumpAllTraces,
                             nsICycleCollectorLogSink* aSink,
                             nsIDumpGCAndCCLogsCallback* aCallback);
@@ -510,8 +506,7 @@ class ContentParent final : public PContentParent,
 
   static void BroadcastBlobURLRegistration(
       const nsACString& aURI, BlobImpl* aBlobImpl, nsIPrincipal* aPrincipal,
-      const Maybe<nsID>& aAgentClusterId, const nsCString& aPartitionKey,
-      ContentParent* aIgnoreThisCP = nullptr);
+      const nsCString& aPartitionKey, ContentParent* aIgnoreThisCP = nullptr);
 
   static void BroadcastBlobURLUnregistration(
       const nsACString& aURI, nsIPrincipal* aPrincipal,
@@ -519,7 +514,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvStoreAndBroadcastBlobURLRegistration(
       const nsACString& aURI, const IPCBlob& aBlob, nsIPrincipal* aPrincipal,
-      const Maybe<nsID>& aAgentCluster, const nsCString& aPartitionKey);
+      const nsCString& aPartitionKey);
 
   mozilla::ipc::IPCResult RecvUnstoreAndBroadcastBlobURLUnregistration(
       const nsACString& aURI, nsIPrincipal* aPrincipal);
@@ -540,13 +535,6 @@ class ContentParent final : public PContentParent,
   virtual mozilla::ipc::IPCResult RecvPURLClassifierLocalConstructor(
       PURLClassifierLocalParent* aActor, nsIURI* aURI,
       nsTArray<IPCURLClassifierFeature>&& aFeatures) override;
-
-  PLoginReputationParent* AllocPLoginReputationParent(nsIURI* aURI);
-
-  virtual mozilla::ipc::IPCResult RecvPLoginReputationConstructor(
-      PLoginReputationParent* aActor, nsIURI* aURI) override;
-
-  bool DeallocPLoginReputationParent(PLoginReputationParent* aActor);
 
   PSessionStorageObserverParent* AllocPSessionStorageObserverParent();
 
@@ -675,8 +663,7 @@ class ContentParent final : public PContentParent,
       const nsACString& aBlobURL, nsIPrincipal* pTriggeringPrincipal,
       nsIPrincipal* pLoadingPrincipal,
       const OriginAttributes& aOriginAttributes, uint64_t aInnerWindowId,
-      const Maybe<nsID>& aAgentClusterId, const nsCString& aPartitionKey,
-      BlobURLDataRequestResolver&& aResolver);
+      const nsCString& aPartitionKey, BlobURLDataRequestResolver&& aResolver);
 
  protected:
   bool CheckBrowsingContextEmbedder(CanonicalBrowsingContext* aBC,
@@ -1000,10 +987,6 @@ class ContentParent final : public PContentParent,
                                                const int32_t& aWhichClipboard,
                                                bool* aHasType);
 
-  mozilla::ipc::IPCResult RecvClipboardHasTypesAsync(
-      nsTArray<nsCString>&& aTypes, const int32_t& aWhichClipboard,
-      ClipboardHasTypesAsyncResolver&& aResolver);
-
   mozilla::ipc::IPCResult RecvGetExternalClipboardFormats(
       const int32_t& aWhichClipboard, const bool& aPlainTextOnly,
       nsTArray<nsCString>* aTypes);
@@ -1014,10 +997,6 @@ class ContentParent final : public PContentParent,
 
   already_AddRefed<PClipboardWriteRequestParent>
   AllocPClipboardWriteRequestParent(const int32_t& aClipboardType);
-
-  mozilla::ipc::IPCResult RecvPlaySound(nsIURI* aURI);
-  mozilla::ipc::IPCResult RecvBeep();
-  mozilla::ipc::IPCResult RecvPlayEventSound(const uint32_t& aEventId);
 
   mozilla::ipc::IPCResult RecvGetIconForExtension(const nsACString& aFileExt,
                                                   const uint32_t& aIconSize,
@@ -1716,8 +1695,6 @@ const nsDependentCSubstring RemoteTypePrefix(
 bool IsWebRemoteType(const nsACString& aContentProcessType);
 
 bool IsWebCoopCoepRemoteType(const nsACString& aContentProcessType);
-
-bool IsPrivilegedMozillaRemoteType(const nsACString& aContentProcessType);
 
 bool IsExtensionRemoteType(const nsACString& aContentProcessType);
 

@@ -16,7 +16,7 @@
 #include "jit/BaselineFrame.h"   // js::jit::BaselineFrame
 #include "jit/JitFrames.h"       // js::jit::EnsureUnwoundJitExitFrame
 #include "jit/JSJitFrameIter.h"  // js::jit::{FrameType,InlineFrameIterator,JSJitFrameIter,MaybeReadFallback,SnapshotIterator}
-#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberZeroOrigin, JS::TaggedColumnNumberZeroOrigin
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin, JS::TaggedColumnNumberOneOrigin
 #include "js/GCAPI.h"              // JS::AutoSuppressGCAnalysis
 #include "js/Principals.h"         // JSSubsumesOp
 #include "js/RootingAPI.h"         // JS::Rooted
@@ -569,7 +569,7 @@ JSAtom* FrameIter::maybeFunctionDisplayAtom() const {
         return wasmFrame().functionDisplayAtom();
       }
       if (isFunctionFrame()) {
-        return calleeTemplate()->displayAtom();
+        return calleeTemplate()->fullDisplayAtom();
       }
       return nullptr;
   }
@@ -619,8 +619,7 @@ const char16_t* FrameIter::displayURL() const {
   MOZ_CRASH("Unexpected state");
 }
 
-unsigned FrameIter::computeLine(
-    JS::TaggedColumnNumberZeroOrigin* column) const {
+unsigned FrameIter::computeLine(JS::TaggedColumnNumberOneOrigin* column) const {
   switch (data_.state_) {
     case DONE:
       break;
@@ -629,10 +628,10 @@ unsigned FrameIter::computeLine(
       if (isWasm()) {
         return wasmFrame().computeLine(column);
       }
-      JS::LimitedColumnNumberZeroOrigin columnNumber;
+      JS::LimitedColumnNumberOneOrigin columnNumber;
       unsigned lineNumber = PCToLineNumber(script(), pc(), &columnNumber);
       if (column) {
-        *column = JS::TaggedColumnNumberZeroOrigin(columnNumber);
+        *column = JS::TaggedColumnNumberOneOrigin(columnNumber);
       }
       return lineNumber;
   }

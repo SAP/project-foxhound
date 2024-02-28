@@ -5,12 +5,14 @@
 import argparse
 import ast
 import errno
-import imp
 import sys
+import types
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Dict, Optional, Union
+
+from mozfile import load_source
 
 from .base import MissingFileError
 
@@ -101,6 +103,7 @@ MACH_COMMANDS = {
     "geckoview-junit": MachCommandReference(
         "testing/mochitest/mach_commands.py", ["test"]
     ),
+    "gen-use-counter-metrics": MachCommandReference("dom/base/mach_commands.py"),
     "generate-test-certs": MachCommandReference(
         "security/manager/tools/mach_commands.py"
     ),
@@ -411,13 +414,13 @@ def load_commands_from_file(path: Union[str, Path], module_name=None):
         # Ensure parent module is present otherwise we'll (likely) get
         # an error due to unknown parent.
         if "mach.commands" not in sys.modules:
-            mod = imp.new_module("mach.commands")
+            mod = types.ModuleType("mach.commands")
             sys.modules["mach.commands"] = mod
 
         module_name = f"mach.commands.{uuid.uuid4().hex}"
 
     try:
-        imp.load_source(module_name, str(path))
+        load_source(module_name, str(path))
     except IOError as e:
         if e.errno != errno.ENOENT:
             raise

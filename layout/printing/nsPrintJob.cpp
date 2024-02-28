@@ -27,6 +27,7 @@
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/StaticPrefs_print.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/Try.h"
 #include "nsIBrowserChild.h"
 #include "nsIOService.h"
 #include "nsIScriptGlobalObject.h"
@@ -580,6 +581,8 @@ nsresult nsPrintJob::CleanupOnFailure(nsresult aResult, bool aIsPrinting) {
   PR_PL(("****  Failed %s - rv 0x%" PRIX32,
          aIsPrinting ? "Printing" : "Print Preview",
          static_cast<uint32_t>(aResult)));
+  PROFILER_MARKER_TEXT("PrintJob", LAYOUT_Printing, MarkerStack::Capture(),
+                       "nsPrintJob::CleanupOnFailure"_ns);
 
   /* cleanup... */
   if (mPagePrintTimer) {
@@ -1785,17 +1788,10 @@ bool nsPrintJob::PrePrintSheet() {
   return done;
 }
 
-bool nsPrintJob::PrintSheet(nsPrintObject* aPO, bool& aInRange) {
+bool nsPrintJob::PrintSheet(nsPrintObject* aPO) {
   NS_ASSERTION(aPO, "aPO is null!");
   NS_ASSERTION(mPageSeqFrame.IsAlive(), "mPageSeqFrame is not alive!");
   NS_ASSERTION(mPrt, "mPrt is null!");
-
-  // XXXdholbert Nowadays, this function doesn't need to concern itself with
-  // page ranges -- page-range handling is now handled when we reflow our
-  // PrintedSheetFrames, and all PrintedSheetFrames are "in-range" and should
-  // be printed. So this outparam is unconditionally true. Bug 1669815 is filed
-  // on removing it entirely.
-  aInRange = true;
 
   // Although these should NEVER be nullptr
   // This is added insurance, to make sure we don't crash in optimized builds
@@ -2100,8 +2096,7 @@ void nsPrintJob::FirePrintCompletionEvent() {
   NS_ENSURE_TRUE_VOID(cv);
   nsCOMPtr<Document> doc = cv->GetDocument();
   NS_ENSURE_TRUE_VOID(doc);
-
-  NS_ENSURE_SUCCESS_VOID(doc->Dispatch(TaskCategory::Other, event.forget()));
+  NS_ENSURE_SUCCESS_VOID(doc->Dispatch(event.forget()));
 }
 
 void nsPrintJob::DisconnectPagePrintTimer() {

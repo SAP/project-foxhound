@@ -44,7 +44,7 @@ let authPromptIsCommonDialog =
  * and internal state for the elements are removed.
  */
 function recreateTree(element) {
-  // eslint-disable-next-line no-unsanitized/property, no-self-assign
+  // eslint-disable-next-line no-self-assign
   element.outerHTML = element.outerHTML;
 }
 
@@ -69,12 +69,6 @@ function checkAutoCompleteResults(actualValues, expectedValues, hostname, msg) {
     return;
   }
 
-  is(
-    typeof hostname,
-    "string",
-    "checkAutoCompleteResults: hostname must be a string"
-  );
-
   isnot(
     actualValues.length,
     0,
@@ -84,7 +78,7 @@ function checkAutoCompleteResults(actualValues, expectedValues, hostname, msg) {
 
   // Check the footer first.
   let footerResult = actualValues[actualValues.length - 1];
-  is(footerResult, "View Saved Logins", "the footer text is shown correctly");
+  is(footerResult, "Manage Passwords", "the footer text is shown correctly");
 
   if (actualValues.length == 1) {
     is(
@@ -785,7 +779,6 @@ async function loadFormIntoWindow(origin, html, win, expectedCount = 1, task) {
     win,
     [html, task?.toString()],
     function (contentHtml, contentTask = null) {
-      // eslint-disable-next-line no-unsanitized/property
       this.content.document.documentElement.innerHTML = contentHtml;
       // Similar to the invokeContentTask helper in accessible/tests/browser/shared-head.js
       if (contentTask) {
@@ -986,7 +979,6 @@ function setFormAndWaitForFieldFilled(
   form,
   { fieldSelector, fieldValue, formId }
 ) {
-  // eslint-disable-next-line no-unsanitized/property
   document.querySelector("#content").innerHTML = form;
   return SimpleTest.promiseWaitForCondition(() => {
     let ancestor = formId
@@ -1101,24 +1093,27 @@ this.LoginManager = new Proxy(
 );
 
 /**
- * Set innerHTML of the content div and ensure it gets reset after current
+ * Set the inner html of the content div and ensure it gets reset after current
  * task finishes.
  * Returns the first child node of the newly created content div for convenient
  * access of the newly created dom node.
  *
  * @param {String} html
- *        string of dom content to be created
+ *        string of dom content or dom element to be inserted into content element
  */
 function setContentForTask(html) {
   const content = document.querySelector("#content");
   const innerHTMLBefore = content.innerHTML || "";
   SimpleTest.registerCurrentTaskCleanupFunction(
-    // eslint-disable-next-line no-unsanitized/property
     () => (content.innerHTML = innerHTMLBefore)
   );
-  // eslint-disable-next-line no-unsanitized/property
-  content.innerHTML = html;
-  return content.firstChild;
+  if (html.content?.cloneNode) {
+    const clone = html.content.cloneNode(true);
+    content.replaceChildren(clone);
+  } else {
+    content.innerHTML = html;
+  }
+  return content.firstElementChild;
 }
 
 /*

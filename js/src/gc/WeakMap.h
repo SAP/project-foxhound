@@ -10,7 +10,9 @@
 #include "mozilla/LinkedList.h"
 
 #include "gc/Barrier.h"
+#include "gc/Marking.h"
 #include "gc/Tracer.h"
+#include "gc/Zone.h"
 #include "gc/ZoneAllocator.h"
 #include "js/HashTable.h"
 #include "js/HeapAPI.h"
@@ -228,32 +230,32 @@ class WeakMap
 
   template <typename KeyInput, typename ValueInput>
   [[nodiscard]] bool add(AddPtr& p, KeyInput&& k, ValueInput&& v) {
-    MOZ_ASSERT(k);
+    MOZ_ASSERT(gc::ToMarkable(k));
     return Base::add(p, std::forward<KeyInput>(k), std::forward<ValueInput>(v));
   }
 
   template <typename KeyInput, typename ValueInput>
   [[nodiscard]] bool relookupOrAdd(AddPtr& p, KeyInput&& k, ValueInput&& v) {
-    MOZ_ASSERT(k);
+    MOZ_ASSERT(gc::ToMarkable(k));
     return Base::relookupOrAdd(p, std::forward<KeyInput>(k),
                                std::forward<ValueInput>(v));
   }
 
   template <typename KeyInput, typename ValueInput>
   [[nodiscard]] bool put(KeyInput&& k, ValueInput&& v) {
-    MOZ_ASSERT(k);
+    MOZ_ASSERT(gc::ToMarkable(k));
     return Base::put(std::forward<KeyInput>(k), std::forward<ValueInput>(v));
   }
 
   template <typename KeyInput, typename ValueInput>
   [[nodiscard]] bool putNew(KeyInput&& k, ValueInput&& v) {
-    MOZ_ASSERT(k);
+    MOZ_ASSERT(gc::ToMarkable(k));
     return Base::putNew(std::forward<KeyInput>(k), std::forward<ValueInput>(v));
   }
 
   template <typename KeyInput, typename ValueInput>
   void putNewInfallible(KeyInput&& k, ValueInput&& v) {
-    MOZ_ASSERT(k);
+    MOZ_ASSERT(gc::ToMarkable(k));
     Base::putNewInfallible(std::forward(k), std::forward<KeyInput>(k));
   }
 
@@ -321,6 +323,7 @@ class WeakMap
 };
 
 using ObjectValueWeakMap = WeakMap<HeapPtr<JSObject*>, HeapPtr<Value>>;
+using ValueValueWeakMap = WeakMap<HeapPtr<Value>, HeapPtr<Value>>;
 
 // Generic weak map for mapping objects to other objects.
 class ObjectWeakMap {
@@ -347,6 +350,51 @@ class ObjectWeakMap {
 #ifdef JSGC_HASH_TABLE_CHECKS
   void checkAfterMovingGC();
 #endif
+};
+
+// Get the hash from the Symbol.
+[[nodiscard]] HashNumber GetHash(JS::Symbol* sym);
+
+// Return true if the hashes of two Symbols match.
+[[nodiscard]] bool HashMatch(JS::Symbol* key, JS::Symbol* lookup);
+
+// NB: The specialization works based on pointer equality and not on JS Value
+// semantics, and it will assert if the Value's isGCThing() is false.
+//
+// When the JS Value is of type JS::Symbol, we cannot access uniqueIds when it
+// runs on the worker thread, so we get the hashes from the Symbols directly
+// instead.
+template <>
+struct StableCellHasher<HeapPtr<Value>> {
+  using Key = HeapPtr<Value>;
+  using Lookup = Value;
+
+  static bool maybeGetHash(const Lookup& l, HashNumber* hashOut) {
+    if (l.isSymbol()) {
+      *hashOut = GetHash(l.toSymbol());
+      return true;
+    }
+    return StableCellHasher<gc::Cell*>::maybeGetHash(l.toGCThing(), hashOut);
+  }
+  static bool ensureHash(const Lookup& l, HashNumber* hashOut) {
+    if (l.isSymbol()) {
+      *hashOut = GetHash(l.toSymbol());
+      return true;
+    }
+    return StableCellHasher<gc::Cell*>::ensureHash(l.toGCThing(), hashOut);
+  }
+  static HashNumber hash(const Lookup& l) {
+    if (l.isSymbol()) {
+      return GetHash(l.toSymbol());
+    }
+    return StableCellHasher<gc::Cell*>::hash(l.toGCThing());
+  }
+  static bool match(const Key& k, const Lookup& l) {
+    if (l.isSymbol()) {
+      return HashMatch(k.toSymbol(), l.toSymbol());
+    }
+    return StableCellHasher<gc::Cell*>::match(k.toGCThing(), l.toGCThing());
+  }
 };
 
 } /* namespace js */

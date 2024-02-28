@@ -108,16 +108,8 @@ function createSourceObject(filename, props = {}) {
     isPrettyPrinted: false,
     isExtension: false,
     isOriginal: filename.includes("originalSource"),
+    displayURL: makeSourceURL(filename),
   };
-}
-
-function createOriginalSourceObject(generated) {
-  const rv = {
-    ...generated,
-    id: `${generated.id}/originalSource`,
-  };
-
-  return rv;
 }
 
 function makeSourceURL(filename) {
@@ -280,7 +272,6 @@ export {
   getTelemetryEvents,
   makeFrame,
   createSourceObject,
-  createOriginalSourceObject,
   createMakeSource,
   makeSourceURL,
   makeSource,

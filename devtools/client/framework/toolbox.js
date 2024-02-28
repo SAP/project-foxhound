@@ -67,7 +67,7 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  ["registerWalkerListeners"],
+  ["registerWalkerListeners", "removeTarget"],
   "resource://devtools/client/framework/actions/index.js",
   true
 );
@@ -763,6 +763,8 @@ Toolbox.prototype = {
   },
 
   _onTargetDestroyed({ targetFront }) {
+    removeTarget(this.store, targetFront);
+
     if (targetFront.isTopLevel) {
       const consoleFront = targetFront.getCachedFront("console");
       // If the target has already been destroyed, its console front will
@@ -1529,6 +1531,7 @@ Toolbox.prototype = {
       isToolSupported,
       isCurrentlyVisible,
       isChecked,
+      isToggle,
       onKeyDown,
       experimentalURL,
     } = options;
@@ -1562,6 +1565,7 @@ Toolbox.prototype = {
         isCheckedValue = value;
         this.emit("updatechecked");
       },
+      isToggle,
       // The preference for having this button visible.
       visibilityswitch: `devtools.${id}.enabled`,
       // The toolbar has a container at the start and end of the toolbar for
@@ -1587,16 +1591,30 @@ Toolbox.prototype = {
   },
 
   _splitConsoleOnKeypress(e) {
-    if (e.keyCode === KeyCodes.DOM_VK_ESCAPE) {
-      this.toggleSplitConsole();
-      // If the debugger is paused, don't let the ESC key stop any pending navigation.
-      // If the host is page, don't let the ESC stop the load of the webconsole frame.
-      if (
-        this.threadFront.state == "paused" ||
-        this.hostType === Toolbox.HostType.PAGE
-      ) {
-        e.preventDefault();
+    if (e.keyCode !== KeyCodes.DOM_VK_ESCAPE) {
+      return;
+    }
+
+    const currentPanel = this.getCurrentPanel();
+    if (
+      typeof currentPanel.onToolboxChromeEventHandlerEscapeKeyDown ===
+      "function"
+    ) {
+      const ac = new this.win.AbortController();
+      currentPanel.onToolboxChromeEventHandlerEscapeKeyDown(ac);
+      if (ac.signal.aborted) {
+        return;
       }
+    }
+
+    this.toggleSplitConsole();
+    // If the debugger is paused, don't let the ESC key stop any pending navigation.
+    // If the host is page, don't let the ESC stop the load of the webconsole frame.
+    if (
+      this.threadFront.state == "paused" ||
+      this.hostType === Toolbox.HostType.PAGE
+    ) {
+      e.preventDefault();
     }
   },
 
@@ -2103,6 +2121,7 @@ Toolbox.prototype = {
       isToolSupported: toolbox => {
         return toolbox.target.getTrait("frames");
       },
+      isToggle: true,
     });
 
     return this.pickerButton;

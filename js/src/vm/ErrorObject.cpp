@@ -24,7 +24,7 @@
 #include "js/CallNonGenericMethod.h"
 #include "js/CharacterEncoding.h"  // JS::ConstUTF8CharsZ
 #include "js/Class.h"
-#include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin, JS::TaggedColumnNumberZeroOrigin
+#include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
 #include "js/Conversions.h"
 #include "js/ErrorReport.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -266,7 +266,7 @@ static ErrorObject* CreateErrorObject(JSContext* cx, const CallArgs& args,
       return nullptr;
     }
   } else {
-    JS::TaggedColumnNumberZeroOrigin tmp;
+    JS::TaggedColumnNumberOneOrigin tmp;
     lineNumber = iter.done() ? 0 : iter.computeLine(&tmp);
     columnNumber = JS::ColumnNumberOneOrigin(tmp.oneOriginValue());
   }

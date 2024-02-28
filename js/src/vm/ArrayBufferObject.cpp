@@ -1508,12 +1508,7 @@ static ArrayBufferObject* NewArrayBufferObject(JSContext* cx,
   MOZ_ASSERT(!CanNurseryAllocateFinalizedClass(clasp));
   constexpr gc::Heap heap = gc::Heap::Tenured;
 
-  NativeObject* obj = NativeObject::create(cx, allocKind, heap, shape);
-  if (!obj) {
-    return nullptr;
-  }
-
-  return &obj->as<ArrayBufferObject>();
+  return NativeObject::create<ArrayBufferObject>(cx, allocKind, heap, shape);
 }
 
 // Creates a new ArrayBufferObject with %ArrayBuffer.prototype% as proto and no
@@ -1952,7 +1947,7 @@ ArrayBufferObject::extractStructuredCloneContents(
 /* static */
 bool ArrayBufferObject::ensureNonInline(JSContext* cx,
                                         Handle<ArrayBufferObject*> buffer) {
-  if (buffer->isDetached()) {
+  if (buffer->isDetached() || buffer->isPreparedForAsmJS()) {
     return true;
   }
 
@@ -1961,8 +1956,6 @@ bool ArrayBufferObject::ensureNonInline(JSContext* cx,
                               JSMSG_ARRAYBUFFER_LENGTH_PINNED);
     return false;
   }
-
-  MOZ_ASSERT(!buffer->isPreparedForAsmJS());
 
   BufferContents inlineContents = buffer->contents();
   if (inlineContents.kind() != INLINE_DATA) {
@@ -2070,6 +2063,9 @@ void ArrayBufferObject::copyData(ArrayBufferObject* toBuffer, size_t toIndex,
 size_t ArrayBufferObject::objectMoved(JSObject* obj, JSObject* old) {
   ArrayBufferObject& dst = obj->as<ArrayBufferObject>();
   const ArrayBufferObject& src = old->as<ArrayBufferObject>();
+
+  MOZ_ASSERT(
+      !obj->runtimeFromMainThread()->gc.nursery().isInside(src.dataPointer()));
 
   // Fix up possible inline data pointer.
   if (src.hasInlineData()) {
@@ -2502,19 +2498,19 @@ const JSClass* const JS::ArrayBuffer::SharedClass =
   return JS::ArrayBuffer(ArrayBufferObject::createZeroed(cx, nbytes));
 }
 
-uint8_t* JS::ArrayBuffer::getLengthAndData(size_t* length, bool* isSharedMemory,
-                                           const JS::AutoRequireNoGC& nogc) {
+mozilla::Span<uint8_t> JS::ArrayBuffer::getData(
+    bool* isSharedMemory, const JS::AutoRequireNoGC& nogc) {
   auto* buffer = obj->maybeUnwrapAs<ArrayBufferObjectMaybeShared>();
   if (!buffer) {
     return nullptr;
   }
-  *length = buffer->byteLength();
+  size_t length = buffer->byteLength();
   if (buffer->is<SharedArrayBufferObject>()) {
     *isSharedMemory = true;
-    return buffer->dataPointerEither().unwrap();
+    return {buffer->dataPointerEither().unwrap(), length};
   }
   *isSharedMemory = false;
-  return buffer->as<ArrayBufferObject>().dataPointer();
+  return {buffer->as<ArrayBufferObject>().dataPointer(), length};
 };
 
 JS::ArrayBuffer JS::ArrayBuffer::unwrap(JSObject* maybeWrapped) {

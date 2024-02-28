@@ -1,4 +1,5 @@
 use super::Error;
+use crate::front::wgsl::Scalar;
 use crate::Span;
 
 pub fn map_address_space(word: &str, span: Span) -> Result<crate::AddressSpace, Error<'_>> {
@@ -84,6 +85,7 @@ pub fn map_storage_format(word: &str, span: Span) -> Result<crate::StorageFormat
         "rgba8snorm" => Sf::Rgba8Snorm,
         "rgba8uint" => Sf::Rgba8Uint,
         "rgba8sint" => Sf::Rgba8Sint,
+        "rgb10a2uint" => Sf::Rgb10a2Uint,
         "rgb10a2unorm" => Sf::Rgb10a2Unorm,
         "rg11b10float" => Sf::Rg11b10Float,
         "rg32uint" => Sf::Rg32Uint,
@@ -97,18 +99,35 @@ pub fn map_storage_format(word: &str, span: Span) -> Result<crate::StorageFormat
         "rgba32uint" => Sf::Rgba32Uint,
         "rgba32sint" => Sf::Rgba32Sint,
         "rgba32float" => Sf::Rgba32Float,
+        "bgra8unorm" => Sf::Bgra8Unorm,
         _ => return Err(Error::UnknownStorageFormat(span)),
     })
 }
 
-pub fn get_scalar_type(word: &str) -> Option<(crate::ScalarKind, crate::Bytes)> {
+pub fn get_scalar_type(word: &str) -> Option<Scalar> {
+    use crate::ScalarKind as Sk;
     match word {
-        // "f16" => Some((crate::ScalarKind::Float, 2)),
-        "f32" => Some((crate::ScalarKind::Float, 4)),
-        "f64" => Some((crate::ScalarKind::Float, 8)),
-        "i32" => Some((crate::ScalarKind::Sint, 4)),
-        "u32" => Some((crate::ScalarKind::Uint, 4)),
-        "bool" => Some((crate::ScalarKind::Bool, crate::BOOL_WIDTH)),
+        // "f16" => Some(Scalar { kind: Sk::Float, width: 2 }),
+        "f32" => Some(Scalar {
+            kind: Sk::Float,
+            width: 4,
+        }),
+        "f64" => Some(Scalar {
+            kind: Sk::Float,
+            width: 8,
+        }),
+        "i32" => Some(Scalar {
+            kind: Sk::Sint,
+            width: 4,
+        }),
+        "u32" => Some(Scalar {
+            kind: Sk::Uint,
+            width: 4,
+        }),
+        "bool" => Some(Scalar {
+            kind: Sk::Bool,
+            width: crate::BOOL_WIDTH,
+        }),
         _ => None,
     }
 }
@@ -179,7 +198,6 @@ pub fn map_standard_fun(word: &str) -> Option<crate::MathFunction> {
         "pow" => Mf::Pow,
         // geometry
         "dot" => Mf::Dot,
-        "outerProduct" => Mf::Outer,
         "cross" => Mf::Cross,
         "distance" => Mf::Distance,
         "length" => Mf::Length,

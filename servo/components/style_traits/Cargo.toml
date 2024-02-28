@@ -11,16 +11,17 @@ path = "lib.rs"
 
 [features]
 servo = ["servo_atoms", "cssparser/serde", "webrender_api", "servo_url", "euclid/serde"]
-gecko = []
+gecko = ["nsstring"]
 
 [dependencies]
 app_units = "0.7"
-bitflags = "1.0"
+bitflags = "2"
 cssparser = "0.33"
 euclid = "0.22"
 lazy_static = "1"
 malloc_size_of = { path = "../malloc_size_of" }
 malloc_size_of_derive = { path = "../../../xpcom/rust/malloc_size_of_derive" }
+nsstring = {path = "../../../xpcom/rust/nsstring/", optional = true}
 selectors = { path = "../selectors" }
 serde = "1.0"
 servo_arc = { path = "../servo_arc" }

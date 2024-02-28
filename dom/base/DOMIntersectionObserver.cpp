@@ -20,6 +20,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLImageElement.h"
+#include "mozilla/dom/HTMLIFrameElement.h"
 #include "Units.h"
 
 namespace mozilla::dom {
@@ -81,8 +82,7 @@ DOMIntersectionObserver::DOMIntersectionObserver(
     dom::IntersectionCallback& aCb)
     : mOwner(aOwner),
       mDocument(mOwner->GetExtantDoc()),
-      mCallback(RefPtr<dom::IntersectionCallback>(&aCb)),
-      mConnected(false) {}
+      mCallback(RefPtr<dom::IntersectionCallback>(&aCb)) {}
 
 already_AddRefed<DOMIntersectionObserver> DOMIntersectionObserver::Constructor(
     const GlobalObject& aGlobal, dom::IntersectionCallback& aCb,
@@ -128,6 +128,9 @@ already_AddRefed<DOMIntersectionObserver> DOMIntersectionObserver::Constructor(
       observer->mThresholds.AppendElement(thresh);
     }
     observer->mThresholds.Sort();
+    if (observer->mThresholds.IsEmpty()) {
+      observer->mThresholds.AppendElement(0.0);
+    }
   } else {
     double thresh = aOptions.mThreshold.GetAsDouble();
     if (thresh < 0.0 || thresh > 1.0) {
@@ -143,10 +146,16 @@ already_AddRefed<DOMIntersectionObserver> DOMIntersectionObserver::Constructor(
 static void LazyLoadCallback(
     const Sequence<OwningNonNull<DOMIntersectionObserverEntry>>& aEntries) {
   for (const auto& entry : aEntries) {
-    MOZ_ASSERT(entry->Target()->IsHTMLElement(nsGkAtoms::img));
+    Element* target = entry->Target();
     if (entry->IsIntersecting()) {
-      static_cast<HTMLImageElement*>(entry->Target())
-          ->StopLazyLoading(HTMLImageElement::StartLoading::Yes);
+      if (auto* image = HTMLImageElement::FromNode(target)) {
+        image->StopLazyLoading(HTMLImageElement::StartLoading::Yes);
+      } else if (auto* iframe = HTMLIFrameElement::FromNode(target)) {
+        iframe->StopLazyLoading();
+      } else {
+        MOZ_ASSERT_UNREACHABLE(
+            "Only <img> and <iframe> should be observed by lazy load observer");
+      }
     }
   }
 }
@@ -174,8 +183,7 @@ DOMIntersectionObserver::DOMIntersectionObserver(Document& aDocument,
                                                  NativeCallback aCallback)
     : mOwner(aDocument.GetInnerWindow()),
       mDocument(&aDocument),
-      mCallback(aCallback),
-      mConnected(false) {}
+      mCallback(aCallback) {}
 
 already_AddRefed<DOMIntersectionObserver>
 DOMIntersectionObserver::CreateLazyLoadObserver(Document& aDocument) {
@@ -639,7 +647,7 @@ IntersectionInput DOMIntersectionObserver::ComputeInput(
 // https://w3c.github.io/IntersectionObserver/#update-intersection-observations-algo
 // (steps 2.1 - 2.5)
 IntersectionOutput DOMIntersectionObserver::Intersect(
-    const IntersectionInput& aInput, Element& aTarget,
+    const IntersectionInput& aInput, const Element& aTarget,
     IsContentVisibilityObserver aIsContentVisibilityObserver) {
   const bool isSimilarOrigin = SimilarOrigin(aTarget, aInput.mRootNode) ==
                                BrowsingContextOrigin::Similar;
@@ -795,8 +803,16 @@ void DOMIntersectionObserver::Update(Document& aDocument,
       }
     }
 
+    // If descendantScrolledIntoView, it means the target is with c-v: auto, and
+    // the content relevancy value has been set to visible before
+    // scrollIntoView. Here, we need to generate entries for them, so that the
+    // content relevancy value could be checked in the callback.
+    const bool temporarilyVisibleForScrolledIntoView =
+        isContentVisibilityObserver == IsContentVisibilityObserver::Yes &&
+        target->TemporarilyVisibleForScrolledIntoViewDescendant();
     // Steps 2.10 - 2.15.
-    if (target->UpdateIntersectionObservation(this, thresholdIndex)) {
+    if (target->UpdateIntersectionObservation(this, thresholdIndex) ||
+        temporarilyVisibleForScrolledIntoView) {
       // See https://github.com/w3c/IntersectionObserver/issues/432 about
       // why we use thresholdIndex > 0 rather than isIntersecting for the
       // entry's isIntersecting value.
@@ -805,6 +821,10 @@ void DOMIntersectionObserver::Update(Document& aDocument,
           output.mIsSimilarOrigin ? Some(output.mRootBounds) : Nothing(),
           output.mTargetRect, output.mIntersectionRect, thresholdIndex > 0,
           intersectionRatio);
+
+      if (temporarilyVisibleForScrolledIntoView) {
+        target->SetTemporarilyVisibleForScrolledIntoViewDescendant(false);
+      }
     }
   }
 }

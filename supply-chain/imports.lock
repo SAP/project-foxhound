@@ -8,6 +8,13 @@ user-id = 189
 user-login = "BurntSushi"
 user-name = "Andrew Gallant"
 
+[[publisher.anstyle]]
+version = "1.0.3"
+when = "2023-09-11"
+user-id = 6743
+user-login = "epage"
+user-name = "Ed Page"
+
 [[publisher.arbitrary]]
 version = "1.3.0"
 when = "2023-03-13"
@@ -30,29 +37,15 @@ user-login = "Amanieu"
 user-name = "Amanieu d'Antras"
 
 [[publisher.audio_thread_priority]]
-version = "0.26.1"
-when = "2022-03-22"
+version = "0.30.0"
+when = "2023-11-06"
 user-id = 1258
 user-login = "padenot"
 user-name = "Paul Adenot"
 
 [[publisher.authenticator]]
-version = "0.4.0-alpha.20"
-when = "2023-08-24"
-user-id = 175410
-user-login = "jschanck"
-user-name = "John Schanck"
-
-[[publisher.authenticator]]
-version = "0.4.0-alpha.21"
-when = "2023-09-11"
-user-id = 175410
-user-login = "jschanck"
-user-name = "John Schanck"
-
-[[publisher.authenticator]]
-version = "0.4.0-alpha.22"
-when = "2023-09-19"
+version = "0.4.0-alpha.23"
+when = "2023-10-05"
 user-id = 175410
 user-login = "jschanck"
 user-name = "John Schanck"
@@ -86,29 +79,29 @@ user-login = "emilio"
 user-name = "Emilio Cobos Álvarez"
 
 [[publisher.clap]]
-version = "4.1.14"
-when = "2023-03-28"
+version = "4.4.5"
+when = "2023-09-25"
 user-id = 6743
 user-login = "epage"
 user-name = "Ed Page"
 
 [[publisher.clap_builder]]
-version = "4.1.14"
-when = "2023-03-28"
+version = "4.4.5"
+when = "2023-09-25"
 user-id = 6743
 user-login = "epage"
 user-name = "Ed Page"
 
 [[publisher.clap_derive]]
-version = "4.1.14"
-when = "2023-03-28"
+version = "4.4.2"
+when = "2023-08-31"
 user-id = 6743
 user-login = "epage"
 user-name = "Ed Page"
 
 [[publisher.clap_lex]]
-version = "0.4.1"
-when = "2023-03-28"
+version = "0.5.1"
+when = "2023-08-24"
 user-id = 6743
 user-login = "epage"
 user-name = "Ed Page"
@@ -191,8 +184,8 @@ user-login = "nical"
 user-name = "Nicolas Silva"
 
 [[publisher.flate2]]
-version = "1.0.24"
-when = "2022-05-28"
+version = "1.0.26"
+when = "2023-04-28"
 user-id = 4333
 user-login = "joshtriplett"
 user-name = "Josh Triplett"
@@ -212,15 +205,15 @@ user-login = "jrmuizel"
 user-name = "Jeff Muizelaar"
 
 [[publisher.glean]]
-version = "54.0.0"
-when = "2023-09-13"
+version = "55.0.0"
+when = "2023-10-23"
 user-id = 48
 user-login = "badboy"
 user-name = "Jan-Erik Rediger"
 
 [[publisher.glean-core]]
-version = "54.0.0"
-when = "2023-09-13"
+version = "55.0.0"
+when = "2023-10-23"
 user-id = 48
 user-login = "badboy"
 user-name = "Jan-Erik Rediger"
@@ -282,11 +275,25 @@ user-login = "alexcrichton"
 user-name = "Alex Crichton"
 
 [[publisher.libc]]
-version = "0.2.132"
-when = "2022-08-16"
+version = "0.2.146"
+when = "2023-06-06"
 user-id = 2915
 user-login = "Amanieu"
 user-name = "Amanieu d'Antras"
+
+[[publisher.libc]]
+version = "0.2.150"
+when = "2023-11-05"
+user-id = 51017
+user-login = "JohnTitor"
+user-name = "Yuki Okushi"
+
+[[publisher.linux-raw-sys]]
+version = "0.4.7"
+when = "2023-09-10"
+user-id = 6825
+user-login = "sunfishcode"
+user-name = "Dan Gohman"
 
 [[publisher.lock_api]]
 version = "0.4.9"
@@ -371,9 +378,22 @@ when = "2023-04-13"
 user-id = 101233
 user-login = "le-automaton"
 
+[[publisher.prio]]
+version = "0.15.3"
+when = "2023-10-03"
+user-id = 213776
+user-login = "divviup-github-automation"
+
 [[publisher.proc-macro2]]
 version = "1.0.66"
 when = "2023-07-16"
+user-id = 3618
+user-login = "dtolnay"
+user-name = "David Tolnay"
+
+[[publisher.proc-macro2]]
+version = "1.0.69"
+when = "2023-10-09"
 user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
@@ -406,6 +426,13 @@ user-id = 57462
 user-login = "mozkeeler"
 user-name = "Dana Keeler"
 
+[[publisher.rustix]]
+version = "0.38.13"
+when = "2023-09-10"
+user-id = 6825
+user-login = "sunfishcode"
+user-name = "Dan Gohman"
+
 [[publisher.ryu]]
 version = "1.0.12"
 when = "2022-12-17"
@@ -434,6 +461,13 @@ user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
 
+[[publisher.serde]]
+version = "1.0.192"
+when = "2023-11-07"
+user-id = 3618
+user-login = "dtolnay"
+user-name = "David Tolnay"
+
 [[publisher.serde_bytes]]
 version = "0.11.9"
 when = "2023-02-05"
@@ -444,6 +478,13 @@ user-name = "David Tolnay"
 [[publisher.serde_derive]]
 version = "1.0.163"
 when = "2023-05-10"
+user-id = 3618
+user-login = "dtolnay"
+user-name = "David Tolnay"
+
+[[publisher.serde_derive]]
+version = "1.0.192"
+when = "2023-11-07"
 user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
@@ -470,13 +511,6 @@ user-login = "dtolnay"
 user-name = "David Tolnay"
 
 [[publisher.smallvec]]
-version = "1.10.0"
-when = "2022-10-02"
-user-id = 2017
-user-login = "mbrubeck"
-user-name = "Matt Brubeck"
-
-[[publisher.smallvec]]
 version = "1.11.1"
 when = "2023-09-20"
 user-id = 2017
@@ -490,9 +524,23 @@ user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
 
+[[publisher.syn]]
+version = "2.0.39"
+when = "2023-11-06"
+user-id = 3618
+user-login = "dtolnay"
+user-name = "David Tolnay"
+
 [[publisher.termcolor]]
 version = "1.2.0"
 when = "2023-01-15"
+user-id = 189
+user-login = "BurntSushi"
+user-name = "Andrew Gallant"
+
+[[publisher.termcolor]]
+version = "1.4.0"
+when = "2023-11-14"
 user-id = 189
 user-login = "BurntSushi"
 user-name = "Andrew Gallant"
@@ -631,22 +679,8 @@ user-login = "alexcrichton"
 user-name = "Alex Crichton"
 
 [[publisher.wasm-encoder]]
-version = "0.31.0"
-when = "2023-07-17"
-user-id = 1
-user-login = "alexcrichton"
-user-name = "Alex Crichton"
-
-[[publisher.wasm-encoder]]
 version = "0.33.1"
 when = "2023-09-18"
-user-id = 1
-user-login = "alexcrichton"
-user-name = "Alex Crichton"
-
-[[publisher.wasm-smith]]
-version = "0.12.12"
-when = "2023-07-17"
 user-id = 1
 user-login = "alexcrichton"
 user-name = "Alex Crichton"
@@ -659,22 +693,8 @@ user-login = "alexcrichton"
 user-name = "Alex Crichton"
 
 [[publisher.wasmparser]]
-version = "0.109.0"
-when = "2023-07-17"
-user-id = 1
-user-login = "alexcrichton"
-user-name = "Alex Crichton"
-
-[[publisher.wasmparser]]
 version = "0.113.1"
 when = "2023-09-18"
-user-id = 1
-user-login = "alexcrichton"
-user-name = "Alex Crichton"
-
-[[publisher.wast]]
-version = "62.0.0"
-when = "2023-07-17"
 user-id = 1
 user-login = "alexcrichton"
 user-name = "Alex Crichton"
@@ -805,6 +825,25 @@ criteria = "safe-to-deploy"
 version = "0.21.0"
 notes = "This crate has no dependencies, no build.rs, and contains no unsafe code."
 
+[[audits.bytecode-alliance.audits.bitflags]]
+who = "Jamey Sharp <jsharp@fastly.com>"
+criteria = "safe-to-deploy"
+delta = "2.1.0 -> 2.2.1"
+notes = """
+This version adds unsafe impls of traits from the bytemuck crate when built
+with that library enabled, but I believe the impls satisfy the documented
+safety requirements for bytemuck. The other changes are minor.
+"""
+
+[[audits.bytecode-alliance.audits.bitflags]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "2.3.2 -> 2.3.3"
+notes = """
+Nothing outside the realm of what one would expect from a bitflags generator,
+all as expected.
+"""
+
 [[audits.bytecode-alliance.audits.block-buffer]]
 who = "Benjamin Bouvier <public@benj.me>"
 criteria = "safe-to-deploy"
@@ -853,6 +892,24 @@ various other minor portability fixes such as MIRI support.
 who = "Benjamin Bouvier <public@benj.me>"
 criteria = "safe-to-deploy"
 version = "0.1.3"
+
+[[audits.bytecode-alliance.audits.errno]]
+who = "Dan Gohman <dev@sunfishcode.online>"
+criteria = "safe-to-deploy"
+version = "0.3.0"
+notes = "This crate uses libc and windows-sys APIs to get and set the raw OS error value."
+
+[[audits.bytecode-alliance.audits.errno]]
+who = "Dan Gohman <dev@sunfishcode.online>"
+criteria = "safe-to-deploy"
+delta = "0.3.0 -> 0.3.1"
+notes = "Just a dependency version bump and a bug fix for redox"
+
+[[audits.bytecode-alliance.audits.errno-dragonfly]]
+who = "Jamey Sharp <jsharp@fastly.com>"
+criteria = "safe-to-deploy"
+version = "0.1.2"
+notes = "This should be portable to any POSIX system and seems like it should be part of the libc crate, but at any rate it's safe as is."
 
 [[audits.bytecode-alliance.audits.foreign-types]]
 who = "Pat Hickey <phickey@fastly.com>"
@@ -932,17 +989,49 @@ criteria = "safe-to-deploy"
 version = "0.2.5"
 notes = "I am the author of this crate."
 
+[[audits.bytecode-alliance.audits.libc]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.2.146 -> 0.2.147"
+notes = "Only new type definitions and updating others for some platforms, no major changes"
+
 [[audits.bytecode-alliance.audits.memoffset]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
 delta = "0.7.1 -> 0.8.0"
 notes = "This was a small update to the crate which has to do with Rust language features and compiler versions, no substantial changes."
 
+[[audits.bytecode-alliance.audits.miniz_oxide]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+version = "0.7.1"
+notes = """
+This crate is a Rust implementation of zlib compression/decompression and has
+been used by default by the Rust standard library for quite some time. It's also
+a default dependency of the popular `backtrace` crate for decompressing debug
+information. This crate forbids unsafe code and does not otherwise access system
+resources. It's originally a port of the `miniz.c` library as well, and given
+its own longevity should be relatively hardened against some of the more common
+compression-related issues.
+"""
+
 [[audits.bytecode-alliance.audits.mio]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
 delta = "0.8.6 -> 0.8.8"
 notes = "Mostly OS portability updates along with some minor bugfixes."
+
+[[audits.bytecode-alliance.audits.object]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.30.3 -> 0.31.1"
+notes = "A large-ish update to the crate but nothing out of the ordering. Support for new formats like xcoff, new constants, minor refactorings, etc. Nothing out of the ordinary."
+
+[[audits.bytecode-alliance.audits.object]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.31.1 -> 0.32.0"
+notes = "Various new features and refactorings as one would expect from an object parsing crate, all looks good."
 
 [[audits.bytecode-alliance.audits.peeking_take_while]]
 who = "Nick Fitzgerald <fitzgen@gmail.com>"
@@ -988,6 +1077,23 @@ who = "Pat Hickey <phickey@fastly.com>"
 criteria = "safe-to-deploy"
 version = "0.4.6"
 notes = "provides a datastructure implemented using std's Vec. all uses of unsafe are just delegating to the underlying unsafe Vec methods."
+
+[[audits.bytecode-alliance.audits.socket2]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.4.7 -> 0.4.9"
+notes = "Minor OS compat updates but otherwise nothing major here."
+
+[[audits.bytecode-alliance.audits.tempfile]]
+who = "Pat Hickey <phickey@fastly.com>"
+criteria = "safe-to-deploy"
+delta = "3.3.0 -> 3.5.0"
+
+[[audits.bytecode-alliance.audits.tempfile]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "3.5.0 -> 3.6.0"
+notes = "Dependency updates and new optimized trait implementations, but otherwise everything looks normal."
 
 [[audits.bytecode-alliance.audits.unicase]]
 who = "Alex Crichton <alex@alexcrichton.com>"
@@ -1154,6 +1260,12 @@ criteria = "safe-to-run"
 version = "0.7.1"
 aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
 
+[[audits.google.audits.tokio]]
+who = "Vovo Yang <vovoy@google.com>"
+criteria = "safe-to-run"
+version = "1.29.1"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
 [[audits.google.audits.tokio-stream]]
 who = "David Koloski <dkoloski@google.com>"
 criteria = "safe-to-deploy"
@@ -1210,6 +1322,13 @@ user-id = 101233 # le-automaton
 start = "2020-09-28"
 end = "2024-03-23"
 
+[[audits.isrg.wildcard-audits.prio]]
+who = "David Cook <dcook@divviup.org>"
+criteria = "safe-to-deploy"
+user-id = 213776 # divviup-github-automation
+start = "2020-09-28"
+end = "2024-03-23"
+
 [[audits.isrg.audits.base64]]
 who = "Tim Geoghegan <timg@letsencrypt.org>"
 criteria = "safe-to-deploy"
@@ -1230,10 +1349,21 @@ who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
 version = "0.9.0"
 
+[[audits.isrg.audits.getrandom]]
+who = "Tim Geoghegan <timg@letsencrypt.org>"
+criteria = "safe-to-deploy"
+delta = "0.2.9 -> 0.2.10"
+notes = "These changes include some new `unsafe` code for the `emscripten` and `psvita` targets, but all it does is call `libc::getentropy`."
+
 [[audits.isrg.audits.keccak]]
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
 version = "0.1.2"
+
+[[audits.isrg.audits.keccak]]
+who = "Brandon Pitman <bran@bran.land>"
+criteria = "safe-to-deploy"
+delta = "0.1.3 -> 0.1.4"
 
 [[audits.isrg.audits.once_cell]]
 who = "Brandon Pitman <bran@bran.land>"
@@ -1260,6 +1390,11 @@ who = "Brandon Pitman <bran@bran.land>"
 criteria = "safe-to-deploy"
 delta = "1.10.2 -> 1.11.0"
 
+[[audits.isrg.audits.rayon-core]]
+who = "David Cook <dcook@divviup.org>"
+criteria = "safe-to-deploy"
+delta = "1.11.0 -> 1.12.0"
+
 [[audits.isrg.audits.sha2]]
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
@@ -1269,6 +1404,11 @@ version = "0.10.2"
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
 version = "0.10.6"
+
+[[audits.isrg.audits.sha3]]
+who = "Brandon Pitman <bran@bran.land>"
+criteria = "safe-to-deploy"
+delta = "0.10.7 -> 0.10.8"
 
 [[audits.mozilla.wildcard-audits.zeitstempel]]
 who = "Jan-Erik Rediger <jrediger@mozilla.com>"

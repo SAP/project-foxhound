@@ -3373,22 +3373,17 @@ void XMLHttpRequestMainThread::SetTimeout(uint32_t aTimeout, ErrorResult& aRv) {
 }
 
 nsIEventTarget* XMLHttpRequestMainThread::GetTimerEventTarget() {
-  if (nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal()) {
-    return global->EventTargetFor(TaskCategory::Other);
+  if (nsIGlobalObject* global = GetOwnerGlobal()) {
+    return global->SerialEventTarget();
   }
   return nullptr;
 }
 
 nsresult XMLHttpRequestMainThread::DispatchToMainThread(
     already_AddRefed<nsIRunnable> aRunnable) {
-  if (nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal()) {
-    nsCOMPtr<nsIEventTarget> target =
-        global->EventTargetFor(TaskCategory::Other);
-    MOZ_ASSERT(target);
-
-    return target->Dispatch(std::move(aRunnable), NS_DISPATCH_NORMAL);
+  if (nsIGlobalObject* global = GetOwnerGlobal()) {
+    return global->Dispatch(std::move(aRunnable));
   }
-
   return NS_DispatchToMainThread(std::move(aRunnable));
 }
 
@@ -3885,23 +3880,8 @@ bool XMLHttpRequestMainThread::ShouldBlockAuthPrompt() {
   }
 
   // Also skip if a username and/or password is provided in the URI.
-  nsCString username;
-  rv = uri->GetUsername(username);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return false;
-  }
-
-  nsCString password;
-  rv = uri->GetPassword(password);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return false;
-  }
-
-  if (!username.IsEmpty() || !password.IsEmpty()) {
-    return true;
-  }
-
-  return false;
+  bool hasUserPass;
+  return NS_SUCCEEDED(uri->GetHasUserPass(&hasUserPass)) && hasUserPass;
 }
 
 void XMLHttpRequestMainThread::TruncateResponseText() {
@@ -3945,8 +3925,8 @@ void XMLHttpRequestMainThread::MaybeCreateBlobStorage() {
           : MutableBlobStorage::eOnlyInMemory;
 
   nsCOMPtr<nsIEventTarget> eventTarget;
-  if (nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal()) {
-    eventTarget = global->EventTargetFor(TaskCategory::Other);
+  if (nsIGlobalObject* global = GetOwnerGlobal()) {
+    eventTarget = global->SerialEventTarget();
   }
 
   mBlobStorage = new MutableBlobStorage(storageType, eventTarget);

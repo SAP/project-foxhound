@@ -21,6 +21,21 @@ using namespace js::frontend;
 
 DecoratorEmitter::DecoratorEmitter(BytecodeEmitter* bce) : bce_(bce) {}
 
+// A helper function to read the decorators in reverse order to how they were
+// parsed.
+bool DecoratorEmitter::reverseDecoratorsToApplicationOrder(
+    const ListNode* decorators, DecoratorsVector& vec) {
+  if (!vec.resize(decorators->count())) {
+    ReportOutOfMemory(bce_->fc);
+    return false;
+  }
+  int end = decorators->count() - 1;
+  for (ParseNode* decorator : decorators->contents()) {
+    vec[end--] = decorator;
+  }
+  return true;
+}
+
 bool DecoratorEmitter::emitApplyDecoratorsToElementDefinition(
     DecoratorEmitter::Kind kind, ParseNode* key, ListNode* decorators,
     bool isStatic) {
@@ -38,10 +53,16 @@ bool DecoratorEmitter::emitApplyDecoratorsToElementDefinition(
   // This is checked by the caller.
   MOZ_ASSERT(!decorators->empty());
 
+  DecoratorsVector dec_vecs;
+  if (!reverseDecoratorsToApplicationOrder(decorators, dec_vecs)) {
+    return false;
+  }
+
   // Step 3. Let key be elementRecord.[[Key]].
   // Step 4. Let kind be elementRecord.[[Kind]].
   // Step 5. For each element decorator of decorators, do
-  for (ParseNode* decorator : decorators->contents()) {
+  for (auto it = dec_vecs.begin(); it != dec_vecs.end(); it++) {
+    ParseNode* decorator = *it;
     // Step 5.a. Let decorationState be the Record { [[Finished]]: false }.
     if (!emitDecorationState()) {
       return false;
@@ -166,10 +187,16 @@ bool DecoratorEmitter::emitApplyDecoratorsToFieldDefinition(
     return false;
   }
 
+  DecoratorsVector dec_vecs;
+  if (!reverseDecoratorsToApplicationOrder(decorators, dec_vecs)) {
+    return false;
+  }
+
   // Step 3. Let key be elementRecord.[[Key]].
   // Step 4. Let kind be elementRecord.[[Kind]].
   // Step 5. For each element decorator of decorators, do
-  for (ParseNode* decorator : decorators->contents()) {
+  for (auto it = dec_vecs.begin(); it != dec_vecs.end(); it++) {
+    ParseNode* decorator = *it;
     // Step 5.a. Let decorationState be the Record { [[Finished]]: false }.
     if (!emitDecorationState()) {
       return false;
@@ -295,10 +322,16 @@ bool DecoratorEmitter::emitApplyDecoratorsToAccessorDefinition(
     return false;
   }
 
+  DecoratorsVector dec_vecs;
+  if (!reverseDecoratorsToApplicationOrder(decorators, dec_vecs)) {
+    return false;
+  }
+
   // Step 3. Let key be elementRecord.[[Key]].
   // Step 4. Let kind be elementRecord.[[Kind]].
   // Step 5. For each element decorator of decorators, do
-  for (ParseNode* decorator : decorators->contents()) {
+  for (auto it = dec_vecs.begin(); it != dec_vecs.end(); it++) {
+    ParseNode* decorator = *it;
     // 5.a. Let decorationState be the Record { [[Finished]]: false }.
     if (!emitDecorationState()) {
       return false;
@@ -449,9 +482,15 @@ bool DecoratorEmitter::emitApplyDecoratorsToClassDefinition(
   // the return value of the decorator.
   //          [stack] CTOR
 
+  DecoratorsVector dec_vecs;
+  if (!reverseDecoratorsToApplicationOrder(decorators, dec_vecs)) {
+    return false;
+  }
+
   // https://arai-a.github.io/ecma262-compare/?pr=2417&id=sec-applydecoratorstoclassdefinition
   // Step 1. For each element decoratorRecord of decorators, do
-  for (ParseNode* decorator : decorators->contents()) {
+  for (auto it = dec_vecs.begin(); it != dec_vecs.end(); it++) {
+    ParseNode* decorator = *it;
     // Step 1.a. Let decorator be decoratorRecord.[[Decorator]].
     // Step 1.b. Let decoratorReceiver be decoratorRecord.[[Receiver]].
     // Step 1.c. Let decorationState be the Record { [[Finished]]: false }.
@@ -463,13 +502,8 @@ bool DecoratorEmitter::emitApplyDecoratorsToClassDefinition(
                           CallOrNewEmitter::ArgumentsKind::Other,
                           ValueUsage::WantValue);
 
-    if (!emitDecoratorCallee(cone, decorator)) {
-      //          [stack] CTOR CALLEE THIS?
-      return false;
-    }
-
-    if (!cone.emitThis()) {
-      //          [stack] CTOR CALLEE THIS
+    if (!bce_->emitCalleeAndThis(decorator, nullptr, cone)) {
+      //          [stack] VAL? CALLEE THIS
       return false;
     }
 
@@ -794,68 +828,6 @@ bool DecoratorEmitter::emitUpdateDecorationState() {
   return true;
 }
 
-bool DecoratorEmitter::emitDecoratorCallee(CallOrNewEmitter& cone,
-                                           ParseNode* decorator) {
-  // DecoratorMemberExpression: IdentifierReference e.g. @dec
-  if (decorator->is<NameNode>()) {
-    if (!cone.emitNameCallee(decorator->as<NameNode>().name())) {
-      return false;
-    }
-  } else if (decorator->is<ListNode>()) {
-    // DecoratorMemberExpression: DecoratorMemberExpression . IdentifierName
-    // e.g. @decorators.nested.dec
-    PropOpEmitter& poe = cone.prepareForPropCallee(false);
-    if (!poe.prepareForObj()) {
-      return false;
-    }
-
-    ListNode* ln = &decorator->as<ListNode>();
-    bool first = true;
-    for (ParseNode* node : ln->contentsTo(ln->last())) {
-      // We should have only placed NameNode instances in this list while
-      // parsing.
-      MOZ_ASSERT(node->is<NameNode>());
-
-      if (first) {
-        NameNode* obj = &node->as<NameNode>();
-        if (!bce_->emitGetName(obj)) {
-          return false;
-        }
-        first = false;
-      } else {
-        NameNode* prop = &node->as<NameNode>();
-        GCThingIndex propAtomIndex;
-
-        if (!bce_->makeAtomIndex(prop->atom(), ParserAtom::Atomize::Yes,
-                                 &propAtomIndex)) {
-          return false;
-        }
-
-        if (!bce_->emitAtomOp(JSOp::GetProp, propAtomIndex)) {
-          return false;
-        }
-      }
-    }
-
-    NameNode* prop = &ln->last()->as<NameNode>();
-    if (!poe.emitGet(prop->atom())) {
-      return false;
-    }
-  } else {
-    // DecoratorCallExpression | DecoratorParenthesizedExpression,
-    // e.g. @dec('argument') | @((value, context) => value)
-    if (!cone.prepareForFunctionCallee()) {
-      return false;
-    }
-
-    if (!bce_->emitTree(decorator)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 bool DecoratorEmitter::emitCallDecoratorForElement(Kind kind, ParseNode* key,
                                                    bool isStatic,
                                                    ParseNode* decorator) {
@@ -870,12 +842,7 @@ bool DecoratorEmitter::emitCallDecoratorForElement(Kind kind, ParseNode* key,
                         CallOrNewEmitter::ArgumentsKind::Other,
                         ValueUsage::WantValue);
 
-  if (!emitDecoratorCallee(cone, decorator)) {
-    //          [stack] VAL? CALLEE THIS?
-    return false;
-  }
-
-  if (!cone.emitThis()) {
+  if (!bce_->emitCalleeAndThis(decorator, nullptr, cone)) {
     //          [stack] VAL? CALLEE THIS
     return false;
   }

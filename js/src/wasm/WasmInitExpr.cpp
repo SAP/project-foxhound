@@ -231,6 +231,18 @@ class MOZ_STACK_CLASS InitExprInterpreter {
     return pushRef(RefType::i31().asNonNullable(),
                    AnyRef::fromUint32Truncate(value));
   }
+
+  bool evalExternInternalize(JSContext* cx) {
+    AnyRef ref = stack.back().ref();
+    stack.popBack();
+    return pushRef(RefType::extern_(), ref);
+  }
+
+  bool evalExternExternalize(JSContext* cx) {
+    AnyRef ref = stack.back().ref();
+    stack.popBack();
+    return pushRef(RefType::any(), ref);
+  }
 #endif  // ENABLE_WASM_GC
 };
 
@@ -390,6 +402,12 @@ bool InitExprInterpreter::evaluate(JSContext* cx, Decoder& d) {
           case uint32_t(GcOp::RefI31): {
             CHECK(evalI31New(cx));
           }
+          case uint32_t(GcOp::ExternInternalize): {
+            CHECK(evalExternInternalize(cx));
+          }
+          case uint32_t(GcOp::ExternExternalize): {
+            CHECK(evalExternExternalize(cx));
+          }
           default: {
             MOZ_CRASH();
           }
@@ -407,12 +425,10 @@ bool InitExprInterpreter::evaluate(JSContext* cx, Decoder& d) {
 }
 
 bool wasm::DecodeConstantExpression(Decoder& d, ModuleEnvironment* env,
-                                    ValType expected,
-                                    uint32_t maxInitializedGlobalsIndexPlus1,
-                                    Maybe<LitVal>* literal) {
+                                    ValType expected, Maybe<LitVal>* literal) {
   ValidatingOpIter iter(*env, d, ValidatingOpIter::InitExpr);
 
-  if (!iter.startInitExpr(expected, maxInitializedGlobalsIndexPlus1)) {
+  if (!iter.startInitExpr(expected)) {
     return false;
   }
 
@@ -602,6 +618,22 @@ bool wasm::DecodeConstantExpression(Decoder& d, ModuleEnvironment* env,
             }
             break;
           }
+          case uint32_t(GcOp::ExternInternalize): {
+            Nothing value;
+            if (!iter.readRefConversion(RefType::extern_(), RefType::any(),
+                                        &value)) {
+              return false;
+            }
+            break;
+          }
+          case uint32_t(GcOp::ExternExternalize): {
+            Nothing value;
+            if (!iter.readRefConversion(RefType::any(), RefType::extern_(),
+                                        &value)) {
+              return false;
+            }
+            break;
+          }
           default: {
             return iter.unrecognizedOpcode(&op);
           }
@@ -618,13 +650,10 @@ bool wasm::DecodeConstantExpression(Decoder& d, ModuleEnvironment* env,
 }
 
 bool InitExpr::decodeAndValidate(Decoder& d, ModuleEnvironment* env,
-                                 ValType expected,
-                                 uint32_t maxInitializedGlobalsIndexPlus1,
-                                 InitExpr* expr) {
+                                 ValType expected, InitExpr* expr) {
   Maybe<LitVal> literal = Nothing();
   const uint8_t* exprStart = d.currentPosition();
-  if (!DecodeConstantExpression(d, env, expected,
-                                maxInitializedGlobalsIndexPlus1, &literal)) {
+  if (!DecodeConstantExpression(d, env, expected, &literal)) {
     return false;
   }
   const uint8_t* exprEnd = d.currentPosition();

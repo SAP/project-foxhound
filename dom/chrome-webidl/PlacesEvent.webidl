@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
 enum PlacesEventType {
   "none",
 
@@ -211,6 +215,9 @@ dictionary PlacesBookmarkAdditionInit {
   required boolean hidden;
   required unsigned long visitCount;
   required unsigned long long? lastVisitDate;
+  required long long targetFolderItemId;
+  required ByteString? targetFolderGuid;
+  required DOMString? targetFolderTitle;
 };
 
 [ChromeOnly, Exposed=Window]
@@ -256,6 +263,22 @@ interface PlacesBookmarkAddition : PlacesBookmark {
    * Date of the last visit, in milliseconds since epoch.
    */
   readonly attribute unsigned long long? lastVisitDate;
+
+  /**
+   * If this is a folder shortcut, the id of the target folder.
+   */
+  readonly attribute long long targetFolderItemId;
+
+  /**
+   * If this is a folder shortcut, the unique ID associated with the target folder.
+   */
+  readonly attribute ByteString targetFolderGuid;
+
+  /**
+   * If this is a folder shortcut, the title of the target folder.
+   */
+  readonly attribute DOMString targetFolderTitle;
+
 };
 
 dictionary PlacesBookmarkRemovedInit {

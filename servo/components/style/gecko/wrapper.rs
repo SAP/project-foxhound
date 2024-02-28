@@ -19,7 +19,7 @@ use crate::bloom::each_relevant_element_hash;
 use crate::context::{PostAnimationTasks, QuirksMode, SharedStyleContext, UpdateAnimationsTasks};
 use crate::data::ElementData;
 use crate::dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot};
-use crate::gecko::selector_parser::{NonTSPseudoClass, PseudoElement, SelectorImpl};
+use crate::gecko::selector_parser::{CustomState, NonTSPseudoClass, PseudoElement, SelectorImpl};
 use crate::gecko::snapshot_helpers;
 use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::bindings::Gecko_ElementHasAnimations;
@@ -714,7 +714,7 @@ impl<'le> GeckoElement<'le> {
 
     #[inline]
     fn document_state(&self) -> DocumentState {
-        DocumentState::from_bits_truncate(self.as_node().owner_doc().0.mDocumentState.bits)
+        DocumentState::from_bits_retain(self.as_node().owner_doc().0.mState.bits)
     }
 
     #[inline]
@@ -897,6 +897,9 @@ fn selector_flags_to_node_flags(flags: ElementSelectorFlags) -> u32 {
     }
     if flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
         gecko_flags |= NodeSelectorFlags::HasSlowSelectorLaterSiblings.0;
+    }
+    if flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH) {
+        gecko_flags |= NodeSelectorFlags::HasSlowSelectorNth.0;
     }
     if flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH_OF) {
         gecko_flags |= NodeSelectorFlags::HasSlowSelectorNthOf.0;
@@ -1205,7 +1208,21 @@ impl<'le> TElement for GeckoElement<'le> {
 
     #[inline]
     fn state(&self) -> ElementState {
-        ElementState::from_bits_truncate(self.state_internal())
+        ElementState::from_bits_retain(self.state_internal())
+    }
+
+    #[inline]
+    fn has_custom_state(&self, state: &CustomState) -> bool {
+        if !self.is_html_element() {
+            return false;
+        }
+        let check_state_ptr: *const nsAtom = state.0.as_ptr();
+        self.extended_slots().map_or(false, |slot| {
+            (&slot.mCustomStates).iter().any(|setstate| {
+                let setstate_ptr: *const nsAtom = setstate.mRawPtr;
+                setstate_ptr == check_state_ptr
+            })
+        })
     }
 
     #[inline]
@@ -2004,6 +2021,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::Link => {
                 self.is_link() && context.visited_handling().matches_unvisited()
             },
+            NonTSPseudoClass::CustomState(ref state) => self.has_custom_state(state),
             NonTSPseudoClass::Visited => {
                 self.is_link() && context.visited_handling().matches_visited()
             },

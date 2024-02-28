@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// These globals are available to extensions using privileged APIs.
+/* globals XPCOMUtils, ExtensionAPI */
+
 const Cm = Components.manager;
 
 var OnRefTestLoad, OnRefTestUnload;
@@ -95,8 +98,8 @@ this.reftest = class extends ExtensionAPI {
     // top-level window.
     let win = GetMainWindow();
     if (Services.appinfo.OS == "Android") {
-      ({ OnRefTestLoad, OnRefTestUnload } = ChromeUtils.import(
-        "resource://reftest/reftest.jsm"
+      ({ OnRefTestLoad, OnRefTestUnload } = ChromeUtils.importESModule(
+        "resource://reftest/reftest.sys.mjs"
       ));
       if (win) {
         startAndroid(win);
@@ -157,7 +160,6 @@ this.reftest = class extends ExtensionAPI {
 
     if (Services.appinfo.OS == "Android") {
       OnRefTestUnload();
-      Cu.unload("resource://reftest/reftest.jsm");
     }
   }
 };

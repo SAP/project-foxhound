@@ -9,8 +9,8 @@
 #include "MediaEventSource.h"
 #include "MediaTimer.h"
 #include "MediaTrackGraph.h"
-#include "MediaTrackGraphImpl.h"
 #include "MediaSegment.h"
+#include "TimeUnits.h"
 #include "mozilla/SPSCQueue.h"
 #include "mozilla/StateMirroring.h"
 #include "nsISerialEventTarget.h"
@@ -18,6 +18,7 @@
 namespace mozilla {
 
 class AudioData;
+class AudioInfo;
 class RLBoxSoundTouch;
 
 /**
@@ -170,12 +171,6 @@ class AudioDecoderInputTrack final : public ProcessedMediaTrack {
 
   inline void AssertOnDecoderThread() const {
     MOZ_ASSERT(mDecoderThread->IsOnCurrentThread());
-  }
-  inline void AssertOnGraphThread() const {
-    MOZ_ASSERT(GraphImpl()->OnGraphThread());
-  }
-  inline void AssertOnGraphThreadOrNotRunning() const {
-    MOZ_ASSERT(GraphImpl()->OnGraphThreadOrNotRunning());
   }
 
   const RefPtr<nsISerialEventTarget> mDecoderThread;

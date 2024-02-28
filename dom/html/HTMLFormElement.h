@@ -13,11 +13,10 @@
 #include "mozilla/dom/AnchorAreaFormRelValues.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/PopupBlocker.h"
-#include "mozilla/dom/RadioGroupManager.h"
+#include "mozilla/dom/RadioGroupContainer.h"
 #include "nsCOMPtr.h"
 #include "nsIFormControl.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIRadioGroupContainer.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsThreadUtils.h"
 #include "nsInterfaceHashtable.h"
@@ -39,9 +38,7 @@ class HTMLImageElement;
 class FormData;
 
 class HTMLFormElement final : public nsGenericHTMLElement,
-                              public nsIRadioGroupContainer,
-                              public AnchorAreaFormRelValues,
-                              RadioGroupManager {
+                              public AnchorAreaFormRelValues {
   friend class HTMLFormControlsCollection;
 
  public:
@@ -61,27 +58,13 @@ class HTMLFormElement final : public nsGenericHTMLElement,
     return aElement == mDefaultSubmitElement;
   }
 
-  // nsIRadioGroupContainer
-  void SetCurrentRadioButton(const nsAString& aName,
-                             HTMLInputElement* aRadio) override;
-  HTMLInputElement* GetCurrentRadioButton(const nsAString& aName) override;
-  NS_IMETHOD GetNextRadioButton(const nsAString& aName, const bool aPrevious,
-                                HTMLInputElement* aFocusedRadio,
-                                HTMLInputElement** aRadioOut) override;
-  NS_IMETHOD WalkRadioGroup(const nsAString& aName,
-                            nsIRadioVisitor* aVisitor) override;
-  void AddToRadioGroup(const nsAString& aName,
-                       HTMLInputElement* aRadio) override;
-  void RemoveFromRadioGroup(const nsAString& aName,
-                            HTMLInputElement* aRadio) override;
-  uint32_t GetRequiredRadioCount(const nsAString& aName) const override;
-  void RadioRequiredWillChange(const nsAString& aName,
-                               bool aRequiredAdded) override;
-  bool GetValueMissingState(const nsAString& aName) const override;
-  void SetValueMissingState(const nsAString& aName, bool aValue) override;
-
   // EventTarget
   void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+
+  /** Whether we already dispatched a DOMFormHasPassword event or not */
+  bool mHasPendingPasswordEvent = false;
+  /** Whether we already dispatched a DOMFormHasPossibleUsername event or not */
+  bool mHasPendingPossibleUsernameEvent = false;
 
   // nsIContent
   bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -384,12 +367,6 @@ class HTMLFormElement final : public nsGenericHTMLElement,
  protected:
   JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
-  void PostPasswordEvent();
-  void PostPossibleUsernameEvent();
-
-  RefPtr<AsyncEventDispatcher> mFormPasswordEventDispatcher;
-  RefPtr<AsyncEventDispatcher> mFormPossibleUsernameEventDispatcher;
-
   class RemoveElementRunnable;
   friend class RemoveElementRunnable;
 
@@ -622,6 +599,9 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    * used by the password manager.
    */
   void MaybeFireFormRemoved();
+
+  MOZ_CAN_RUN_SCRIPT
+  void ReportInvalidUnfocusableElements();
 
   ~HTMLFormElement();
 };

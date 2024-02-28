@@ -43,10 +43,6 @@ function updateConfigFromFakeAndLoopbackPrefs() {
 updateConfigFromFakeAndLoopbackPrefs();
 
 /**
- *  Global flag to skip LoopbackTone
- */
-let DISABLE_LOOPBACK_TONE = false;
-/**
  * Helper class to setup a sine tone of a given frequency.
  */
 class LoopbackTone {
@@ -224,11 +220,8 @@ AudioStreamAnalyser.prototype = {
    * @returns {integer} the index of the bin in the FFT array.
    */
   binIndexForFrequency(frequency) {
-    return (
-      1 +
-      Math.round(
-        (frequency * this.analyser.fftSize) / this.audioContext.sampleRate
-      )
+    return Math.round(
+      (frequency * this.analyser.fftSize) / this.audioContext.sampleRate
     );
   },
 
@@ -239,7 +232,7 @@ AudioStreamAnalyser.prototype = {
    * @returns {double} the frequency for this bin
    */
   frequencyForBinIndex(index) {
-    return ((index - 1) * this.audioContext.sampleRate) / this.analyser.fftSize;
+    return (index * this.audioContext.sampleRate) / this.analyser.fftSize;
   },
 };
 
@@ -373,23 +366,7 @@ function createMediaElementForTrack(track, idPrefix) {
  *        The constraints for this mozGetUserMedia callback
  */
 function getUserMedia(constraints) {
-  // Tests may have changed the values of prefs, so recheck
-  updateConfigFromFakeAndLoopbackPrefs();
-  if (
-    !WANT_FAKE_AUDIO &&
-    !constraints.fake &&
-    constraints.audio &&
-    !DISABLE_LOOPBACK_TONE
-  ) {
-    // Loopback device is configured, start the default loopback tone
-    if (!DefaultLoopbackTone) {
-      TEST_AUDIO_FREQ = 440;
-      DefaultLoopbackTone = new LoopbackTone(
-        new AudioContext(),
-        TEST_AUDIO_FREQ
-      );
-      DefaultLoopbackTone.start();
-    }
+  if (!constraints.fake && constraints.audio) {
     // Disable input processing mode when it's not explicity enabled.
     // This is to avoid distortion of the loopback tone
     constraints.audio = Object.assign(
@@ -399,9 +376,6 @@ function getUserMedia(constraints) {
       { noiseSuppression: false },
       constraints.audio
     );
-  } else {
-    // Fake device configured, ensure our test freq is correct.
-    TEST_AUDIO_FREQ = 1000;
   }
   info("Call getUserMedia for " + JSON.stringify(constraints));
   return navigator.mediaDevices
@@ -1238,11 +1212,20 @@ CommandChain.prototype = {
   },
 };
 
-function AudioStreamHelper() {
+function AudioStreamFlowingHelper() {
   this._context = new AudioContext();
+  // Tests may have changed the values of prefs, so recheck
+  updateConfigFromFakeAndLoopbackPrefs();
+  if (!WANT_FAKE_AUDIO) {
+    // Loopback device is configured, start the default loopback tone
+    if (!DefaultLoopbackTone) {
+      DefaultLoopbackTone = new LoopbackTone(this._context, TEST_AUDIO_FREQ);
+      DefaultLoopbackTone.start();
+    }
+  }
 }
 
-AudioStreamHelper.prototype = {
+AudioStreamFlowingHelper.prototype = {
   checkAudio(stream, analyser, fun) {
     /*
     analyser.enableDebugCanvas();
@@ -1258,6 +1241,10 @@ AudioStreamHelper.prototype = {
     return this.checkAudio(stream, analyser, array => array[freq] > 200);
   },
 
+  // Use checkAudioNotFlowing() only after checkAudioFlowing() or similar to
+  // know that audio had previously been flowing on the same stream, as
+  // checkAudioNotFlowing() does not wait for the loopback device to return
+  // any audio that it receives.
   checkAudioNotFlowing(stream) {
     var analyser = new AudioStreamAnalyser(this._context, stream);
     var freq = analyser.binIndexForFrequency(TEST_AUDIO_FREQ);

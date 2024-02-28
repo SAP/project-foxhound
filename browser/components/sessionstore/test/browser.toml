@@ -320,11 +320,7 @@ skip-if = ["!sessionHistoryInParent"]
 
 ["browser_async_window_flushing.js"]
 https_first_disabled = true
-skip-if = [
-  "os == 'linux'", # Bug 1775616
-  "os == 'mac'",  # Bug 1775616
-  "os == 'win' && !debug",  # Bug 1775616
-]
+skip-if = true # Bug 1775616
 
 ["browser_attributes.js"]
 
@@ -437,6 +433,7 @@ skip-if = [
   "apple_catalina && !debug", # Bug 1638958
   "win10_2004 && bits == 64 && !debug", # Bug 1638958
   "os == 'linux' && !debug", # Bug 1638958
+  "win11_2009 && !debug", # Bug 1775605
 ]
 
 ["browser_movePendingTabToNewWindow.js"]
@@ -575,6 +572,7 @@ skip-if = [
 ]
 
 ["browser_urlbarSearchMode.js"]
+fail-if = ["a11y_checks"] # Bug 1854529 clicked urlbar-engine-one-off-item-history button may not be focusable
 
 ["browser_userTyped_restored_after_discard.js"]
 

@@ -27,6 +27,7 @@
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/ResponsiveImageSelector.h"
+#include "mozilla/dom/LargestContentfulPaint.h"
 #include "mozilla/image/WebRenderImageProvider.h"
 #include "mozilla/layers/RenderRootStateManager.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
@@ -848,8 +849,9 @@ static IntrinsicSize ComputeIntrinsicSize(imgIContainer* aImage,
          aFrame.GetContent()->AsElement()->HasNonEmptyAttr(nsGkAtoms::src))) {
       ScaleIntrinsicSizeForDensity(aImage, *aFrame.GetContent(), intrinsicSize);
     } else {
-      ScaleIntrinsicSizeForDensity(intrinsicSize,
-                                   aFrame.GetImageFromStyle()->GetResolution());
+      ScaleIntrinsicSizeForDensity(
+          intrinsicSize,
+          aFrame.GetImageFromStyle()->GetResolution(*aFrame.Style()));
     }
     return containAxes.ContainIntrinsicSize(intrinsicSize, aFrame);
   }
@@ -1115,6 +1117,8 @@ void nsImageFrame::Notify(imgIRequest* aRequest, int32_t aType,
   }
 
   if (aType == imgINotificationObserver::LOAD_COMPLETE) {
+    LargestContentfulPaint::MaybeProcessImageForElementTiming(
+        static_cast<imgRequestProxy*>(aRequest), GetContent()->AsElement());
     uint32_t imgStatus;
     aRequest->GetImageStatus(&imgStatus);
     nsresult status =
@@ -1451,10 +1455,9 @@ nsIFrame::SizeComputationResult nsImageFrame::ComputeSize(
 }
 
 Element* nsImageFrame::GetMapElement() const {
-  nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mContent);
-  return imageLoader ? static_cast<nsImageLoadingContent*>(imageLoader.get())
-                           ->FindImageMap()
-                     : nullptr;
+  return IsForImageLoadingContent()
+             ? nsImageLoadingContent::FindImageMap(mContent->AsElement())
+             : nullptr;
 }
 
 // get the offset into the content area of the image where aImg starts if it is
@@ -2365,6 +2368,13 @@ bool nsDisplayImage::CreateWebRenderCommands(
   ImgDrawResult drawResult =
       mImage->GetImageProvider(aManager->LayerManager(), decodeSize, svgContext,
                                region, flags, getter_AddRefs(provider));
+
+  if (nsCOMPtr<imgIRequest> currentRequest = frame->GetCurrentRequest()) {
+    LCPHelpers::FinalizeLCPEntryForImage(
+        frame->GetContent()->AsElement(),
+        static_cast<imgRequestProxy*>(currentRequest.get()),
+        GetDestRect() - ToReferenceFrame());
+  }
 
   // While we got a container, it may not contain a fully decoded surface. If
   // that is the case, and we have an image we were previously displaying which

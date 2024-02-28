@@ -4,7 +4,8 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
+  SearchEngineSelectorOld:
+    "resource://gre/modules/SearchEngineSelectorOld.sys.mjs",
 });
 
 const CONFIG = [
@@ -63,8 +64,9 @@ const CONFIG = [
   },
 ];
 
-const engineSelector = new SearchEngineSelector();
+const engineSelector = new SearchEngineSelectorOld();
 add_setup(async function () {
+  Services.prefs.setBoolPref("browser.search.newSearchConfig.enabled", false);
   await SearchTestUtils.useTestEngines("data", null, CONFIG);
   await AddonTestUtils.promiseStartupManager();
 });

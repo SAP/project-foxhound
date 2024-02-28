@@ -8,7 +8,7 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  // Only needed when SearchUtils.newSearchConfigEnabled is false.
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
@@ -17,10 +17,11 @@ ChromeUtils.defineESModuleGetters(this, {
   SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+  SearchEngineSelectorOld:
+    "resource://gre/modules/SearchEngineSelectorOld.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
+  updateAppInfo: "resource://testing-common/AppInfo.sys.mjs",
 });
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
 const GLOBAL_SCOPE = this;
 const TEST_DEBUG = Services.env.get("TEST_DEBUG");
@@ -111,13 +112,22 @@ class SearchConfigTest {
    *   The version to simulate for running the tests.
    */
   async setup(version = "42.0") {
-    AddonTestUtils.init(GLOBAL_SCOPE);
-    AddonTestUtils.createAppInfo(
-      "xpcshell@tests.mozilla.org",
-      "XPCShell",
-      version,
-      version
-    );
+    if (SearchUtils.newSearchConfigEnabled) {
+      updateAppInfo({
+        name: "XPCShell",
+        ID: "xpcshell@tests.mozilla.org",
+        version,
+        platformVersion: version,
+      });
+    } else {
+      AddonTestUtils.init(GLOBAL_SCOPE);
+      AddonTestUtils.createAppInfo(
+        "xpcshell@tests.mozilla.org",
+        "XPCShell",
+        version,
+        version
+      );
+    }
 
     await maybeSetupConfig();
 
@@ -135,7 +145,9 @@ class SearchConfigTest {
       true
     );
 
-    await AddonTestUtils.promiseStartupManager();
+    if (!SearchUtils.newSearchConfigEnabled) {
+      await AddonTestUtils.promiseStartupManager();
+    }
     await Services.search.init();
 
     // We must use the engine selector that the search service has created (if
@@ -143,7 +155,9 @@ class SearchConfigTest {
     // configuration once - after that, it tries to access the network.
     engineSelector =
       Services.search.wrappedJSObject._engineSelector ||
-      new SearchEngineSelector();
+      SearchUtils.newSearchConfigEnabled
+        ? new SearchEngineSelector()
+        : new SearchEngineSelectorOld();
 
     // Note: we don't use the helper function here, so that we have at least
     // one message output per process.
@@ -157,7 +171,7 @@ class SearchConfigTest {
    * Runs the test.
    */
   async run() {
-    const locales = await this._getLocales();
+    const locales = await this.getLocales();
     const regions = this._regions;
 
     // We loop on region and then locale, so that we always cause a re-init
@@ -207,7 +221,7 @@ class SearchConfigTest {
   /**
    * @returns {Array} the list of locales for the tests to run with.
    */
-  async _getLocales() {
+  async getLocales() {
     if (TEST_DEBUG) {
       return ["be", "en-US", "kk", "tr", "ru", "zh-CN", "ach", "unknown"];
     }
@@ -227,31 +241,6 @@ class SearchConfigTest {
   }
 
   /**
-   * Determines if a locale matches with a locales section in the configuration.
-   *
-   * @param {object} locales
-   *   The config locales config, containing the locals to match against.
-   * @param {Array} [locales.matches]
-   *   Array of locale names to match exactly.
-   * @param {Array} [locales.startsWith]
-   *   Array of locale names to match the start.
-   * @param {string} locale
-   *   The two-letter locale code.
-   * @returns {boolean}
-   *   True if the locale matches.
-   */
-  _localeIncludes(locales, locale) {
-    if ("matches" in locales && locales.matches.includes(locale)) {
-      return true;
-    }
-    if ("startsWith" in locales) {
-      return !!locales.startsWith.find(element => locale.startsWith(element));
-    }
-
-    return false;
-  }
-
-  /**
    * Determines if a locale/region pair match a section of the configuration.
    *
    * @param {object} section
@@ -268,7 +257,7 @@ class SearchConfigTest {
       // If we only specify a regions or locales section then
       // it is always considered included in the other section.
       const inRegions = !regions || regions.includes(region);
-      const inLocales = !locales || this._localeIncludes(locales, locale);
+      const inLocales = !locales || locales.includes(locale);
       if (inRegions && inLocales) {
         return true;
       }

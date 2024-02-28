@@ -24,10 +24,11 @@ pub enum InlineBaseDirection {
 }
 
 // TODO: improve the readability of the WritingMode serialization, refer to the Debug:fmt()
+#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, Serialize)]
+#[repr(C)]
+pub struct WritingMode(u8);
 bitflags!(
-    #[derive(MallocSizeOf, Serialize)]
-    #[repr(C)]
-    pub struct WritingMode: u8 {
+    impl WritingMode: u8 {
         /// A vertical writing mode; writing-mode is vertical-rl,
         /// vertical-lr, sideways-lr, or sideways-rl.
         const VERTICAL = 1 << 0;
@@ -343,6 +344,12 @@ impl WritingMode {
         } else {
             bidi::Level::rtl()
         }
+    }
+
+    #[inline]
+    /// Is the text layout vertical?
+    pub fn is_text_vertical(&self) -> bool {
+        self.is_vertical() && !self.is_sideways()
     }
 }
 

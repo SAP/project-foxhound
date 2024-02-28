@@ -181,7 +181,6 @@ IPDL_SOURCES += [
     "PInProcess.ipdl",
     "PJSOracle.ipdl",
     "PJSValidator.ipdl",
-    "PLoginReputation.ipdl",
     "PProcessHangMonitor.ipdl",
     "PrefsTypes.ipdlh",
     "PTabContext.ipdlh",
@@ -267,7 +266,7 @@ BROWSER_CHROME_MANIFESTS += [
 ]
 
 MOCHITEST_CHROME_MANIFESTS += ["tests/chrome.toml"]
-MOCHITEST_MANIFESTS += ["tests/mochitest.ini"]
+MOCHITEST_MANIFESTS += ["tests/mochitest.toml"]
 XPCSHELL_TESTS_MANIFESTS += ["tests/xpcshell.ini"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":

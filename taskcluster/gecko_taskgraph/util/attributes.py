@@ -15,11 +15,10 @@ RELEASE_PROJECTS = {
     "mozilla-central",
     "mozilla-beta",
     "mozilla-release",
-    "mozilla-esr102",
     "mozilla-esr115",
     "comm-central",
     "comm-beta",
-    "comm-esr102",
+    "comm-release",
     "comm-esr115",
     # bug 1845368: pine is a permanent project branch used for testing
     # nightly updates

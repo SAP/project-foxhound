@@ -71,40 +71,28 @@ struct TrackUpdate {
 /**
  * This represents a message run on the graph thread to modify track or graph
  * state.  These are passed from main thread to graph thread through
- * AppendMessage(), or scheduled on the graph thread with
- * RunMessageAfterProcessing().  A ControlMessage
- * always has a weak reference to a particular affected track.
+ * AppendMessage().  A ControlMessage often has a weak reference to a
+ * particular affected track.
  */
-class ControlMessage {
+class ControlMessage : public MediaTrack::ControlMessageInterface {
  public:
   explicit ControlMessage(MediaTrack* aTrack) : mTrack(aTrack) {
-    MOZ_COUNT_CTOR(ControlMessage);
+    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_RELEASE_ASSERT(!aTrack || !aTrack->IsDestroyed());
   }
-  // All these run on the graph thread
-  MOZ_COUNTED_DTOR_VIRTUAL(ControlMessage)
-  // Do the action of this message on the MediaTrackGraph thread. Any actions
-  // affecting graph processing should take effect at mProcessedTime.
-  // All track data for times < mProcessedTime has already been
-  // computed.
-  virtual void Run() = 0;
-  // RunDuringShutdown() is only relevant to messages generated on the main
-  // thread (for AppendMessage()).
-  // When we're shutting down the application, most messages are ignored but
-  // some cleanup messages should still be processed (on the main thread).
-  // This must not add new control messages to the graph.
-  virtual void RunDuringShutdown() {}
+
   MediaTrack* GetTrack() { return mTrack; }
 
  protected:
   // We do not hold a reference to mTrack. The graph will be holding a reference
   // to the track until the Destroy message is processed. The last message
   // referencing a track is the Destroy message for that track.
-  MediaTrack* mTrack;
+  MediaTrack* const mTrack;
 };
 
 class MessageBlock {
  public:
-  nsTArray<UniquePtr<ControlMessage>> mMessages;
+  nsTArray<UniquePtr<MediaTrack::ControlMessageInterface>> mMessages;
 };
 
 /**
@@ -119,12 +107,16 @@ class MessageBlock {
 class MediaTrackGraphImpl : public MediaTrackGraph,
                             public GraphInterface,
                             public nsIMemoryReporter,
+                            public nsIObserver,
                             public nsIThreadObserver,
                             public nsITimerCallback,
                             public nsINamed {
  public:
+  using ControlMessageInterface = MediaTrack::ControlMessageInterface;
+
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIMEMORYREPORTER
+  NS_DECL_NSIOBSERVER
   NS_DECL_NSITHREADOBSERVER
   NS_DECL_NSITIMERCALLBACK
   NS_DECL_NSINAMED
@@ -139,17 +131,20 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    */
   explicit MediaTrackGraphImpl(GraphDriverType aGraphDriverRequested,
                                GraphRunType aRunTypeRequested,
-                               TrackRate aSampleRate, uint32_t aChannelCount,
+                               uint64_t aWindowID, TrackRate aSampleRate,
+                               uint32_t aChannelCount,
                                CubebUtils::AudioDeviceID aOutputDeviceID,
                                nsISerialEventTarget* aMainThread);
   static MediaTrackGraphImpl* GetInstance(
       GraphDriverType aGraphDriverRequested, uint64_t aWindowID,
-      bool aShouldResistFingerprinting, TrackRate aSampleRate,
-      CubebUtils::AudioDeviceID aOutputDeviceID,
+      TrackRate aSampleRate, CubebUtils::AudioDeviceID aOutputDeviceID,
       nsISerialEventTarget* aMainThread);
   static MediaTrackGraphImpl* GetInstanceIfExists(
-      uint64_t aWindowID, bool aShouldResistFingerprinting,
-      TrackRate aSampleRate, CubebUtils::AudioDeviceID aOutputDeviceID);
+      uint64_t aWindowID, TrackRate aSampleRate,
+      CubebUtils::AudioDeviceID aOutputDeviceID);
+  // For GraphHashSet:
+  struct Lookup;
+  operator Lookup() const;
 
   // Intended only for assertions, either on graph thread or not running (in
   // which case we must be on the main thread).
@@ -192,10 +187,21 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    */
   void ApplyTrackUpdate(TrackUpdate* aUpdate) MOZ_REQUIRES(mMonitor);
   /**
-   * Append a ControlMessage to the message queue. This queue is drained
+   * Append a control message to the message queue. This queue is drained
    * during RunInStableState; the messages will run on the graph thread.
    */
-  virtual void AppendMessage(UniquePtr<ControlMessage> aMessage);
+  virtual void AppendMessage(UniquePtr<ControlMessageInterface> aMessage);
+  /**
+   * Append to the message queue a control message to execute a given lambda
+   * function with no parameters.  The lambda will be executed on the graph
+   * thread.  The lambda will not be executed if the graph has been forced to
+   * shut down.
+   **/
+  template <typename Function>
+  void QueueControlMessageWithNoShutdown(Function&& aFunction) {
+    AppendMessage(WrapUnique(new MediaTrack::ControlMessageWithNoShutdown(
+        std::forward<Function>(aFunction))));
+  }
 
   /**
    * Dispatches a runnable from any thread to the correct main thread for this
@@ -342,7 +348,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Schedules |aMessage| to run after processing, at a time when graph state
    * can be changed.  Graph thread.
    */
-  void RunMessageAfterProcessing(UniquePtr<ControlMessage> aMessage);
+  void RunMessageAfterProcessing(UniquePtr<ControlMessageInterface> aMessage);
 
   /**
    * Resolve the GraphStartedPromise when the driver has started processing on
@@ -426,17 +432,6 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   };
   TrackTime PlayAudio(AudioMixer* aMixer, const TrackKeyAndVolume& aTkv,
                       GraphTime aPlayedTime);
-
-  /* Do not call this directly. For users who need to get a DeviceInputTrack,
-   * use DeviceInputTrack::OpenAudio() instead. This should only be used in
-   * DeviceInputTrack to get the existing DeviceInputTrack paired with the given
-   * device in this graph. Main thread only.*/
-  DeviceInputTrack* GetDeviceInputTrackMainThread(
-      CubebUtils::AudioDeviceID aID);
-
-  /* Do not call this directly. This should only be used in DeviceInputTrack to
-   * get the existing NativeInputTrackMain thread only.*/
-  NativeInputTrack* GetNativeInputTrackMainThread();
 
   /* Runs off a message on the graph thread when something requests audio from
    * an input audio device of ID aID, and delivers the input audio frames to
@@ -676,7 +671,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Main-thread view of the number of ports in this graph, to catch bugs.
    *
    * When this becomes zero, and mMainThreadTrackCount is 0, the graph is
-   * marked as forbidden to add more ControlMessages to. It will be shut down
+   * marked as forbidden to add more control messages to. It will be shut down
    * shortly after.
    */
   size_t mMainThreadPortCount = 0;
@@ -755,12 +750,17 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   nsTArray<nsCOMPtr<nsIRunnable>> mPendingUpdateRunnables;
 
   /**
+   * The ID of the inner Window which uses this graph, or zero for offline
+   * graphs.
+   */
+  const uint64_t mWindowID;
+  /**
    * Devices to use for cubeb output, or nullptr for default device.
    * A MediaTrackGraph always has an output (even if silent).
    *
    * All mOutputDeviceID access is on the graph thread.
    */
-  CubebUtils::AudioDeviceID mOutputDeviceID;
+  const CubebUtils::AudioDeviceID mOutputDeviceID;
 
   /**
    * List of resume operations waiting for a switch to an AudioCallbackDriver.
@@ -784,7 +784,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   // MediaTrackGraph normally does its work without holding mMonitor, so it is
   // not safe to just grab mMonitor from some thread and start monkeying with
   // the graph. Instead, communicate with the graph thread using provided
-  // mechanisms such as the ControlMessage queue.
+  // mechanisms such as the control message queue.
   Monitor mMonitor;
 
   // Data guarded by mMonitor (must always be accessed with mMonitor held,
@@ -937,7 +937,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * immediately because we want all messages between stable states to be
    * processed as an atomic batch.
    */
-  nsTArray<UniquePtr<ControlMessage>> mCurrentTaskMessageQueue;
+  nsTArray<UniquePtr<ControlMessageInterface>> mCurrentTaskMessageQueue;
   /**
    * True from when RunInStableState sets mLifecycleState to LIFECYCLE_RUNNING,
    * until RunInStableState has determined that mLifecycleState is >
@@ -1007,7 +1007,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
 
 #ifdef DEBUG
   /**
-   * Used to assert when AppendMessage() runs ControlMessages synchronously.
+   * Used to assert when AppendMessage() runs control messages synchronously.
    */
   bool mCanRunMessagesSynchronously;
 #endif
@@ -1038,11 +1038,13 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    */
   uint32_t mMaxOutputChannelCount;
 
+ public:
   /**
    * Manage the native or non-native input device in graph. Main thread only.
    */
   DeviceInputTrackManager mDeviceInputTrackManagerMainThread;
 
+ private:
   /**
    * Manage the native or non-native input device in graph. Graph thread only.
    */

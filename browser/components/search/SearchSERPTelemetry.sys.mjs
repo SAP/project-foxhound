@@ -8,6 +8,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
 });
@@ -24,10 +25,25 @@ const SEARCH_DATA_TRANSFERRED_SCALAR = "browser.search.data_transferred";
 const SEARCH_TELEMETRY_PRIVATE_BROWSING_KEY_SUFFIX = "pb";
 
 // Exported for tests.
+export const ADLINK_CHECK_TIMEOUT_MS = 1000;
 export const TELEMETRY_SETTINGS_KEY = "search-telemetry-v2";
 export const TELEMETRY_CATEGORIZATION_KEY = "search-categorization";
+export const TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS = {
+  // Units are in milliseconds.
+  base: 3600000,
+  minAdjust: 60000,
+  maxAdjust: 600000,
+  maxTriesPerSession: 2,
+};
+
+export const SEARCH_TELEMETRY_SHARED = {
+  PROVIDER_INFO: "SearchTelemetry:ProviderInfo",
+  LOAD_TIMEOUT: "SearchTelemetry:LoadTimeout",
+};
 
 const impressionIdsWithoutEngagementsSet = new Set();
+
+const maxDomainsToCategorize = 10;
 
 ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
   return console.createInstance({
@@ -43,10 +59,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   true
 );
 
+const CATEGORIZATION_PREF =
+  "browser.search.serpEventTelemetryCategorization.enabled";
+
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "serpEventTelemetryCategorization",
-  "browser.search.serpEventTelemetryCategorization.enabled",
+  CATEGORIZATION_PREF,
   false
 );
 
@@ -102,6 +121,9 @@ class TelemetryHandler {
 
   // An instance of remote settings that is used to access the provider info.
   _telemetrySettings;
+
+  // Callback used when syncing telemetry settings.
+  #telemetrySettingsSync;
 
   // _browserInfoByURL is a map of tracked search urls to objects containing:
   // * {object} info
@@ -177,6 +199,9 @@ class TelemetryHandler {
       lazy.logConsole.error("Could not get settings:", ex);
     }
 
+    this.#telemetrySettingsSync = event => this.#onSettingsSync(event);
+    this._telemetrySettings.on("sync", this.#telemetrySettingsSync);
+
     // Send the provider info to the child handler.
     this._contentHandler.init(rawProviderInfo);
     this._originalProviderInfo = rawProviderInfo;
@@ -190,6 +215,27 @@ class TelemetryHandler {
     Services.wm.addListener(this);
 
     this._initialized = true;
+  }
+
+  async #onSettingsSync(event) {
+    let current = event.data?.current;
+    if (current) {
+      lazy.logConsole.debug(
+        "Update provider info due to Remote Settings sync."
+      );
+      this._originalProviderInfo = current;
+      this._setSearchProviderInfo(current);
+      Services.ppmm.sharedData.set(
+        SEARCH_TELEMETRY_SHARED.PROVIDER_INFO,
+        current
+      );
+      Services.ppmm.sharedData.flush();
+    } else {
+      lazy.logConsole.debug(
+        "Ignoring Remote Settings sync data due to missing records."
+      );
+    }
+    Services.obs.notifyObservers(null, "search-telemetry-v2-synced");
   }
 
   /**
@@ -206,6 +252,17 @@ class TelemetryHandler {
       this._unregisterWindow(win);
     }
     Services.wm.removeListener(this);
+
+    try {
+      this._telemetrySettings.off("sync", this.#telemetrySettingsSync);
+    } catch (ex) {
+      lazy.logConsole.error(
+        "Failed to shutdown SearchSERPTelemetry Remote Settings.",
+        ex
+      );
+    }
+    this._telemetrySettings = null;
+    this.#telemetrySettingsSync = null;
 
     this._initialized = false;
   }
@@ -427,6 +484,7 @@ class TelemetryHandler {
         partnerCode,
         source: inContentSource ?? source,
         isShoppingPage: info.isShoppingPage,
+        isPrivate: lazy.PrivateBrowsingUtils.isBrowserPrivate(browser),
       };
     }
 
@@ -706,7 +764,14 @@ class TelemetryHandler {
     // To check this, we look for the presence of the query parameter
     // that contains a search term.
     let queries = new URLSearchParams(url.split("#")[0].split("?")[1]);
-    if (!queries.get(searchProviderInfo.queryParamName)) {
+    let hasQuery = false;
+    for (let queryParamName of searchProviderInfo.queryParamNames) {
+      if (queries.get(queryParamName)) {
+        hasQuery = true;
+        break;
+      }
+    }
+    if (!hasQuery) {
       return null;
     }
     // Default to organic to simplify things.
@@ -840,7 +905,14 @@ class ContentHandler {
    *  The provider information for the search telemetry to record.
    */
   init(providerInfo) {
-    Services.ppmm.sharedData.set("SearchTelemetry:ProviderInfo", providerInfo);
+    Services.ppmm.sharedData.set(
+      SEARCH_TELEMETRY_SHARED.PROVIDER_INFO,
+      providerInfo
+    );
+    Services.ppmm.sharedData.set(
+      SEARCH_TELEMETRY_SHARED.LOAD_TIMEOUT,
+      ADLINK_CHECK_TIMEOUT_MS
+    );
 
     Services.obs.addObserver(this, "http-on-examine-response");
     Services.obs.addObserver(this, "http-on-examine-cached-response");
@@ -967,11 +1039,6 @@ class ContentHandler {
     if (wrappedChannel._adClickRecorded) {
       lazy.logConsole.debug("Ad click already recorded");
       return;
-      // When _adClickRecorded is false but _recordedClick is true, it means we
-      // recorded a non-ad link click, and it is being re-directed.
-    } else if (wrappedChannel._recordedClick) {
-      lazy.logConsole.debug("Non ad-click already recorded");
-      return;
     }
 
     Services.tm.dispatchToMainThread(() => {
@@ -997,154 +1064,12 @@ class ContentHandler {
         return provider.telemetryId == providerInfo;
       });
 
-      // Some channels re-direct by loading pages that return 200. The result
-      // is the channel will have an originURL that changes from the SERP to
-      // either a nonAdsRegexp or an extraAdServersRegexps. This is typical
-      // for loading a page in a new tab. The channel will have changed so any
-      // properties attached to them to record state (e.g. _recordedClick)
-      // won't be present.
-      if (
-        info.nonAdsLinkRegexps.some(r => r.test(originURL)) ||
-        info.extraAdServersRegexps.some(r => r.test(originURL))
-      ) {
-        return;
-      }
-
-      // A click event is recorded if a user loads a resource from an
-      // originURL that is a SERP.
-      //
-      // Typically, we only want top level loads containing documents to avoid
-      // recording any event on an in-page resource a SERP might load
-      // (e.g. CSS files).
-      //
-      // The exception to this is if a subframe loads a resource that matches
-      // a non ad link. Some SERPs encode non ad search results with a URL
-      // that gets loaded into an iframe, which then tells the container of
-      // the iframe to change the location of the page.
-      if (
-        lazy.serpEventsEnabled &&
-        channel.isDocument &&
-        (channel.loadInfo.isTopLevelLoad ||
-          info.nonAdsLinkRegexps.some(r => r.test(url)))
-      ) {
-        let browser = wrappedChannel.browserElement;
-        // If the load is from history, don't record an event.
-        if (
-          browser?.browsingContext.webProgress?.loadType &
-          Ci.nsIDocShell.LOAD_CMD_HISTORY
-        ) {
-          lazy.logConsole.debug("Ignoring load from history");
-          return;
-        }
-
-        // Step 1: Check if the browser associated with the request was a
-        // tracked SERP.
-        let start = Cu.now();
-        let telemetryState;
-        let isFromNewtab = false;
-        if (item.browserTelemetryStateMap.has(browser)) {
-          // Current browser is tracked.
-          telemetryState = item.browserTelemetryStateMap.get(browser);
-        } else if (browser) {
-          // Current browser might have been created by a browser in a
-          // different tab.
-          let tabBrowser = browser.getTabBrowser();
-          let tab = tabBrowser.getTabForBrowser(browser).openerTab;
-          telemetryState = item.browserTelemetryStateMap.get(tab.linkedBrowser);
-          if (telemetryState) {
-            isFromNewtab = true;
-          }
-        }
-
-        // Step 2: If we have telemetryState, the browser object must be
-        // associated with another browser that is tracked. Try to find the
-        // component type on the SERP responsible for the request.
-        // Exceptions:
-        // - If a searchbox was used to initiate the load, don't record another
-        //   engagement because the event was logged elsewhere.
-        // - If the ad impression hasn't been recorded yet, we have no way of
-        //   knowing precisely what kind of component was selected.
-        let isSerp = false;
-        if (
-          telemetryState &&
-          telemetryState.adImpressionsReported &&
-          !telemetryState.searchBoxSubmitted
-        ) {
-          if (info.searchPageRegexp?.test(originURL)) {
-            isSerp = true;
-          }
-
-          let startFindComponent = Cu.now();
-          let parsedUrl = new URL(url);
-          // Determine the component type of the link.
-          let type;
-          for (let [
-            storedUrl,
-            componentType,
-          ] of telemetryState.urlToComponentMap.entries()) {
-            // The URL we're navigating to may have more query parameters if
-            // the provider adds query parameters when the user clicks on a link.
-            // On the other hand, the URL we are navigating to may have have
-            // fewer query parameters because of query param stripping.
-            // Thus, if a query parameter is missing, a match can still be made
-            // provided keys that exist in both URLs contain equal values.
-            let score = SearchSERPTelemetry.compareUrls(storedUrl, parsedUrl, {
-              paramValues: true,
-              path: true,
-            });
-            if (score) {
-              type = componentType;
-              break;
-            }
-          }
-          ChromeUtils.addProfilerMarker(
-            "SearchSERPTelemetry._observeActivity",
-            startFindComponent,
-            "Find component for URL"
-          );
-
-          // Default value for URLs that don't match any components categorized
-          // on the page.
-          if (!type) {
-            type = SearchSERPTelemetryUtils.COMPONENTS.NON_ADS_LINK;
-          }
-
-          if (
-            type == SearchSERPTelemetryUtils.COMPONENTS.REFINED_SEARCH_BUTTONS
-          ) {
-            SearchSERPTelemetry.setBrowserContentSource(
-              browser,
-              SearchSERPTelemetryUtils.INCONTENT_SOURCES.REFINE_ON_SERP
-            );
-          } else if (isSerp && isFromNewtab) {
-            SearchSERPTelemetry.setBrowserContentSource(
-              browser,
-              SearchSERPTelemetryUtils.INCONTENT_SOURCES.OPENED_IN_NEW_TAB
-            );
-          }
-
-          // Step 3: Record the engagement.
-          impressionIdsWithoutEngagementsSet.delete(
-            telemetryState.impressionId
-          );
-          Glean.serp.engagement.record({
-            impression_id: telemetryState.impressionId,
-            action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
-            target: type,
-          });
-          lazy.logConsole.debug("Counting click:", {
-            impressionId: telemetryState.impressionId,
-            type,
-            URL: url,
-          });
-          // Prevent re-directed channels from being examined more than once.
-          wrappedChannel._recordedClick = true;
-        }
-        ChromeUtils.addProfilerMarker(
-          "SearchSERPTelemetry._observeActivity",
-          start,
-          "Maybe record user engagement."
-        );
+      // If an error occurs with Glean SERP telemetry logic, avoid
+      // disrupting legacy telemetry.
+      try {
+        this.#maybeRecordSERPTelemetry(wrappedChannel, item, info);
+      } catch (ex) {
+        lazy.logConsole.error(ex);
       }
 
       if (!info.extraAdServersRegexps?.some(regex => regex.test(url))) {
@@ -1177,6 +1102,184 @@ class ContentHandler {
         console.error(e);
       }
     });
+  }
+
+  /**
+   * Checks if a request should record an ad click if it can be traced to a
+   * browser containing an observed SERP.
+   *
+   * @param {ChannelWrapper} wrappedChannel
+   *   The wrapped channel.
+   * @param {object} item
+   *   The browser item associated with the origin URL of the request.
+   * @param {object} info
+   *   The search provider info associated with the item.
+   */
+  #maybeRecordSERPTelemetry(wrappedChannel, item, info) {
+    if (!lazy.serpEventsEnabled) {
+      return;
+    }
+
+    if (wrappedChannel._recordedClick) {
+      lazy.logConsole.debug("Click already recorded.");
+      return;
+    }
+
+    let originURL = wrappedChannel.originURI?.spec;
+    let url = wrappedChannel.finalURL;
+    // Some channels re-direct by loading pages that return 200. The result
+    // is the channel will have an originURL that changes from the SERP to
+    // either a nonAdsRegexp or an extraAdServersRegexps. This is typical
+    // for loading a page in a new tab. The channel will have changed so any
+    // properties attached to them to record state (e.g. _recordedClick)
+    // won't be present.
+    if (
+      info.nonAdsLinkRegexps.some(r => r.test(originURL)) ||
+      info.extraAdServersRegexps.some(r => r.test(originURL))
+    ) {
+      return;
+    }
+
+    // A click event is recorded if a user loads a resource from an
+    // originURL that is a SERP.
+    //
+    // Typically, we only want top level loads containing documents to avoid
+    // recording any event on an in-page resource a SERP might load
+    // (e.g. CSS files).
+    //
+    // The exception to this is if a subframe loads a resource that matches
+    // a non ad link. Some SERPs encode non ad search results with a URL
+    // that gets loaded into an iframe, which then tells the container of
+    // the iframe to change the location of the page.
+    if (
+      wrappedChannel.channel.isDocument &&
+      (wrappedChannel.channel.loadInfo.isTopLevelLoad ||
+        info.nonAdsLinkRegexps.some(r => r.test(url)))
+    ) {
+      let browser = wrappedChannel.browserElement;
+
+      // If the load is from history, don't record an event.
+      if (
+        browser?.browsingContext.webProgress?.loadType &
+        Ci.nsIDocShell.LOAD_CMD_HISTORY
+      ) {
+        lazy.logConsole.debug("Ignoring load from history");
+        return;
+      }
+
+      // Step 1: Check if the browser associated with the request was a
+      // tracked SERP.
+      let start = Cu.now();
+      let telemetryState;
+      let isFromNewtab = false;
+      if (item.browserTelemetryStateMap.has(browser)) {
+        // Current browser is tracked.
+        telemetryState = item.browserTelemetryStateMap.get(browser);
+      } else if (browser) {
+        // Current browser might have been created by a browser in a
+        // different tab.
+        let tabBrowser = browser.getTabBrowser();
+        // A tab will not always have an openerTab, such as if a tab was
+        // created as a first tab in a new window. Bug 1866548: additional
+        // conditions need to be added in order to track clicks that open in
+        // new windows.
+        let tab = tabBrowser.getTabForBrowser(browser).openerTab;
+        if (tab) {
+          telemetryState = item.browserTelemetryStateMap.get(tab.linkedBrowser);
+          if (telemetryState) {
+            isFromNewtab = true;
+          }
+        }
+      }
+
+      // Step 2: If we have telemetryState, the browser object must be
+      // associated with another browser that is tracked. Try to find the
+      // component type on the SERP responsible for the request.
+      // Exceptions:
+      // - If a searchbox was used to initiate the load, don't record another
+      //   engagement because the event was logged elsewhere.
+      // - If the ad impression hasn't been recorded yet, we have no way of
+      //   knowing precisely what kind of component was selected.
+      let isSerp = false;
+      if (
+        telemetryState &&
+        telemetryState.adImpressionsReported &&
+        !telemetryState.searchBoxSubmitted
+      ) {
+        if (info.searchPageRegexp?.test(originURL)) {
+          isSerp = true;
+        }
+
+        let startFindComponent = Cu.now();
+        let parsedUrl = new URL(url);
+        // Determine the component type of the link.
+        let type;
+        for (let [
+          storedUrl,
+          componentType,
+        ] of telemetryState.urlToComponentMap.entries()) {
+          // The URL we're navigating to may have more query parameters if
+          // the provider adds query parameters when the user clicks on a link.
+          // On the other hand, the URL we are navigating to may have have
+          // fewer query parameters because of query param stripping.
+          // Thus, if a query parameter is missing, a match can still be made
+          // provided keys that exist in both URLs contain equal values.
+          let score = SearchSERPTelemetry.compareUrls(storedUrl, parsedUrl, {
+            paramValues: true,
+            path: true,
+          });
+          if (score) {
+            type = componentType;
+            break;
+          }
+        }
+        ChromeUtils.addProfilerMarker(
+          "SearchSERPTelemetry._observeActivity",
+          startFindComponent,
+          "Find component for URL"
+        );
+
+        // Default value for URLs that don't match any components categorized
+        // on the page.
+        if (!type) {
+          type = SearchSERPTelemetryUtils.COMPONENTS.NON_ADS_LINK;
+        }
+
+        if (
+          type == SearchSERPTelemetryUtils.COMPONENTS.REFINED_SEARCH_BUTTONS
+        ) {
+          SearchSERPTelemetry.setBrowserContentSource(
+            browser,
+            SearchSERPTelemetryUtils.INCONTENT_SOURCES.REFINE_ON_SERP
+          );
+        } else if (isSerp && isFromNewtab) {
+          SearchSERPTelemetry.setBrowserContentSource(
+            browser,
+            SearchSERPTelemetryUtils.INCONTENT_SOURCES.OPENED_IN_NEW_TAB
+          );
+        }
+
+        // Step 3: Record the engagement.
+        impressionIdsWithoutEngagementsSet.delete(telemetryState.impressionId);
+        Glean.serp.engagement.record({
+          impression_id: telemetryState.impressionId,
+          action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: type,
+        });
+        lazy.logConsole.debug("Counting click:", {
+          impressionId: telemetryState.impressionId,
+          type,
+          URL: url,
+        });
+        // Prevent re-directed channels from being examined more than once.
+        wrappedChannel._recordedClick = true;
+      }
+      ChromeUtils.addProfilerMarker(
+        "SearchSERPTelemetry._observeActivity",
+        start,
+        "Maybe record user engagement."
+      );
+    }
   }
 
   /**
@@ -1367,12 +1470,14 @@ class ContentHandler {
         source: impressionInfo.source,
         shopping_tab_displayed: info.shoppingTabDisplayed,
         is_shopping_page: impressionInfo.isShoppingPage,
+        is_private: impressionInfo.isPrivate,
       });
       lazy.logConsole.debug(`Reported Impression:`, {
         impressionId,
         ...impressionInfo,
         shoppingTabDisplayed: info.shoppingTabDisplayed,
       });
+      Services.obs.notifyObservers(null, "reported-page-with-impression");
     } else {
       lazy.logConsole.debug("Could not find an impression id.");
     }
@@ -1397,7 +1502,7 @@ class ContentHandler {
     if (lazy.serpEventTelemetryCategorization && telemetryState) {
       let provider = item?.info.provider;
       if (provider) {
-        SearchSERPCategorization.categorizeDomainsFromProvider(
+        SearchSERPCategorization.maybeCategorizeAndReportDomainsFromProvider(
           info.nonAdDomains,
           info.adDomains,
           provider
@@ -1416,7 +1521,9 @@ class ContentHandler {
  */
 class DomainCategorizer {
   /**
-   * Categorizes domains extracted from SERPs.
+   * Categorizes and reports domains extracted from SERPs. Note that we don't
+   * process domains if the domain-to-categories map is empty (if the client
+   * couldn't download Remote Settings attachments, for example).
    *
    * @param {Set} nonAdDomains
    *   The non-ad domains extracted from the page.
@@ -1425,15 +1532,31 @@ class DomainCategorizer {
    * @param {string} provider
    *   The provider associated with the page.
    */
-  categorizeDomainsFromProvider(nonAdDomains, adDomains, provider) {
+  maybeCategorizeAndReportDomainsFromProvider(
+    nonAdDomains,
+    adDomains,
+    provider
+  ) {
     for (let domains of [nonAdDomains, adDomains]) {
+      // We don't want to generate and report telemetry if a client was unable
+      // to download the domain-to-categories mapping from Remote Settings.
+      if (SearchSERPDomainToCategoriesMap.empty) {
+        continue;
+      }
       domains = this.processDomains(domains, provider);
+      // Per a request from Data Science, we need to limit the number of domains
+      // categorized to 10 non ad domains and 10 ad domains.
+      domains = new Set([...domains].slice(0, maxDomainsToCategorize));
       let resultsToReport = this.applyCategorizationLogic(domains);
-      this.dummyLogger(domains, resultsToReport);
+      this.dummyLogger(
+        domains,
+        resultsToReport,
+        SearchSERPDomainToCategoriesMap.version
+      );
     }
   }
 
-  // TODO: check with DS to get the final aggregation logic.
+  // TODO: check with DS to get the final aggregation logic. (Bug 1854196)
   /**
    * Applies the logic for reducing extracted domains to a single category for
    * the SERP.
@@ -1505,8 +1628,9 @@ class DomainCategorizer {
   }
 
   // TODO: replace this method once we know where to send the categorized
-  // domains and overall SERP category.
-  dummyLogger(domains, resultsToReport) {
+  // domains and overall SERP category. (Bug 1854692)
+  dummyLogger(domains, resultsToReport, version) {
+    lazy.logConsole.debug("Version of the attachments:", version);
     lazy.logConsole.debug("Domains extracted from SERP:", [...domains]);
     lazy.logConsole.debug(
       "Categorization results to report to Glean:",
@@ -1633,38 +1757,67 @@ class DomainToCategoriesMap {
   #onSettingsSync = null;
 
   /**
-   * Initializes the map with local attachments and creates a listener for
-   * updates to Remote Settings in case the mappings are updated while the
-   * client is on.
+   * When downloading an attachment from Remote Settings fails, this will
+   * contain a timer which will eventually attempt to retry downloading
+   * attachments.
+   */
+  #downloadTimer = null;
+
+  /**
+   * Number of times this has attempted to try another download. Will reset
+   * if the categorization preference has been toggled, or a sync event has
+   * been detected.
+   *
+   * @type {number}
+   */
+  #downloadRetries = 0;
+
+  /**
+   * Runs at application startup with startup idle tasks. Creates a listener
+   * to changes of the SERP categorization preference. Additionally, if the
+   * SERP categorization preference is enabled, it creates a Remote Settings
+   * client to listen to updates, and populates the map.
    */
   async init() {
-    if (!lazy.serpEventTelemetryCategorization || this.#init) {
+    if (this.#init) {
       return;
     }
 
+    Services.prefs.addObserver(CATEGORIZATION_PREF, this);
     this.#init = true;
 
-    lazy.logConsole.debug("Domain-to-categories map is initializing.");
-    this.#client = lazy.RemoteSettings(TELEMETRY_CATEGORIZATION_KEY);
-
-    this.#onSettingsSync = event => this.#sync(event.data);
-    this.#client.on("sync", this.#onSettingsSync);
-
-    let records = await this.#client.get();
-    await this.#clearAndPopulateMap(records);
+    if (lazy.serpEventTelemetryCategorization) {
+      this.#setupClientAndMap();
+    }
   }
 
+  /**
+   * Predominantly a test-only function.
+   */
   uninit() {
-    lazy.logConsole.debug("Uninitializing domain-to-categories map.");
+    lazy.logConsole.debug("Un-initialize domain-to-categories map.");
     if (this.#init) {
-      this.#map = null;
-      this.#version = null;
-
-      this.#client.off("sync", this.#onSettingsSync);
-      this.#client = null;
-      this.#onSettingsSync = null;
-
+      if (this.#map) {
+        this.#clearClientAndMap();
+      } else {
+        this.#cancelAndNullifyTimer();
+      }
       this.#init = false;
+      Services.prefs.removeObserver(CATEGORIZATION_PREF, this);
+    }
+  }
+
+  observe(subject, topic, data) {
+    if (topic != "nsPref:changed") {
+      return;
+    }
+    if (data == CATEGORIZATION_PREF) {
+      if (lazy.serpEventTelemetryCategorization) {
+        this.#setupClientAndMap();
+      } else {
+        this.#cancelAndNullifyTimer();
+        this.#clearClientAndMap();
+      }
     }
   }
 
@@ -1720,8 +1873,8 @@ class DomainToCategoriesMap {
   }
 
   /**
-   * Test-only function, used to override the domainToCategoriesMap so that
-   * unit tests can set it to easy to test values.
+   * Unit test-only function, used to override the domainToCategoriesMap so
+   * that tests can set it to easy to test values.
    *
    * @param {object} domainToCategoriesMap
    *   An object where the key is a hashed domain and the value is an array
@@ -1729,6 +1882,36 @@ class DomainToCategoriesMap {
    */
   overrideMapForTests(domainToCategoriesMap) {
     this.#map = domainToCategoriesMap;
+  }
+
+  async #setupClientAndMap() {
+    if (this.#client && !this.empty) {
+      return;
+    }
+    lazy.logConsole.debug("Initializing domain-to-categories map.");
+    this.#client = lazy.RemoteSettings(TELEMETRY_CATEGORIZATION_KEY);
+
+    this.#onSettingsSync = event => this.#sync(event.data);
+    this.#client.on("sync", this.#onSettingsSync);
+
+    let records = await this.#client.get();
+    await this.#clearAndPopulateMap(records);
+  }
+
+  #clearClientAndMap() {
+    if (this.#client) {
+      lazy.logConsole.debug("Removing Remote Settings client.");
+      this.#client.off("sync", this.#onSettingsSync);
+      this.#client = null;
+      this.#onSettingsSync = null;
+      this.#downloadRetries = 0;
+    }
+
+    if (this.#map) {
+      lazy.logConsole.debug("Clearing domain-to-categories map.");
+      this.#map = null;
+      this.#version = null;
+    }
   }
 
   /**
@@ -1770,6 +1953,11 @@ class DomainToCategoriesMap {
       toDelete.map(record => this.#client.attachments.deleteDownloaded(record))
     );
 
+    // In case a user encountered network failures in the past and kept their
+    // session on, this will ensure the next sync event will retry downloading
+    // again in case there's a new download error.
+    this.#downloadRetries = 0;
+
     this.#clearAndPopulateMap(data?.current);
   }
 
@@ -1789,16 +1977,10 @@ class DomainToCategoriesMap {
     // object will be created.
     this.#map = null;
     this.#version = null;
+    this.#cancelAndNullifyTimer();
 
     if (!records?.length) {
       lazy.logConsole.debug("No records found for domain-to-categories map.");
-      return;
-    }
-
-    if (!records.length) {
-      lazy.logConsole.error(
-        "No valid attachments available for domain-to-categories map."
-      );
       return;
     }
 
@@ -1810,6 +1992,7 @@ class DomainToCategoriesMap {
         result = await this.#client.attachments.download(record);
       } catch (ex) {
         lazy.logConsole.error("Could not download file:", ex);
+        this.#createTimerToPopulateMap();
         return;
       }
       fileContents.push(result.buffer);
@@ -1857,6 +2040,48 @@ class DomainToCategoriesMap {
       });
     }
   }
+
+  #cancelAndNullifyTimer() {
+    if (this.#downloadTimer) {
+      lazy.logConsole.debug("Cancel and nullify download timer.");
+      this.#downloadTimer.cancel();
+      this.#downloadTimer = null;
+    }
+  }
+
+  #createTimerToPopulateMap() {
+    if (
+      this.#downloadRetries >=
+      TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS.maxTriesPerSession
+    ) {
+      return;
+    }
+    if (!this.#downloadTimer) {
+      this.#downloadTimer = Cc["@mozilla.org/timer;1"].createInstance(
+        Ci.nsITimer
+      );
+    }
+    lazy.logConsole.debug("Create timer to retry downloading attachments.");
+    let delay =
+      TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS.base +
+      randomInteger(
+        TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS.minAdjust,
+        TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS.maxAdjust
+      );
+    this.#downloadTimer.initWithCallback(
+      async () => {
+        this.#downloadRetries += 1;
+        let records = await this.#client.get();
+        this.#clearAndPopulateMap(records);
+      },
+      delay,
+      Ci.nsITimer.TYPE_ONE_SHOT
+    );
+  }
+}
+
+function randomInteger(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 export var SearchSERPDomainToCategoriesMap = new DomainToCategoriesMap();

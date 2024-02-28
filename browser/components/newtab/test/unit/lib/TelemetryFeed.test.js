@@ -318,6 +318,41 @@ describe("TelemetryFeed", () => {
           "mozilla",
         ]);
       });
+      it("should record pref_changed events for topsites pref changes", () => {
+        FAKE_GLOBAL_PREFS.set(
+          "browser.newtabpage.activity-stream.feeds.topsites",
+          false
+        );
+        FAKE_GLOBAL_PREFS.set(
+          "browser.newtabpage.activity-stream.showSponsoredTopSites",
+          true
+        );
+        sandbox.spy(Glean.topsites.enabled, "set");
+        sandbox.spy(Glean.topsites.sponsoredEnabled, "set");
+        sandbox.spy(Glean.topsites.prefChanged, "record");
+
+        instance = new TelemetryFeed();
+        instance.init();
+
+        Services.prefs.setBoolPref(
+          "browser.newtabpage.activity-stream.feeds.topsites",
+          true
+        );
+        Services.prefs.setBoolPref(
+          "browser.newtabpage.activity-stream.showSponsoredTopSites",
+          false
+        );
+
+        assert.calledTwice(Glean.topsites.prefChanged.record);
+        assert.deepEqual(Glean.topsites.prefChanged.record.firstCall.args[0], {
+          pref_name: "browser.newtabpage.activity-stream.feeds.topsites",
+          new_value: true,
+        });
+        assert.deepEqual(Glean.topsites.prefChanged.record.secondCall.args[0], {
+          pref_name: "browser.newtabpage.activity-stream.showSponsoredTopSites",
+          new_value: false,
+        });
+      });
       it("should ignore changes to other prefs", () => {
         FAKE_GLOBAL_PREFS.set("some.other.pref", 123);
         FAKE_GLOBAL_PREFS.set(
@@ -1607,6 +1642,7 @@ describe("TelemetryFeed", () => {
       const sendEvent = sandbox.stub(instance, "sendEvent");
       const utSendUserEvent = sandbox.stub(instance.utEvents, "sendUserEvent");
       const eventCreator = sandbox.stub(instance, "createUserEvent");
+
       const action = { type: at.TELEMETRY_USER_EVENT };
 
       instance.onAction(action);
@@ -1723,6 +1759,24 @@ describe("TelemetryFeed", () => {
         instance.handleTopSitesSponsoredImpressionStats.firstCall.args[0].data,
         data
       );
+    });
+    it("should call .handleAboutSponsoredTopSites on a ABOUT_SPONSORED_TOP_SITES action", () => {
+      const data = { position: 0, advertiser_name: "moo", tile_id: 42 };
+      const action = { type: at.ABOUT_SPONSORED_TOP_SITES, data };
+      sandbox.spy(instance, "handleAboutSponsoredTopSites");
+
+      instance.onAction(ac.AlsoToMain(action));
+
+      assert.calledOnce(instance.handleAboutSponsoredTopSites);
+    });
+    it("should call #handleBlockUrl on a BLOCK_URL action", () => {
+      const data = { position: 0, advertiser_name: "moo", tile_id: 42 };
+      const action = { type: at.BLOCK_URL, data };
+      sandbox.spy(instance, "handleBlockUrl");
+
+      instance.onAction(ac.AlsoToMain(action));
+
+      assert.calledOnce(instance.handleBlockUrl);
     });
   });
   it("should call .handleTopSitesOrganicImpressionStats on a TOP_SITES_ORGANIC_IMPRESSION_STATS action", () => {
@@ -2031,14 +2085,28 @@ describe("TelemetryFeed", () => {
       const session_id = "1337cafe";
       const pos1 = 1;
       const pos2 = 4;
+      const shim = "Y29uc2lkZXIgeW91ciBjdXJpb3NpdHkgcmV3YXJkZWQ=";
       sandbox.stub(instance.sessions, "get").returns({ session_id });
       sandbox.spy(Glean.pocket.impression, "record");
+      sandbox.spy(Glean.pocket.shim, "set");
+      sandbox.spy(GleanPings.spoc, "submit");
 
       instance.handleDiscoveryStreamImpressionStats("_", {
         source: "foo",
         tiles: [
-          { id: 1, pos: pos1, type: "organic" },
-          { id: 2, pos: pos2, type: "spoc" },
+          {
+            id: 1,
+            pos: pos1,
+            type: "organic",
+            recommendation_id: "decaf-c0ff33",
+          },
+          {
+            id: 2,
+            pos: pos2,
+            type: "spoc",
+            recommendation_id: undefined,
+            shim,
+          },
         ],
         window_inner_width: 1000,
         window_inner_height: 900,
@@ -2049,12 +2117,20 @@ describe("TelemetryFeed", () => {
         newtab_visit_id: session_id,
         is_sponsored: false,
         position: pos1,
+        recommendation_id: "decaf-c0ff33",
+        tile_id: 1,
       });
       assert.deepEqual(Glean.pocket.impression.record.secondCall.args[0], {
         newtab_visit_id: session_id,
         is_sponsored: true,
         position: pos2,
+        recommendation_id: undefined,
+        tile_id: 2,
       });
+      assert.calledOnce(Glean.pocket.shim.set);
+      assert.calledWith(Glean.pocket.shim.set, shim);
+      assert.calledOnce(GleanPings.spoc.submit);
+      assert.calledWith(GleanPings.spoc.submit, "impression");
     });
   });
   describe("#handleDiscoveryStreamLoadedContent", () => {
@@ -2286,7 +2362,7 @@ describe("TelemetryFeed", () => {
       assert.calledOnce(Glean.topsites.impression.record);
       assert.calledWith(Glean.topsites.impression.record, {
         advertiser_name: "adnoid ads",
-        tile_id: "42",
+        tile_id: data.tile_id,
         newtab_visit_id: session_id,
         is_sponsored: true,
         position: 1,
@@ -2312,7 +2388,7 @@ describe("TelemetryFeed", () => {
       assert.calledOnce(Glean.topsites.click.record);
       assert.calledWith(Glean.topsites.click.record, {
         advertiser_name: "test advertiser",
-        tile_id: "42",
+        tile_id: data.tile_id,
         newtab_visit_id: session_id,
         is_sponsored: true,
         position: 0,
@@ -2497,12 +2573,16 @@ describe("TelemetryFeed", () => {
         action_position,
         value: {
           card_type: "organic",
+          recommendation_id: "decaf-c0ff33",
+          tile_id: 314623757745896,
         },
       });
       instance = new TelemetryFeed();
       const session_id = "c0ffee";
       sandbox.stub(instance.sessions, "get").returns({ session_id });
       sandbox.spy(Glean.pocket.click, "record");
+      sandbox.spy(Glean.pocket.shim, "set");
+      sandbox.spy(GleanPings.spoc, "submit");
 
       instance.handleDiscoveryStreamUserEvent(action);
 
@@ -2511,21 +2591,31 @@ describe("TelemetryFeed", () => {
         newtab_visit_id: session_id,
         is_sponsored: false,
         position: action_position,
+        recommendation_id: "decaf-c0ff33",
+        tile_id: 314623757745896,
       });
+      assert.notCalled(Glean.pocket.shim.set);
+      assert.notCalled(GleanPings.spoc.submit);
     });
     it("instruments a sponsored top stories click", () => {
       const action_position = 42;
+      const shim = "Y29uc2lkZXIgeW91ciBjdXJpb3NpdHkgcmV3YXJkZWQ=";
       const action = ac.DiscoveryStreamUserEvent({
         event: "CLICK",
         action_position,
         value: {
           card_type: "spoc",
+          recommendation_id: undefined,
+          tile_id: 448685088,
+          shim,
         },
       });
       instance = new TelemetryFeed();
       const session_id = "c0ffee";
       sandbox.stub(instance.sessions, "get").returns({ session_id });
       sandbox.spy(Glean.pocket.click, "record");
+      sandbox.spy(Glean.pocket.shim, "set");
+      sandbox.spy(GleanPings.spoc, "submit");
 
       instance.handleDiscoveryStreamUserEvent(action);
 
@@ -2534,7 +2624,13 @@ describe("TelemetryFeed", () => {
         newtab_visit_id: session_id,
         is_sponsored: true,
         position: action_position,
+        recommendation_id: undefined,
+        tile_id: 448685088,
       });
+      assert.calledOnce(Glean.pocket.shim.set);
+      assert.calledWith(Glean.pocket.shim.set, shim);
+      assert.calledOnce(GleanPings.spoc.submit);
+      assert.calledWith(GleanPings.spoc.submit, "click");
     });
     it("instruments a save of an organic top story", () => {
       const action_position = 42;
@@ -2543,12 +2639,16 @@ describe("TelemetryFeed", () => {
         action_position,
         value: {
           card_type: "organic",
+          recommendation_id: "decaf-c0ff33",
+          tile_id: 314623757745896,
         },
       });
       instance = new TelemetryFeed();
       const session_id = "c0ffee";
       sandbox.stub(instance.sessions, "get").returns({ session_id });
       sandbox.spy(Glean.pocket.save, "record");
+      sandbox.spy(Glean.pocket.shim, "set");
+      sandbox.spy(GleanPings.spoc, "submit");
 
       instance.handleDiscoveryStreamUserEvent(action);
 
@@ -2557,21 +2657,31 @@ describe("TelemetryFeed", () => {
         newtab_visit_id: session_id,
         is_sponsored: false,
         position: action_position,
+        recommendation_id: "decaf-c0ff33",
+        tile_id: 314623757745896,
       });
+      assert.notCalled(Glean.pocket.shim.set);
+      assert.notCalled(GleanPings.spoc.submit);
     });
     it("instruments a save of a sponsored top story", () => {
       const action_position = 42;
+      const shim = "Y29uc2lkZXIgeW91ciBjdXJpb3NpdHkgcmV3YXJkZWQ=";
       const action = ac.DiscoveryStreamUserEvent({
         event: "SAVE_TO_POCKET",
         action_position,
         value: {
           card_type: "spoc",
+          recommendation_id: undefined,
+          tile_id: 448685088,
+          shim,
         },
       });
       instance = new TelemetryFeed();
       const session_id = "c0ffee";
       sandbox.stub(instance.sessions, "get").returns({ session_id });
       sandbox.spy(Glean.pocket.save, "record");
+      sandbox.spy(Glean.pocket.shim, "set");
+      sandbox.spy(GleanPings.spoc, "submit");
 
       instance.handleDiscoveryStreamUserEvent(action);
 
@@ -2580,7 +2690,13 @@ describe("TelemetryFeed", () => {
         newtab_visit_id: session_id,
         is_sponsored: true,
         position: action_position,
+        recommendation_id: undefined,
+        tile_id: 448685088,
       });
+      assert.calledOnce(Glean.pocket.shim.set);
+      assert.calledWith(Glean.pocket.shim.set, shim);
+      assert.calledOnce(GleanPings.spoc.submit);
+      assert.calledWith(GleanPings.spoc.submit, "save");
     });
     it("instruments a save of a sponsored top story, without `value`", () => {
       const action_position = 42;
@@ -2592,6 +2708,8 @@ describe("TelemetryFeed", () => {
       const session_id = "c0ffee";
       sandbox.stub(instance.sessions, "get").returns({ session_id });
       sandbox.spy(Glean.pocket.save, "record");
+      sandbox.spy(Glean.pocket.shim, "set");
+      sandbox.spy(GleanPings.spoc, "submit");
 
       instance.handleDiscoveryStreamUserEvent(action);
 
@@ -2600,7 +2718,128 @@ describe("TelemetryFeed", () => {
         newtab_visit_id: session_id,
         is_sponsored: false,
         position: action_position,
+        recommendation_id: undefined,
+        tile_id: undefined,
       });
+      assert.notCalled(Glean.pocket.shim.set);
+      assert.notCalled(GleanPings.spoc.submit);
+    });
+  });
+  describe("#handleAboutSponsoredTopSites", () => {
+    it("should record a Glean topsites.showPrivacyClick event on action", async () => {
+      const data = {
+        position: 42,
+        advertiser_name: "mozilla",
+        tile_id: 4567,
+      };
+      instance = new TelemetryFeed();
+      const session_id = "decafc0ffee";
+      sandbox.stub(instance.sessions, "get").returns({ session_id });
+      sandbox.spy(Glean.topsites.showPrivacyClick, "record");
+
+      await instance.handleAboutSponsoredTopSites({ data });
+
+      assert.calledOnce(Glean.topsites.showPrivacyClick.record);
+      assert.calledWith(Glean.topsites.showPrivacyClick.record, {
+        advertiser_name: data.advertiser_name,
+        tile_id: data.tile_id,
+        newtab_visit_id: session_id,
+        position: data.position,
+      });
+    });
+    it("should not record a Glean topsites.showPrivacyClick event if there's no session", async () => {
+      const data = {
+        position: 42,
+        advertiser_name: "mozilla",
+        tile_id: 4567,
+      };
+      instance = new TelemetryFeed();
+      sandbox.stub(instance.sessions, "get").returns(null);
+      sandbox.spy(Glean.topsites.showPrivacyClick, "record");
+
+      await instance.handleAboutSponsoredTopSites({ data });
+
+      assert.notCalled(Glean.topsites.showPrivacyClick.record);
+    });
+  });
+  describe("#handleBlockUrl", () => {
+    it("shouldn't record events for pocket cards' dismisses", async () => {
+      const data = [
+        {
+          // Shouldn't record anything for this one
+          is_pocket_card: true,
+          position: 43,
+          tile_id: undefined,
+        },
+      ];
+      instance = new TelemetryFeed();
+      const session_id = "decafc0ffee";
+      sandbox.stub(instance.sessions, "get").returns({ session_id });
+      sandbox.spy(Glean.topsites.dismiss, "record");
+
+      await instance.handleBlockUrl({ data });
+
+      assert.notCalled(Glean.topsites.dismiss.record);
+    });
+    it("should record a Glean topsites.dismiss event on action", async () => {
+      const data = [
+        {
+          is_pocket_card: false,
+          position: 42,
+          advertiser_name: "mozilla",
+          tile_id: 4567,
+          isSponsoredTopSite: 1, // for some reason this is an int.
+        },
+      ];
+      instance = new TelemetryFeed();
+      const session_id = "decafc0ffee";
+      sandbox.stub(instance.sessions, "get").returns({ session_id });
+      sandbox.spy(Glean.topsites.dismiss, "record");
+
+      await instance.handleBlockUrl({ data });
+
+      assert.calledOnce(Glean.topsites.dismiss.record);
+      assert.calledWith(Glean.topsites.dismiss.record, {
+        advertiser_name: data[0].advertiser_name,
+        tile_id: data[0].tile_id,
+        newtab_visit_id: session_id,
+        is_sponsored: !!data[0].isSponsoredTopSite,
+        position: data[0].position,
+      });
+    });
+    it("should record a Glean topsites.dismiss event on action on non-sponsored topsite", async () => {
+      const data = [
+        {
+          is_pocket_card: false,
+          position: 42,
+          tile_id: undefined,
+        },
+      ];
+      instance = new TelemetryFeed();
+      const session_id = "decafc0ffee";
+      sandbox.stub(instance.sessions, "get").returns({ session_id });
+      sandbox.spy(Glean.topsites.dismiss, "record");
+
+      await instance.handleBlockUrl({ data });
+
+      assert.calledOnce(Glean.topsites.dismiss.record);
+      assert.calledWith(Glean.topsites.dismiss.record, {
+        advertiser_name: undefined,
+        tile_id: undefined,
+        newtab_visit_id: session_id,
+        is_sponsored: false,
+        position: data[0].position,
+      });
+    });
+    it("should not record a Glean topsites.dismiss event if there's no session", async () => {
+      const data = {};
+      instance = new TelemetryFeed();
+      sandbox.stub(instance.sessions, "get").returns(null);
+      sandbox.spy(Glean.topsites.dismiss, "record");
+
+      await instance.handleBlockUrl({ data });
+
+      assert.notCalled(Glean.topsites.dismiss.record);
     });
   });
 });

@@ -13,8 +13,8 @@
 edition = "2021"
 rust-version = "1.65"
 name = "naga"
-version = "0.13.0"
-authors = ["Naga Developers"]
+version = "0.14.0"
+authors = ["gfx-rs developers"]
 exclude = [
     "bin/**/*",
     "tests/**/*",
@@ -22,7 +22,6 @@ exclude = [
     "target/**/*",
 ]
 description = "Shader translation infrastructure"
-homepage = "https://github.com/gfx-rs/naga"
 readme = "README.md"
 keywords = [
     "shader",
@@ -31,17 +30,11 @@ keywords = [
     "MSL",
 ]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/gfx-rs/naga"
+repository = "https://github.com/gfx-rs/wgpu/tree/trunk/naga"
 resolver = "2"
 
 [package.metadata.docs.rs]
 all-features = true
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
 
 [[bench]]
 name = "criterion"
@@ -81,7 +74,7 @@ version = "0.2.1"
 optional = true
 
 [dependencies.serde]
-version = "1.0.103"
+version = "1.0.192"
 features = ["derive"]
 optional = true
 
@@ -90,7 +83,7 @@ version = "0.2"
 optional = true
 
 [dependencies.termcolor]
-version = "1.0.4"
+version = "1.4.0"
 optional = true
 
 [dependencies.unicode-xid]
@@ -103,11 +96,8 @@ diff = "0.1"
 env_logger = "0.10"
 ron = "0.8.0"
 
-[dev-dependencies.criterion]
-version = "0.5"
-features = []
-
 [dev-dependencies.hlsl-snapshots]
+version = "0.1.0"
 path = "./hlsl-snapshots"
 
 [dev-dependencies.rspirv]
@@ -130,6 +120,7 @@ arbitrary = [
     "indexmap/arbitrary",
 ]
 clone = []
+compact = []
 default = []
 deserialize = [
     "serde",
@@ -164,12 +155,6 @@ wgsl-in = [
 ]
 wgsl-out = []
 
-[workspace]
-members = [
-    ".",
-    "cli",
-]
-default-members = [
-    ".",
-    "cli",
-]
+[target."cfg(not(target_arch = \"wasm32\"))".dev-dependencies.criterion]
+version = "0.5"
+features = []

@@ -311,24 +311,6 @@ bool VideoData::SetVideoDataToImage(PlanarYCbCrImage* aVideoImage,
 }
 
 /* static */
-bool VideoData::UseUseNV12ForSoftwareDecodedVideoIfPossible(
-    layers::KnowsCompositor* aAllocator) {
-#if XP_WIN
-  if (!aAllocator) {
-    return false;
-  }
-
-  if (StaticPrefs::gfx_video_convert_i420_to_nv12_force_enabled_AtStartup() ||
-      (gfx::DeviceManagerDx::Get()->CanUseNV12() &&
-       gfx::gfxVars::UseWebRenderDCompVideoSwOverlayWin() &&
-       aAllocator->GetCompositorUseDComp())) {
-    return true;
-  }
-#endif
-  return false;
-}
-
-/* static */
 already_AddRefed<VideoData> VideoData::CreateAndCopyData(
     const VideoInfo& aInfo, ImageContainer* aContainer, int64_t aOffset,
     const TimeUnit& aTime, const TimeUnit& aDuration,
@@ -353,38 +335,7 @@ already_AddRefed<VideoData> VideoData::CreateAndCopyData(
 
   // Currently our decoder only knows how to output to ImageFormat::PLANAR_YCBCR
   // format.
-#if XP_WIN
-  // Copy to NV12 format D3D11ShareHandleImage when video overlay could be used
-  // with the video frame
-  if (UseUseNV12ForSoftwareDecodedVideoIfPossible(aAllocator)) {
-    PlanarYCbCrData data = ConstructPlanarYCbCrData(aInfo, aBuffer, aPicture);
-    RefPtr<layers::D3D11ShareHandleImage> d3d11Image =
-        layers::D3D11ShareHandleImage::MaybeCreateNV12ImageAndSetData(
-            aAllocator, aContainer, data);
-    if (d3d11Image) {
-      v->mImage = d3d11Image;
-      perfRecorder.Record();
-      return v.forget();
-    }
-  }
-
-  // D3D11YCbCrImage can only handle YCbCr images using 3 non-interleaved planes
-  // non-zero mSkip value indicates that one of the plane would be interleaved.
-  if (!XRE_IsParentProcess() && aAllocator && aAllocator->SupportsD3D11() &&
-      aBuffer.mPlanes[0].mSkip == 0 && aBuffer.mPlanes[1].mSkip == 0 &&
-      aBuffer.mPlanes[2].mSkip == 0) {
-    RefPtr<layers::D3D11YCbCrImage> d3d11Image = new layers::D3D11YCbCrImage();
-    PlanarYCbCrData data = ConstructPlanarYCbCrData(aInfo, aBuffer, aPicture);
-    if (d3d11Image->SetData(layers::ImageBridgeChild::GetSingleton()
-                                ? layers::ImageBridgeChild::GetSingleton().get()
-                                : aAllocator,
-                            aContainer, data)) {
-      v->mImage = d3d11Image;
-      perfRecorder.Record();
-      return v.forget();
-    }
-  }
-#elif XP_MACOSX
+#if XP_MACOSX
   if (aAllocator && aAllocator->GetWebRenderCompositorType() !=
                         layers::WebRenderCompositor::SOFTWARE) {
     RefPtr<layers::MacIOSurfaceImage> ioImage =
@@ -591,6 +542,20 @@ size_t MediaRawDataWriter::Size() { return mTarget->Size(); }
 
 void MediaRawDataWriter::PopFront(size_t aSize) {
   mTarget->mBuffer.PopFront(aSize);
+}
+
+const char* CryptoSchemeToString(const CryptoScheme& aScheme) {
+  switch (aScheme) {
+    case CryptoScheme::None:
+      return "None";
+    case CryptoScheme::Cenc:
+      return "Cenc";
+    case CryptoScheme::Cbcs:
+      return "Cbcs";
+    default:
+      MOZ_ASSERT_UNREACHABLE();
+      return "";
+  }
 }
 
 }  // namespace mozilla

@@ -32,6 +32,7 @@
 #include "mozilla/TouchEvents.h"
 #include "mozilla/URLExtraData.h"
 #include "mozilla/dom/Attr.h"
+#include "mozilla/dom/RadioGroupContainer.h"
 #include "nsDOMAttributeMap.h"
 #include "nsAtom.h"
 #include "mozilla/dom/NodeInfo.h"
@@ -150,12 +151,13 @@ NS_INTERFACE_MAP_BEGIN(nsIContent)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_ADDREF(nsIContent)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(nsIContent)
 
 NS_IMPL_DOMARENA_DESTROY(nsIContent)
 
-NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE_AND_DESTROY(
-    nsIContent, LastRelease(), Destroy())
+NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE_AND_DESTROY(nsIContent,
+                                                               LastRelease(),
+                                                               Destroy())
 
 nsIContent* nsIContent::FindFirstNonChromeOnlyAccessContent() const {
   // This handles also nested native anonymous content.
@@ -560,8 +562,7 @@ size_t nsIContent::nsExtendedContentSlots::SizeOfExcludingThis(
   return 0;
 }
 
-FragmentOrElement::nsDOMSlots::nsDOMSlots()
-    : nsIContent::nsContentSlots(), mDataset(nullptr) {
+FragmentOrElement::nsDOMSlots::nsDOMSlots() : mDataset(nullptr) {
   MOZ_COUNT_CTOR(nsDOMSlots);
 }
 
@@ -661,6 +662,7 @@ void FragmentOrElement::nsExtendedDOMSlots::UnlinkExtendedSlots(
     aContent.ClearMayHaveAnimations();
   }
   mExplicitlySetAttrElements.Clear();
+  mRadioGroupContainer = nullptr;
 }
 
 void FragmentOrElement::nsExtendedDOMSlots::TraverseExtendedSlots(
@@ -684,6 +686,9 @@ void FragmentOrElement::nsExtendedDOMSlots::TraverseExtendedSlots(
   }
   if (mAnimations) {
     mAnimations->Traverse(aCb);
+  }
+  if (mRadioGroupContainer) {
+    RadioGroupContainer::Traverse(mRadioGroupContainer.get(), aCb);
   }
 }
 
@@ -717,6 +722,10 @@ size_t FragmentOrElement::nsExtendedDOMSlots::SizeOfExcludingThis(
 
   if (mCustomElementData) {
     n += mCustomElementData->SizeOfIncludingThis(aMallocSizeOf);
+  }
+
+  if (mRadioGroupContainer) {
+    n += mRadioGroupContainer->SizeOfIncludingThis(aMallocSizeOf);
   }
 
   return n;
@@ -1031,8 +1040,22 @@ bool nsIContent::IsFocusable(int32_t* aTabIndex, bool aWithMouse) {
   return false;
 }
 
-Element* nsIContent::GetFocusDelegate(bool aWithMouse,
-                                      bool aAutofocusOnly) const {
+Element* nsIContent::GetAutofocusDelegate(bool aWithMouse) const {
+  for (nsINode* node = GetFirstChild(); node; node = node->GetNextNode(this)) {
+    auto* descendant = Element::FromNode(*node);
+    if (!descendant || !descendant->GetBoolAttr(nsGkAtoms::autofocus)) {
+      continue;
+    }
+
+    nsIFrame* frame = descendant->GetPrimaryFrame();
+    if (frame && frame->IsFocusable(aWithMouse)) {
+      return descendant;
+    }
+  }
+  return nullptr;
+}
+
+Element* nsIContent::GetFocusDelegate(bool aWithMouse) const {
   const nsIContent* whereToLook = this;
   if (ShadowRoot* root = GetShadowRoot()) {
     if (!root->DelegatesFocus()) {
@@ -1063,9 +1086,6 @@ Element* nsIContent::GetFocusDelegate(bool aWithMouse,
 
     const bool autofocus = el->GetBoolAttr(nsGkAtoms::autofocus);
 
-    if (aAutofocusOnly && !autofocus) {
-      continue;
-    }
     if (autofocus) {
       if (IsFocusable(el)) {
         // Found an autofocus candidate.

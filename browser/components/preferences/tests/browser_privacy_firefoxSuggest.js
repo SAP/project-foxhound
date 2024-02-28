@@ -18,14 +18,12 @@ ChromeUtils.defineLazyGetter(this, "QuickSuggestTestUtils", () => {
 });
 
 const CONTAINER_ID = "firefoxSuggestContainer";
-const NONSPONSORED_TOGGLE_ID = "firefoxSuggestNonsponsoredToggle";
-const SPONSORED_TOGGLE_ID = "firefoxSuggestSponsoredToggle";
+const NONSPONSORED_CHECKBOX_ID = "firefoxSuggestNonsponsored";
+const SPONSORED_CHECKBOX_ID = "firefoxSuggestSponsored";
 const DATA_COLLECTION_TOGGLE_ID = "firefoxSuggestDataCollectionToggle";
 const INFO_BOX_ID = "firefoxSuggestInfoBox";
 const INFO_TEXT_ID = "firefoxSuggestInfoText";
 const LEARN_MORE_CLASS = "firefoxSuggestLearnMore";
-const BEST_MATCH_CONTAINER_ID = "firefoxSuggestBestMatchContainer";
-const BEST_MATCH_CHECKBOX_ID = "firefoxSuggestBestMatch";
 const BUTTON_RESTORE_DISMISSED_ID = "restoreDismissedSuggestions";
 const PREF_URLBAR_QUICKSUGGEST_BLOCKLIST =
   "browser.urlbar.quicksuggest.blockedDigests";
@@ -198,8 +196,8 @@ async function doVisibilityTest({
   await QuickSuggestTestUtils.setScenario(null);
 }
 
-// Verifies all 8 states of the 3 toggles and their related info box states.
-add_task(async function togglesAndInfoBox() {
+// Verifies all 8 states of the 3 checkboxes and their related info box states.
+add_task(async function checkboxesAndInfoBox() {
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
 
   // suggest.quicksuggest.nonsponsored = true
@@ -213,8 +211,8 @@ add_task(async function togglesAndInfoBox() {
     ],
   });
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: true,
-    [SPONSORED_TOGGLE_ID]: true,
+    [NONSPONSORED_CHECKBOX_ID]: true,
+    [SPONSORED_CHECKBOX_ID]: true,
     [DATA_COLLECTION_TOGGLE_ID]: true,
   });
   await assertInfoBox("addressbar-firefox-suggest-info-all");
@@ -231,8 +229,8 @@ add_task(async function togglesAndInfoBox() {
     ],
   });
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: true,
-    [SPONSORED_TOGGLE_ID]: true,
+    [NONSPONSORED_CHECKBOX_ID]: true,
+    [SPONSORED_CHECKBOX_ID]: true,
     [DATA_COLLECTION_TOGGLE_ID]: false,
   });
   await assertInfoBox("addressbar-firefox-suggest-info-nonsponsored-sponsored");
@@ -249,8 +247,8 @@ add_task(async function togglesAndInfoBox() {
     ],
   });
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: true,
-    [SPONSORED_TOGGLE_ID]: false,
+    [NONSPONSORED_CHECKBOX_ID]: true,
+    [SPONSORED_CHECKBOX_ID]: false,
     [DATA_COLLECTION_TOGGLE_ID]: true,
   });
   await assertInfoBox("addressbar-firefox-suggest-info-nonsponsored-data");
@@ -267,8 +265,8 @@ add_task(async function togglesAndInfoBox() {
     ],
   });
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: true,
-    [SPONSORED_TOGGLE_ID]: false,
+    [NONSPONSORED_CHECKBOX_ID]: true,
+    [SPONSORED_CHECKBOX_ID]: false,
     [DATA_COLLECTION_TOGGLE_ID]: false,
   });
   await assertInfoBox("addressbar-firefox-suggest-info-nonsponsored");
@@ -285,8 +283,8 @@ add_task(async function togglesAndInfoBox() {
     ],
   });
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: false,
-    [SPONSORED_TOGGLE_ID]: true,
+    [NONSPONSORED_CHECKBOX_ID]: false,
+    [SPONSORED_CHECKBOX_ID]: true,
     [DATA_COLLECTION_TOGGLE_ID]: true,
   });
   await assertInfoBox("addressbar-firefox-suggest-info-sponsored-data");
@@ -303,8 +301,8 @@ add_task(async function togglesAndInfoBox() {
     ],
   });
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: false,
-    [SPONSORED_TOGGLE_ID]: true,
+    [NONSPONSORED_CHECKBOX_ID]: false,
+    [SPONSORED_CHECKBOX_ID]: true,
     [DATA_COLLECTION_TOGGLE_ID]: false,
   });
   await assertInfoBox("addressbar-firefox-suggest-info-sponsored");
@@ -321,8 +319,8 @@ add_task(async function togglesAndInfoBox() {
     ],
   });
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: false,
-    [SPONSORED_TOGGLE_ID]: false,
+    [NONSPONSORED_CHECKBOX_ID]: false,
+    [SPONSORED_CHECKBOX_ID]: false,
     [DATA_COLLECTION_TOGGLE_ID]: true,
   });
   await assertInfoBox("addressbar-firefox-suggest-info-data");
@@ -339,8 +337,8 @@ add_task(async function togglesAndInfoBox() {
     ],
   });
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: false,
-    [SPONSORED_TOGGLE_ID]: false,
+    [NONSPONSORED_CHECKBOX_ID]: false,
+    [SPONSORED_CHECKBOX_ID]: false,
     [DATA_COLLECTION_TOGGLE_ID]: false,
   });
   await assertInfoBox(null);
@@ -349,20 +347,24 @@ add_task(async function togglesAndInfoBox() {
   gBrowser.removeCurrentTab();
 });
 
-// Clicks each of the toggles and makes sure the prefs and info box are updated.
-add_task(async function clickToggles() {
+// Clicks each of the checkboxes and toggles and makes sure the prefs and info box are updated.
+add_task(async function clickCheckboxesOrToggle() {
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
 
   let doc = gBrowser.selectedBrowser.contentDocument;
   let addressBarSection = doc.getElementById("locationBarGroup");
   addressBarSection.scrollIntoView();
 
-  async function clickToggle(id) {
-    let toggle = doc.getElementById(id);
-    let changed = BrowserTestUtils.waitForEvent(toggle, "toggle");
-    let button = toggle.buttonEl;
-    await EventUtils.synthesizeMouseAtCenter(
-      button,
+  async function clickElement(id, eventName) {
+    let element = doc.getElementById(id);
+    let changed = BrowserTestUtils.waitForEvent(element, eventName);
+
+    if (eventName == "toggle") {
+      element = element.buttonEl;
+    }
+
+    EventUtils.synthesizeMouseAtCenter(
+      element,
       {},
       gBrowser.selectedBrowser.contentWindow
     );
@@ -378,55 +380,55 @@ add_task(async function clickToggles() {
     ],
   });
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: true,
-    [SPONSORED_TOGGLE_ID]: true,
+    [NONSPONSORED_CHECKBOX_ID]: true,
+    [SPONSORED_CHECKBOX_ID]: true,
     [DATA_COLLECTION_TOGGLE_ID]: true,
   });
   await assertInfoBox("addressbar-firefox-suggest-info-all");
 
-  // non-sponsored toggle
-  await clickToggle(NONSPONSORED_TOGGLE_ID);
+  // non-sponsored checkbox
+  await clickElement(NONSPONSORED_CHECKBOX_ID, "command");
   Assert.ok(
     !Services.prefs.getBoolPref(
       "browser.urlbar.suggest.quicksuggest.nonsponsored"
     ),
-    "suggest.quicksuggest.nonsponsored is false after clicking non-sponsored toggle"
+    "suggest.quicksuggest.nonsponsored is false after clicking non-sponsored checkbox"
   );
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: false,
-    [SPONSORED_TOGGLE_ID]: true,
+    [NONSPONSORED_CHECKBOX_ID]: false,
+    [SPONSORED_CHECKBOX_ID]: true,
     [DATA_COLLECTION_TOGGLE_ID]: true,
   });
   await assertInfoBox("addressbar-firefox-suggest-info-sponsored-data");
 
-  // sponsored toggle
-  await clickToggle(SPONSORED_TOGGLE_ID);
+  // sponsored checkbox
+  await clickElement(SPONSORED_CHECKBOX_ID, "command");
   Assert.ok(
     !Services.prefs.getBoolPref(
       "browser.urlbar.suggest.quicksuggest.nonsponsored"
     ),
-    "suggest.quicksuggest.nonsponsored remains false after clicking sponsored toggle"
+    "suggest.quicksuggest.nonsponsored remains false after clicking sponsored checkbox"
   );
   Assert.ok(
     !Services.prefs.getBoolPref(
       "browser.urlbar.suggest.quicksuggest.sponsored"
     ),
-    "suggest.quicksuggest.sponsored is false after clicking sponsored toggle"
+    "suggest.quicksuggest.sponsored is false after clicking sponsored checkbox"
   );
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: false,
-    [SPONSORED_TOGGLE_ID]: false,
+    [NONSPONSORED_CHECKBOX_ID]: false,
+    [SPONSORED_CHECKBOX_ID]: false,
     [DATA_COLLECTION_TOGGLE_ID]: true,
   });
   await assertInfoBox("addressbar-firefox-suggest-info-data");
 
   // data collection toggle
-  await clickToggle(DATA_COLLECTION_TOGGLE_ID);
+  await clickElement(DATA_COLLECTION_TOGGLE_ID, "toggle");
   Assert.ok(
     !Services.prefs.getBoolPref(
       "browser.urlbar.suggest.quicksuggest.nonsponsored"
     ),
-    "suggest.quicksuggest.nonsponsored remains false after clicking sponsored toggle"
+    "suggest.quicksuggest.nonsponsored remains false after clicking sponsored checkbox"
   );
   Assert.ok(
     !Services.prefs.getBoolPref(
@@ -441,8 +443,8 @@ add_task(async function clickToggles() {
     "quicksuggest.dataCollection.enabled is false after clicking data collection toggle"
   );
   assertPrefUIState({
-    [NONSPONSORED_TOGGLE_ID]: false,
-    [SPONSORED_TOGGLE_ID]: false,
+    [NONSPONSORED_CHECKBOX_ID]: false,
+    [SPONSORED_CHECKBOX_ID]: false,
     [DATA_COLLECTION_TOGGLE_ID]: false,
   });
   await assertInfoBox(null);
@@ -505,25 +507,6 @@ add_task(async function clickLearnMore() {
   await SpecialPowers.popPrefEnv();
 });
 
-// Tests the visibility of the best match checkbox based on the values of
-// `browser.urlbar.quicksuggest.enabled` and `browser.urlbar.bestMatch.enabled`.
-add_task(async function bestMatchVisibility() {
-  for (let initialQuickSuggest of [false, true]) {
-    for (let initialBestMatch of [false, true]) {
-      for (let newQuickSuggest of [false, true]) {
-        for (let newBestMatch of [false, true]) {
-          await doBestMatchVisibilityTest({
-            initialQuickSuggest,
-            initialBestMatch,
-            newQuickSuggest,
-            newBestMatch,
-          });
-        }
-      }
-    }
-  }
-});
-
 // Tests the "Restore" button for dismissed suggestions.
 add_task(async function restoreDismissedSuggestions() {
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
@@ -579,236 +562,24 @@ add_task(async function restoreDismissedSuggestions() {
 });
 
 /**
- * Runs a test that checks the visibility of the Firefox Suggest best match
- * checkbox. It does the following:
- *
- * 1. Sets the quick suggest and best match feature prefs
- * 2. Opens about:preferences and checks the visibility of the checkbox
- * 3. Sets the quick suggest and best match feature prefs again
- * 4. Checks the visibility of the checkbox again
- *
- * @param {boolean} initialQuickSuggest
- *   The value to set for `browser.urlbar.quicksuggest.enabled` before
- *   about:preferences is opened.
- * @param {boolean} initialBestMatch
- *   The value to set for `browser.urlbar.bestMatch.enabled` before
- *   about:preferences is opened.
- * @param {boolean} newQuickSuggest
- *   The value to set for `browser.urlbar.quicksuggest.enabled` while
- *   about:preferences is open.
- * @param {boolean} newBestMatch
- *   The value to set for `browser.urlbar.bestMatch.enabled` while
- *   about:preferences is open.
- */
-async function doBestMatchVisibilityTest({
-  initialQuickSuggest,
-  initialBestMatch,
-  newQuickSuggest,
-  newBestMatch,
-}) {
-  info(
-    "Running best match visibility test: " +
-      JSON.stringify(
-        {
-          initialQuickSuggest,
-          initialBestMatch,
-          newQuickSuggest,
-          newBestMatch,
-        },
-        null,
-        2
-      )
-  );
-
-  // Set the initial pref values.
-  Services.prefs.setBoolPref(
-    "browser.urlbar.quicksuggest.enabled",
-    initialQuickSuggest
-  );
-  Services.prefs.setBoolPref(
-    "browser.urlbar.bestMatch.enabled",
-    initialBestMatch
-  );
-
-  // Open prefs and check the initial visibility.
-  await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
-  let doc = gBrowser.selectedBrowser.contentDocument;
-  let container = doc.getElementById(BEST_MATCH_CONTAINER_ID);
-  Assert.equal(
-    BrowserTestUtils.is_visible(container),
-    initialBestMatch,
-    "The checkbox container has the expected initial visibility"
-  );
-
-  // Set the new pref values.
-  Services.prefs.setBoolPref(
-    "browser.urlbar.quicksuggest.enabled",
-    newQuickSuggest
-  );
-  Services.prefs.setBoolPref("browser.urlbar.bestMatch.enabled", newBestMatch);
-
-  // Check visibility again.
-  Assert.equal(
-    BrowserTestUtils.is_visible(container),
-    newBestMatch,
-    "The checkbox container has the expected visibility after setting prefs"
-  );
-
-  // Clean up.
-  gBrowser.removeCurrentTab();
-  Services.prefs.clearUserPref("browser.urlbar.quicksuggest.enabled");
-  Services.prefs.clearUserPref("browser.urlbar.bestMatch.enabled");
-}
-
-// Tests the visibility of the best match checkbox when the best match feature
-// is enabled via a Nimbus experiment before about:preferences is opened.
-add_task(async function bestMatchVisibility_experiment_beforeOpen() {
-  await QuickSuggestTestUtils.withExperiment({
-    valueOverrides: {
-      bestMatchEnabled: true,
-    },
-    callback: async () => {
-      await openPreferencesViaOpenPreferencesAPI("privacy", {
-        leaveOpen: true,
-      });
-      let doc = gBrowser.selectedBrowser.contentDocument;
-      let container = doc.getElementById(BEST_MATCH_CONTAINER_ID);
-      Assert.ok(
-        BrowserTestUtils.is_visible(container),
-        "The checkbox container is visible"
-      );
-      gBrowser.removeCurrentTab();
-    },
-  });
-});
-
-// Tests the visibility of the best match checkbox when the best match feature
-// is enabled via a Nimbus experiment after about:preferences is opened.
-add_task(async function bestMatchVisibility_experiment_afterOpen() {
-  // Open prefs and check the initial visibility.
-  await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
-  let doc = gBrowser.selectedBrowser.contentDocument;
-  let container = doc.getElementById(BEST_MATCH_CONTAINER_ID);
-  Assert.ok(
-    BrowserTestUtils.is_hidden(container),
-    "The checkbox container is hidden initially"
-  );
-
-  // Install an experiment with best match enabled.
-  await QuickSuggestTestUtils.withExperiment({
-    valueOverrides: {
-      bestMatchEnabled: true,
-    },
-    callback: () => {
-      Assert.ok(
-        BrowserTestUtils.is_visible(container),
-        "The checkbox container is visible after installing the experiment"
-      );
-    },
-  });
-
-  Assert.ok(
-    BrowserTestUtils.is_hidden(container),
-    "The checkbox container is hidden again after the experiment is uninstalled"
-  );
-
-  gBrowser.removeCurrentTab();
-});
-
-// Check the pref and the checkbox for best match.
-add_task(async function bestMatchToggle() {
-  // Enable the feature so that the toggle appears.
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.bestMatch.enabled", true]],
-  });
-
-  await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
-  const doc = gBrowser.selectedBrowser.contentDocument;
-  const checkbox = doc.getElementById(BEST_MATCH_CHECKBOX_ID);
-  checkbox.scrollIntoView();
-
-  info("Check if the checkbox stauts reflects the pref value");
-  for (const isEnabled of [true, false]) {
-    await SpecialPowers.pushPrefEnv({
-      set: [["browser.urlbar.suggest.bestmatch", isEnabled]],
-    });
-    assertPrefUIState({ [BEST_MATCH_CHECKBOX_ID]: isEnabled }, "checked");
-    await SpecialPowers.popPrefEnv();
-  }
-
-  info("Check if the pref value reflects the checkbox status");
-  for (let i = 0; i < 2; i++) {
-    const initialValue = checkbox.checked;
-    await BrowserTestUtils.synthesizeMouseAtCenter(
-      "#" + BEST_MATCH_CHECKBOX_ID,
-      {},
-      gBrowser.selectedBrowser
-    );
-    Assert.ok(initialValue !== checkbox.checked);
-    Assert.equal(
-      Services.prefs.getBoolPref("browser.urlbar.suggest.bestmatch"),
-      checkbox.checked
-    );
-  }
-
-  // Clean up.
-  Services.prefs.clearUserPref("browser.urlbar.suggest.bestmatch");
-  gBrowser.removeCurrentTab();
-  await SpecialPowers.popPrefEnv();
-});
-
-// Clicks the learn-more link for best match and checks the help page is opened
-// in a new tab.
-add_task(async function clickBestMatchLearnMore() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.bestMatch.enabled", true]],
-  });
-
-  await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
-
-  const doc = gBrowser.selectedBrowser.contentDocument;
-  const link = doc.getElementById("firefoxSuggestBestMatchLearnMore");
-  Assert.ok(BrowserTestUtils.is_visible(link), "Learn-more link is visible");
-
-  const tabPromise = BrowserTestUtils.waitForNewTab(
-    gBrowser,
-    QuickSuggest.HELP_URL
-  );
-
-  info("Clicking learn-more link");
-  link.scrollIntoView();
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    "#firefoxSuggestBestMatchLearnMore",
-    {},
-    gBrowser.selectedBrowser
-  );
-
-  info("Waiting for help page to load in a new tab");
-  const tab = await tabPromise;
-  gBrowser.removeTab(tab);
-
-  // Clean up.
-  gBrowser.removeCurrentTab();
-  await SpecialPowers.popPrefEnv();
-});
-
-/**
- * Verifies the state of pref related toggles and checkboxes.
+ * Verifies the state of pref related to checkboxes or toggles.
  *
  * @param {object} stateByElementID
- *   Maps toggle/checkbox element IDs to booleans. Each boolean
+ *   Maps checkbox or toggle element IDs to booleans. Each boolean
  *   is the expected state of the corresponding ID.
- * @param {object} attr
- *   Attribute to check against the expected state. The "pressed"
- *   attribute is verified by default, since this is mostly used
- *   for toggle buttons.
  */
-function assertPrefUIState(stateByElementID, attr = "pressed") {
+function assertPrefUIState(stateByElementID) {
   let doc = gBrowser.selectedBrowser.contentDocument;
   let container = doc.getElementById(CONTAINER_ID);
+  let attr;
   Assert.ok(BrowserTestUtils.is_visible(container), "The container is visible");
   for (let [id, state] of Object.entries(stateByElementID)) {
     let element = doc.getElementById(id);
+    if (element.tagName === "checkbox") {
+      attr = "checked";
+    } else if (element.tagName === "html:moz-toggle") {
+      attr = "pressed";
+    }
     Assert.equal(element[attr], state, "Expected state for ID: " + id);
   }
 }

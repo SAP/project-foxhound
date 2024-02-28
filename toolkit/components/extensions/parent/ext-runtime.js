@@ -23,6 +23,14 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 this.runtime = class extends ExtensionAPIPersistent {
   PERSISTENT_EVENTS = {
+    // Despite not being part of PERSISTENT_EVENTS, the following events are
+    // still triggered (after waking up the background context if needed):
+    // - runtime.onConnect
+    // - runtime.onConnectExternal
+    // - runtime.onMessage
+    // - runtime.onMessageExternal
+    // For details, see bug 1852317 and test_ext_eventpage_messaging_wakeup.js.
+
     onInstalled({ fire }) {
       let { extension } = this;
       let temporary = !!extension.addonData.temporarilyInstalled;
@@ -237,9 +245,12 @@ this.runtime = class extends ExtensionAPIPersistent {
         },
 
         async internalWakeupBackground() {
+          const { background } = extension.manifest;
           if (
-            extension.manifest.background &&
-            !extension.manifest.background.service_worker &&
+            background &&
+            (background.page || background.scripts) &&
+            // Note: if background.service_worker is specified, it takes
+            // precedence over page/scripts, and persistentBackground is false.
             !extension.persistentBackground
           ) {
             await extension.wakeupBackground();

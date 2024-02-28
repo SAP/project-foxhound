@@ -2343,7 +2343,7 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_FN("intl_Collator", intl_Collator, 2, 0),
     JS_FN("intl_CompareStrings", intl_CompareStrings, 3, 0),
     JS_FN("intl_ComputeDisplayName", intl_ComputeDisplayName, 6, 0),
-    JS_FN("intl_DateTimeFormat", intl_DateTimeFormat, 2, 0),
+    JS_FN("intl_CreateDateTimeFormat", intl_CreateDateTimeFormat, 4, 0),
     JS_FN("intl_FormatDateTime", intl_FormatDateTime, 2, 0),
     JS_FN("intl_FormatDateTimeRange", intl_FormatDateTimeRange, 4, 0),
     JS_FN("intl_FormatList", intl_FormatList, 3, 0),
@@ -2402,6 +2402,7 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_FN("intl_defaultTimeZone", intl_defaultTimeZone, 0, 0),
     JS_FN("intl_defaultTimeZoneOffset", intl_defaultTimeZoneOffset, 0, 0),
     JS_FN("intl_isDefaultTimeZone", intl_isDefaultTimeZone, 1, 0),
+    JS_FN("intl_isIgnorePunctuation", intl_isIgnorePunctuation, 1, 0),
     JS_FN("intl_isUpperCaseFirst", intl_isUpperCaseFirst, 1, 0),
     JS_FN("intl_numberingSystem", intl_numberingSystem, 1, 0),
     JS_FN("intl_resolveDateTimeFormatComponents",
@@ -2582,8 +2583,7 @@ class MOZ_STACK_CLASS AutoPrintSelfHostingFrontendContext
   JSContext* cx_;
 
  public:
-  explicit AutoPrintSelfHostingFrontendContext(JSContext* cx)
-      : FrontendContext(), cx_(cx) {
+  explicit AutoPrintSelfHostingFrontendContext(JSContext* cx) : cx_(cx) {
     setCurrentJSContext(cx_);
   }
   ~AutoPrintSelfHostingFrontendContext() {

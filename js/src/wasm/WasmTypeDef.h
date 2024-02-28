@@ -111,7 +111,7 @@ class FuncType {
   }
 
  public:
-  FuncType() : args_(), results_() {}
+  FuncType() = default;
   FuncType(ValTypeVector&& args, ValTypeVector&& results)
       : args_(std::move(args)), results_(std::move(results)) {}
 
@@ -298,7 +298,7 @@ class StructType {
   OutlineTraceOffsetVector outlineTraceOffsets_;
 
  public:
-  StructType() : fields_(), size_(0) {}
+  StructType() : size_(0) {}
 
   explicit StructType(StructFieldVector&& fields)
       : fields_(std::move(fields)), size_(0) {}
@@ -444,12 +444,9 @@ class ArrayType {
   // "Matching type definitions" in WasmValType.h for more background.
   static bool matches(const RecGroup* lhsRecGroup, const ArrayType& lhs,
                       const RecGroup* rhsRecGroup, const ArrayType& rhs) {
-    if (lhs.isMutable_ != rhs.isMutable_ ||
-        lhs.elementType_.forMatch(lhsRecGroup) !=
-            rhs.elementType_.forMatch(rhsRecGroup)) {
-      return false;
-    }
-    return true;
+    return lhs.isMutable_ == rhs.isMutable_ &&
+           lhs.elementType_.forMatch(lhsRecGroup) ==
+               rhs.elementType_.forMatch(rhsRecGroup);
   }
 
   // Checks if two arrays are compatible in a given subtyping relationship.
@@ -634,7 +631,7 @@ class TypeDef {
         superTypeVector_(nullptr),
         superTypeDef_(nullptr),
         subTypingDepth_(0),
-        isFinal_(false),
+        isFinal_(true),
         kind_(TypeDefKind::None) {
     setRecGroup(recGroup);
   }

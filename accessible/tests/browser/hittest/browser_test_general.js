@@ -104,9 +104,44 @@ async function runTests(browser, accDoc) {
   );
 
   info("Testing wrapped text");
-  const wrappedTextP = findAccessibleChildByID(accDoc, "wrappedTextP");
-  const wrappedTextA = findAccessibleChildByID(accDoc, "wrappedTextA");
-  await hitTest(browser, wrappedTextP, wrappedTextA, wrappedTextA.firstChild);
+  const wrappedTextLinkFirstP = findAccessibleChildByID(
+    accDoc,
+    "wrappedTextLinkFirstP"
+  );
+  const wrappedTextLinkFirstA = findAccessibleChildByID(
+    accDoc,
+    "wrappedTextLinkFirstA"
+  );
+  await hitTest(
+    browser,
+    wrappedTextLinkFirstP,
+    wrappedTextLinkFirstA,
+    wrappedTextLinkFirstA.firstChild
+  );
+  const wrappedTextLeafFirstP = findAccessibleChildByID(
+    accDoc,
+    "wrappedTextLeafFirstP"
+  );
+  const wrappedTextLeafFirstMark = findAccessibleChildByID(
+    accDoc,
+    "wrappedTextLeafFirstMark"
+  );
+  await hitTest(
+    browser,
+    wrappedTextLeafFirstP,
+    wrappedTextLeafFirstMark,
+    wrappedTextLeafFirstMark.firstChild
+  );
+
+  info("Testing image");
+  const imageP = findAccessibleChildByID(accDoc, "imageP");
+  const image = findAccessibleChildByID(accDoc, "image");
+  await hitTest(browser, imageP, image, image);
+
+  info("Testing image map with 0-sized area");
+  const mapWith0AreaP = findAccessibleChildByID(accDoc, "mapWith0AreaP");
+  const mapWith0Area = findAccessibleChildByID(accDoc, "mapWith0Area");
+  await hitTest(browser, mapWith0AreaP, mapWith0Area, mapWith0Area);
 }
 
 addAccessibleTask(
@@ -149,8 +184,23 @@ addAccessibleTask(
     <p id="containerWithInaccessibleChild_p2">bye</p>
   </div>
 
-  <p id="wrappedTextP" style="width: 3ch; font-family: monospace;">
-    <a id="wrappedTextA" href="https://example.com/">a</a>b cd
+  <p id="wrappedTextLinkFirstP" style="width: 3ch; font-family: monospace;">
+    <a id="wrappedTextLinkFirstA" href="https://example.com/">a</a>b cd
+  </p>
+
+  <p id="wrappedTextLeafFirstP" style="width: 3ch; font-family: monospace;">
+    <mark id="wrappedTextLeafFirstMark">a</mark><a href="https://example.com/">b cd</a>
+  </p>
+
+  <p id="imageP">
+    <img id="image" src="http://example.com/a11y/accessible/tests/mochitest/letters.gif">
+  </p>
+
+  <map id="0Area">
+    <area shape="rect">
+  </map>
+  <p id="mapWith0AreaP">
+    <img id="mapWith0Area" src="http://example.com/a11y/accessible/tests/mochitest/letters.gif" usemap="#0Area">
   </p>
   `,
   runTests,

@@ -17,6 +17,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/Try.h"
 #include "mozilla/intl/Segmenter.h"
 
 #include "gfxUtils.h"
@@ -235,7 +236,6 @@ NS_QUERYFRAME_TAIL_INHERITING(SimpleXULLeafFrame)
 nsTreeBodyFrame::nsTreeBodyFrame(ComputedStyle* aStyle,
                                  nsPresContext* aPresContext)
     : SimpleXULLeafFrame(aStyle, aPresContext, kClassID),
-      mImageCache(),
       mTopRowIndex(0),
       mPageLength(0),
       mHorzPosition(0),
@@ -1599,9 +1599,8 @@ nsresult nsTreeBodyFrame::CreateTimer(const LookAndFeel::IntID aID,
   // Zero value means that this feature is completely disabled.
   if (delay > 0) {
     MOZ_TRY_VAR(timer,
-                NS_NewTimerWithFuncCallback(
-                    aFunc, this, delay, aType, aName,
-                    mContent->OwnerDoc()->EventTargetFor(TaskCategory::Other)));
+                NS_NewTimerWithFuncCallback(aFunc, this, delay, aType, aName,
+                                            GetMainThreadSerialEventTarget()));
   }
 
   timer.forget(aTimer);
@@ -2485,9 +2484,7 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
   }
 
   bool IsWindowActive() const {
-    DocumentState docState =
-        mFrame->PresContext()->Document()->GetDocumentState();
-    return !docState.HasState(DocumentState::WINDOW_INACTIVE);
+    return !mFrame->PresContext()->Document()->IsTopLevelWindowInactive();
   }
 
   void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
@@ -2521,19 +2518,6 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
 
 }  // namespace mozilla
 
-#ifdef XP_MACOSX
-static bool IsInSourceList(nsIFrame* aFrame) {
-  for (nsIFrame* frame = aFrame; frame;
-       frame = nsLayoutUtils::GetCrossDocParentFrameInProcess(frame)) {
-    if (frame->StyleDisplay()->EffectiveAppearance() ==
-        StyleAppearance::MozMacSourceList) {
-      return true;
-    }
-  }
-  return false;
-}
-#endif
-
 // Painting routines
 void nsTreeBodyFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                        const nsDisplayListSet& aLists) {
@@ -2549,53 +2533,6 @@ void nsTreeBodyFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
   nsDisplayItem* item = MakeDisplayItem<nsDisplayTreeBody>(aBuilder, this);
   aLists.Content()->AppendToTop(item);
-
-#ifdef XP_MACOSX
-  XULTreeElement* tree = GetBaseElement();
-  nsIFrame* treeFrame = tree ? tree->GetPrimaryFrame() : nullptr;
-  nsCOMPtr<nsITreeView> view = GetExistingView();
-  nsCOMPtr<nsITreeSelection> selection = GetSelection();
-  nsITheme* theme = PresContext()->Theme();
-  // On Mac, we support native theming of selected rows. On 10.10 and higher,
-  // this means applying vibrancy which require us to register the theme
-  // geometrics for the row. In order to make the vibrancy effect to work
-  // properly, we also need an ancestor frame to be themed as a source list.
-  if (selection && theme && IsInSourceList(treeFrame)) {
-    // Loop through our onscreen rows. If the row is selected and a
-    // -moz-appearance is provided, RegisterThemeGeometry might be necessary.
-    const auto end = std::min(mRowCount, LastVisibleRow() + 1);
-    for (auto i = FirstVisibleRow(); i < end; i++) {
-      bool isSelected;
-      selection->IsSelected(i, &isSelected);
-      if (isSelected) {
-        PrefillPropertyArray(i, nullptr);
-        nsAutoString properties;
-        view->GetRowProperties(i, properties);
-        nsTreeUtils::TokenizeProperties(properties, mScratchArray);
-        ComputedStyle* rowContext =
-            GetPseudoComputedStyle(nsCSSAnonBoxes::mozTreeRow());
-        auto appearance = rowContext->StyleDisplay()->EffectiveAppearance();
-        if (appearance != StyleAppearance::None) {
-          if (theme->ThemeSupportsWidget(PresContext(), this, appearance)) {
-            nsITheme::ThemeGeometryType type =
-                theme->ThemeGeometryTypeForWidget(this, appearance);
-            if (type != nsITheme::eThemeGeometryTypeUnknown) {
-              nsRect rowRect(mInnerBox.x,
-                             mInnerBox.y + mRowHeight * (i - FirstVisibleRow()),
-                             mInnerBox.width, mRowHeight);
-              aBuilder->RegisterThemeGeometry(
-                  type, item,
-                  LayoutDeviceIntRect::FromUnknownRect(
-                      (rowRect + aBuilder->ToReferenceFrame(this))
-                          .ToNearestPixels(
-                              PresContext()->AppUnitsPerDevPixel())));
-            }
-          }
-        }
-      }
-    }
-  }
-#endif
 }
 
 ImgDrawResult nsTreeBodyFrame::PaintTreeBody(gfxContext& aRenderingContext,
@@ -4180,8 +4117,7 @@ void nsTreeBodyFrame::PostScrollEvent() {
   if (mScrollEvent.IsPending()) return;
 
   RefPtr<ScrollEvent> event = new ScrollEvent(this);
-  nsresult rv =
-      mContent->OwnerDoc()->Dispatch(TaskCategory::Other, do_AddRef(event));
+  nsresult rv = mContent->OwnerDoc()->Dispatch(do_AddRef(event));
   if (NS_FAILED(rv)) {
     NS_WARNING("failed to dispatch ScrollEvent");
   } else {
@@ -4260,7 +4196,7 @@ void nsTreeBodyFrame::FireRowCountChangedEvent(int32_t aIndex, int32_t aCount) {
   event->SetTrusted(true);
 
   RefPtr<AsyncEventDispatcher> asyncDispatcher =
-      new AsyncEventDispatcher(tree, event);
+      new AsyncEventDispatcher(tree, event.forget());
   asyncDispatcher->PostDOMEvent();
 }
 
@@ -4311,7 +4247,7 @@ void nsTreeBodyFrame::FireInvalidateEvent(int32_t aStartRowIdx,
   event->SetTrusted(true);
 
   RefPtr<AsyncEventDispatcher> asyncDispatcher =
-      new AsyncEventDispatcher(tree, event);
+      new AsyncEventDispatcher(tree, event.forget());
   asyncDispatcher->PostDOMEvent();
 }
 #endif
@@ -4353,7 +4289,7 @@ bool nsTreeBodyFrame::FullScrollbarsUpdate(bool aNeedsFullInvalidation) {
   if (!mCheckingOverflow) {
     nsContentUtils::AddScriptRunner(checker);
   } else {
-    mContent->OwnerDoc()->Dispatch(TaskCategory::Other, checker.forget());
+    mContent->OwnerDoc()->Dispatch(checker.forget());
   }
   return weakFrame.IsAlive();
 }

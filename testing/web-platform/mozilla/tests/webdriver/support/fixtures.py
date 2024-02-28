@@ -1,17 +1,34 @@
+import argparse
 import json
 import os
+import re
 import socket
 import subprocess
+import threading
 import time
 from contextlib import suppress
 from urllib.parse import urlparse
 
 import pytest
 import webdriver
-from mozprofile import Profile
+from mozprofile import Preferences, Profile
 from mozrunner import FirefoxRunner
 
-from support.network import get_free_port
+
+def get_arg_value(arg_names, args):
+    """Get an argument value from a list of arguments
+
+    This assumes that argparse argument parsing is close enough to the target
+    to be compatible, at least with the set of inputs we have.
+
+    :param arg_names: - List of names for the argument e.g. ["--foo", "-f"]
+    :param args: - List of arguments to parse
+    :returns: - Optional string argument value
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument(*arg_names, action="store", dest="value", default=None)
+    parsed, _ = parser.parse_known_args(args)
+    return parsed.value
 
 
 @pytest.fixture(scope="module")
@@ -48,6 +65,7 @@ def browser(full_configuration):
             current_browser.quit()
 
         binary = full_configuration["browser"]["binary"]
+        env = full_configuration["browser"]["env"]
         firefox_options = full_configuration["capabilities"]["moz:firefoxOptions"]
         current_browser = Browser(
             binary,
@@ -56,6 +74,7 @@ def browser(full_configuration):
             use_cdp=use_cdp,
             extra_args=extra_args,
             extra_prefs=extra_prefs,
+            env=env,
         )
         current_browser.start()
         return current_browser
@@ -69,10 +88,14 @@ def browser(full_configuration):
 
 
 @pytest.fixture
-def custom_profile(configuration):
-    # Clone the known profile for automation preferences
+def profile_folder(configuration):
     firefox_options = configuration["capabilities"]["moz:firefoxOptions"]
-    _, profile_folder = firefox_options["args"]
+    return get_arg_value(["--profile"], firefox_options["args"])
+
+
+@pytest.fixture
+def custom_profile(profile_folder):
+    # Clone the known profile for automation preferences
     profile = Profile.clone(profile_folder)
 
     yield profile
@@ -102,6 +125,17 @@ def geckodriver(configuration):
         driver.stop()
 
 
+@pytest.fixture
+def user_prefs(profile_folder):
+    user_js = os.path.join(profile_folder, "user.js")
+
+    prefs = {}
+    for pref_name, pref_value in Preferences().read_prefs(user_js):
+        prefs[pref_name] = pref_value
+
+    return prefs
+
+
 class Browser:
     def __init__(
         self,
@@ -111,6 +145,7 @@ class Browser:
         use_cdp=False,
         extra_args=None,
         extra_prefs=None,
+        env=None,
     ):
         self.use_bidi = use_bidi
         self.bidi_port_file = None
@@ -148,7 +183,7 @@ class Browser:
         if self.extra_args is not None:
             cmdargs.extend(self.extra_args)
         self.runner = FirefoxRunner(
-            binary=binary, profile=self.profile, cmdargs=cmdargs
+            binary=binary, profile=self.profile, cmdargs=cmdargs, env=env
         )
 
     @property
@@ -197,20 +232,22 @@ class Browser:
 
 
 class Geckodriver:
+    PORT_RE = re.compile(b".*Listening on [^ :]*:(\d+)")
+
     def __init__(self, configuration, hostname=None, extra_args=None):
         self.config = configuration["webdriver"]
         self.requested_capabilities = configuration["capabilities"]
         self.hostname = hostname or configuration["host"]
         self.extra_args = extra_args or []
+        self.env = configuration["browser"]["env"]
 
         self.command = None
         self.proc = None
-        self.port = get_free_port()
+        self.port = None
+        self.reader_thread = None
 
-        capabilities = {"alwaysMatch": self.requested_capabilities}
-        self.session = webdriver.Session(
-            self.hostname, self.port, capabilities=capabilities
-        )
+        self.capabilities = {"alwaysMatch": self.requested_capabilities}
+        self.session = None
 
     @property
     def remote_agent_port(self):
@@ -221,14 +258,20 @@ class Geckodriver:
 
     def start(self):
         self.command = (
-            [self.config["binary"], "--port", str(self.port)]
+            [self.config["binary"], "--port", "0"]
             + self.config["args"]
             + self.extra_args
         )
 
         print(f"Running command: {' '.join(self.command)}")
-        self.proc = subprocess.Popen(self.command)
+        self.proc = subprocess.Popen(self.command, env=self.env, stdout=subprocess.PIPE)
 
+        self.reader_thread = threading.Thread(
+            target=readOutputLine,
+            args=(self.proc.stdout, self.processOutputLine),
+            daemon=True,
+        )
+        self.reader_thread.start()
         # Wait for the port to become ready
         end_time = time.time() + 10
         while time.time() < end_time:
@@ -237,24 +280,53 @@ class Geckodriver:
                 raise ChildProcessError(
                     f"geckodriver terminated with code {returncode}"
                 )
-            with socket.socket() as sock:
-                if sock.connect_ex((self.hostname, self.port)) == 0:
-                    break
+            if self.port is not None:
+                with socket.socket() as sock:
+                    if sock.connect_ex((self.hostname, self.port)) == 0:
+                        break
+            else:
+                time.sleep(0.1)
         else:
+            if self.port is None:
+                raise OSError(
+                    f"Failed to read geckodriver port started on {self.hostname}"
+                )
             raise ConnectionRefusedError(
                 f"Failed to connect to geckodriver on {self.hostname}:{self.port}"
             )
 
+        self.session = webdriver.Session(
+            self.hostname, self.port, capabilities=self.capabilities
+        )
+
         return self
 
-    def stop(self):
-        self.delete_session()
+    def processOutputLine(self, line):
+        if self.port is None:
+            m = self.PORT_RE.match(line)
+            if m is not None:
+                self.port = int(m.groups()[0])
 
+    def stop(self):
+        if self.session is not None:
+            self.delete_session()
         if self.proc:
             self.proc.kill()
+        self.port = None
+        if self.reader_thread is not None:
+            self.reader_thread.join()
 
     def new_session(self):
         self.session.start()
 
     def delete_session(self):
         self.session.end()
+
+
+def readOutputLine(stream, callback):
+    while True:
+        line = stream.readline()
+        if not line:
+            break
+
+        callback(line)

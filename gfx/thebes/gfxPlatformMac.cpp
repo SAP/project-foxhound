@@ -74,9 +74,9 @@ PRThread* gfxPlatformMac::sFontRegistrationThread = nullptr;
    our font list. */
 /* static */
 void gfxPlatformMac::RegisterSupplementalFonts() {
-  // On Catalina+, it appears to be sufficient to activate fonts in the parent
-  // process; they are then also usable in child processes.
-  if (XRE_IsParentProcess()) {
+  if (XRE_GetProcessType() == GeckoProcessType_Default) {
+    // We activate the fonts on a separate thread, to minimize the startup-
+    // time cost.
     sFontRegistrationThread = PR_CreateThread(
         PR_USER_THREAD, FontRegistrationCallback, nullptr, PR_PRIORITY_NORMAL,
         PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
@@ -668,8 +668,8 @@ void gfxPlatformMac::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
 void gfxPlatformMac::LookupSystemFont(
     mozilla::LookAndFeel::FontID aSystemFontID, nsACString& aSystemFontName,
     gfxFontStyle& aFontStyle) {
-  gfxMacPlatformFontList* pfl = gfxMacPlatformFontList::PlatformFontList();
-  return pfl->LookupSystemFont(aSystemFontID, aSystemFontName, aFontStyle);
+  return gfxMacPlatformFontList::LookupSystemFont(aSystemFontID,
+                                                  aSystemFontName, aFontStyle);
 }
 
 uint32_t gfxPlatformMac::ReadAntiAliasingThreshold() {

@@ -146,6 +146,11 @@
                      data-l10n-id="appmenuitem-more-tools"
                      closemenu="none"
                      oncommand="PanelUI.showMoreToolsPanel(this);"/>
+      <toolbarbutton id="appMenu-report-broken-site-button"
+                     class="subviewbutton subviewbutton-nav"
+                     data-l10n-id="appmenuitem-report-broken-site"
+                     closemenu="none"
+                     command="cmd_reportBrokenSite"/>
       <toolbarbutton id="appMenu-help-button2"
                      class="subviewbutton subviewbutton-nav"
                      data-l10n-id="appmenuitem-help"
@@ -256,7 +261,8 @@
 
   <panelview id="PanelUI-profiler" showheader="true">
     <vbox id="PanelUI-profiler-header" animationready="false">
-      <hbox id="PanelUI-profiler-header-bar" class="panel-header panel-header-with-info-button">
+      <hbox id="PanelUI-profiler-header-bar"
+            class="panel-header panel-header-with-additional-element panel-header-with-info-button">
         <html:h1>
           <html:span data-l10n-id="profiler-popup-header-text"></html:span>
         </html:h1>
@@ -686,5 +692,28 @@
               class="panelMenu-toggleWhatsNew-checkbox"
               onclick="ToolbarPanelHub.toggleWhatsNewPref(event)"
               data-l10n-id="whatsnew-panel-footer-checkbox"/>
+  </panelview>
+
+  <panelview id="reset-pbm-panel" class="PanelUI-subView" role="document">
+    <vbox id="reset-pbm-panel-container" role="alertdialog" aria-labelledby="reset-pbm-panel-header">
+      <hbox id="reset-pbm-panel-header">
+        <description data-l10n-id="reset-pbm-panel-heading" role="heading" aria-level="2"/>
+      </hbox>
+
+      <description id="reset-pbm-panel-description" data-l10n-id="reset-pbm-panel-description"/>
+      <checkbox id="reset-pbm-panel-checkbox" data-l10n-id="reset-pbm-panel-always-ask-checkbox"/>
+
+      <html:moz-button-group id="reset-pbm-panel-footer" class="panel-footer">
+        <button id="reset-pbm-panel-cancel-button"
+                class="footer-button"
+                data-l10n-id="reset-pbm-panel-cancel-button"
+                oncommand="ResetPBMPanel.onCancel(this)"></button>
+        <button slot="primary"
+                id="reset-pbm-panel-confirm-button"
+                class="footer-button"
+                data-l10n-id="reset-pbm-panel-confirm-button"
+                oncommand="ResetPBMPanel.onConfirm(this)"></button>
+      </html:moz-button-group>
+    </vbox>
   </panelview>
 </html:template>

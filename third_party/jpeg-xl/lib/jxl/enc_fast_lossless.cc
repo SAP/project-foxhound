@@ -2497,10 +2497,10 @@ struct UpTo8Bits {
     GenericEncodeChunk(residuals, n, skip, code, output);
   }
 
-  size_t NumSymbols(bool doing_ycocg) const {
+  size_t NumSymbols(bool doing_ycocg_or_large_palette) const {
     // values gain 1 bit for YCoCg, 1 bit for prediction.
     // Maximum symbol is 1 + effective bit depth of residuals.
-    if (doing_ycocg) {
+    if (doing_ycocg_or_large_palette) {
       return bitdepth + 3;
     } else {
       return bitdepth + 2;
@@ -2560,10 +2560,10 @@ struct From9To13Bits {
     GenericEncodeChunk(residuals, n, skip, code, output);
   }
 
-  size_t NumSymbols(bool doing_ycocg) const {
+  size_t NumSymbols(bool doing_ycocg_or_large_palette) const {
     // values gain 1 bit for YCoCg, 1 bit for prediction.
     // Maximum symbol is 1 + effective bit depth of residuals.
-    if (doing_ycocg) {
+    if (doing_ycocg_or_large_palette) {
       return bitdepth + 3;
     } else {
       return bitdepth + 2;
@@ -3469,13 +3469,19 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   row_encoder.ProcessRow(p[0] + 16, p[0] + 15, p[0] + 15, p[0] + 15, pcolors);
   p[1][15] = p[0][16];
   p[0][15] = p[0][16];
-  row_encoder.ProcessRow(p[1] + 16, p[1] + 15, p[0] + 16, p[0] + 15, pcolors);
+  if (nb_chans > 1) {
+    row_encoder.ProcessRow(p[1] + 16, p[1] + 15, p[0] + 16, p[0] + 15, pcolors);
+  }
   p[2][15] = p[1][16];
   p[1][15] = p[1][16];
-  row_encoder.ProcessRow(p[2] + 16, p[2] + 15, p[1] + 16, p[1] + 15, pcolors);
+  if (nb_chans > 2) {
+    row_encoder.ProcessRow(p[2] + 16, p[2] + 15, p[1] + 16, p[1] + 15, pcolors);
+  }
   p[3][15] = p[2][16];
   p[2][15] = p[2][16];
-  row_encoder.ProcessRow(p[3] + 16, p[3] + 15, p[2] + 16, p[2] + 15, pcolors);
+  if (nb_chans > 3) {
+    row_encoder.ProcessRow(p[3] + 16, p[3] + 15, p[2] + 16, p[2] + 15, pcolors);
+  }
   row_encoder.Finalize();
 
   if (!is_single_group) {
@@ -3617,7 +3623,9 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
       5,    1,   1,    1,    1,    1,   1,   1,   1};
 
   bool doing_ycocg = nb_chans > 2 && collided;
-  for (size_t i = bitdepth.NumSymbols(doing_ycocg); i < kNumRawSymbols; i++) {
+  bool large_palette = !collided || pcolors >= 256;
+  for (size_t i = bitdepth.NumSymbols(doing_ycocg || large_palette);
+       i < kNumRawSymbols; i++) {
     base_raw_counts[i] = 0;
   }
 

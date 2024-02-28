@@ -3,6 +3,7 @@
 import json
 import os
 import platform
+import re
 import signal
 import subprocess
 import sys
@@ -212,7 +213,8 @@ def run_info_extras(**kwargs):
           "fission": not kwargs.get("disable_fission"),
           "sessionHistoryInParent": (not kwargs.get("disable_fission") or
                                      not get_bool_pref("fission.disableSessionHistoryInParent")),
-          "swgl": get_bool_pref("gfx.webrender.software")}
+          "swgl": get_bool_pref("gfx.webrender.software"),
+          "privateBrowsing": (kwargs["tags"] != None and ("privatebrowsing" in kwargs["tags"]))}
 
     rv.update(run_info_browser_version(**kwargs))
 
@@ -566,6 +568,7 @@ class FirefoxOutputHandler(OutputHandler):
         if self.lsan_handler:
             self.lsan_handler.process()
         if self.leak_report_file is not None:
+            processed_files = None
             if not clean_shutdown:
                 # If we didn't get a clean shutdown there probably isn't a leak report file
                 self.logger.warning("Firefox didn't exit cleanly, not processing leak logs")
@@ -574,7 +577,7 @@ class FirefoxOutputHandler(OutputHandler):
                 # content process crashed and in that case we don't want the test to fail.
                 # Ideally we would record which content process crashed and just skip those.
                 self.logger.info("PROCESS LEAKS %s" % self.leak_report_file)
-                mozleak.process_leak_log(
+                processed_files = mozleak.process_leak_log(
                     self.leak_report_file,
                     leak_thresholds=self.mozleak_thresholds,
                     ignore_missing_leaks=["tab", "gmplugin"],
@@ -582,6 +585,11 @@ class FirefoxOutputHandler(OutputHandler):
                     stack_fixer=self.stack_fixer,
                     scope=self.group_metadata.get("scope"),
                     allowed=self.mozleak_allowed)
+            if processed_files:
+                for path in processed_files:
+                    if os.path.exists(path):
+                        os.unlink(path)
+            # Fallback for older versions of mozleak, or if we didn't shutdown cleanly
             if os.path.exists(self.leak_report_file):
                 os.unlink(self.leak_report_file)
 
@@ -602,6 +610,32 @@ class FirefoxOutputHandler(OutputHandler):
                 self.logger.process_output(self.pid,
                                            data,
                                            command=" ".join(self.command))
+
+
+class GeckodriverOutputHandler(FirefoxOutputHandler):
+    PORT_RE = re.compile(rb".*Listening on [^ :]*:(\d+)")
+
+    def __init__(self, logger, command, symbols_path=None, stackfix_dir=None, asan=False,
+                 leak_report_file=None, init_deadline=None):
+        super().__init__(logger, command, symbols_path=symbols_path, stackfix_dir=stackfix_dir, asan=asan,
+                         leak_report_file=leak_report_file)
+        self.port = None
+        self.init_deadline = None
+
+    def after_process_start(self, pid):
+        super().after_process_start(pid)
+        while self.port is None:
+            time.sleep(0.1)
+            if self.init_deadline is not None and time.time() > self.init_deadline:
+                raise TimeoutError("Failed to get geckodriver port within the timeout")
+
+    def __call__(self, line):
+        if self.port is None:
+            m = self.PORT_RE.match(line)
+            if m is not None:
+                self.port = int(m.groups()[0])
+                self.logger.debug(f"Got geckodriver port {self.port}")
+        super().__call__(line)
 
 
 class ProfileCreator:
@@ -653,20 +687,13 @@ class ProfileCreator:
                     elif name != 'unittest-features':
                         pref_paths.append(os.path.join(self.prefs_root, name, 'user.js'))
         else:
-            # Old preference files used before the creation of profiles.json (remove when no longer supported)
-            legacy_pref_paths = (
-                os.path.join(self.prefs_root, 'prefs_general.js'),   # Used in Firefox 60 and below
-                os.path.join(self.prefs_root, 'common', 'user.js'),  # Used in Firefox 61
-            )
-            for path in legacy_pref_paths:
-                if os.path.isfile(path):
-                    pref_paths.append(path)
+            self.logger.warning(f"Failed to load profiles from {profiles}")
 
         for path in pref_paths:
             if os.path.exists(path):
                 prefs.add(Preferences.read_prefs(path))
             else:
-                self.logger.warning("Failed to find base prefs file in %s" % path)
+                self.logger.warning(f"Failed to find prefs file in {path}")
 
         # Add any custom preferences
         prefs.add(self.extra_prefs, cast=True)
@@ -911,12 +938,13 @@ class FirefoxWdSpecBrowser(WebDriverBrowser):
         return env
 
     def create_output_handler(self, cmd):
-        return FirefoxOutputHandler(self.logger,
-                                    cmd,
-                                    stackfix_dir=self.stackfix_dir,
-                                    symbols_path=self.symbols_path,
-                                    asan=self.asan,
-                                    leak_report_file=self.leak_report_file)
+        return GeckodriverOutputHandler(self.logger,
+                                        cmd,
+                                        stackfix_dir=self.stackfix_dir,
+                                        symbols_path=self.symbols_path,
+                                        asan=self.asan,
+                                        leak_report_file=self.leak_report_file,
+                                        init_deadline=self.init_deadline)
 
     def start(self, group_metadata, **kwargs):
         self.leak_report_file = setup_leak_report(self.leak_check, self.profile, self.env)
@@ -960,7 +988,12 @@ class FirefoxWdSpecBrowser(WebDriverBrowser):
                 time.sleep(1)
             else:
                 self.logger.debug("WebDriver session didn't end")
-        super().stop(force=force)
+        try:
+            super().stop(force=force)
+        finally:
+            if self._output_handler is not None:
+                self._output_handler.port = None
+            self._port = None
 
     def cleanup(self):
         super().cleanup()
@@ -974,10 +1007,19 @@ class FirefoxWdSpecBrowser(WebDriverBrowser):
                 "mozleak_allowed": self.leak_check and test.mozleak_allowed,
                 "mozleak_thresholds": self.leak_check and test.mozleak_threshold}
 
+    @property
+    def port(self):
+        # We read the port from geckodriver on startup
+        if self._port is None:
+            if self._output_handler is None or self._output_handler.port is None:
+                raise ValueError("Can't get geckodriver port before it's started")
+            self._port = self._output_handler.port
+        return self._port
+
     def make_command(self):
         return [self.webdriver_binary,
                 "--host", self.host,
-                "--port", str(self.port)] + self.webdriver_args
+                "--port", "0"] + self.webdriver_args
 
     def executor_browser(self):
         cls, args = super().executor_browser()

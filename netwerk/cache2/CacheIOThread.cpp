@@ -198,6 +198,9 @@ nsresult CacheIOThread::Init() {
       PR_CreateThread(PR_USER_THREAD, ThreadFunc, this, PR_PRIORITY_NORMAL,
                       PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 128 * 1024);
   if (!mThread) {
+    // Treat this thread as already shutdown.
+    MonitorAutoLock lock(mMonitor);
+    mShutdown = true;
     return NS_ERROR_FAILURE;
   }
 
@@ -385,6 +388,7 @@ void CacheIOThread::ThreadFunc() {
     if (threadInternal) threadInternal->SetObserver(this);
 
     mXPCOMThread = xpcomThread.forget().take();
+    nsCOMPtr<nsIThread> thread = NS_GetCurrentThread();
 
     lock.NotifyAll();
 
@@ -405,7 +409,6 @@ void CacheIOThread::ThreadFunc() {
         bool processedEvent;
         nsresult rv;
         do {
-          nsIThread* thread = mXPCOMThread;
           rv = thread->ProcessNextEvent(false, &processedEvent);
 
           ++mEventCounter;

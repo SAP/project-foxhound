@@ -28,6 +28,7 @@ from mach.decorators import (
     SettingsProvider,
     SubCommand,
 )
+from mozfile import load_source
 
 import mozbuild.settings  # noqa need @SettingsProvider hook to execute
 from mozbuild.base import (
@@ -1115,11 +1116,10 @@ def android_gtest(
 
     # run gtest via remotegtests.py
     exit_code = 0
-    import imp
 
     path = os.path.join("testing", "gtest", "remotegtests.py")
-    with open(path, "r") as fh:
-        imp.load_module("remotegtests", fh, path, (".py", "r", imp.PY_SOURCE))
+    load_source("remotegtests", path)
+
     import remotegtests
 
     tester = remotegtests.RemoteGTests()
@@ -2376,6 +2376,12 @@ def repackage_deb(
     required=True,
     help="Location of the templates used to generate the debian/ directory files",
 )
+@CommandArgument(
+    "--release-product",
+    type=str,
+    required=True,
+    help="The product being shipped. Used to disambiguate beta/devedition etc.",
+)
 def repackage_deb_l10n(
     command_context,
     input_xpi_file,
@@ -2384,6 +2390,7 @@ def repackage_deb_l10n(
     version,
     build_number,
     templates,
+    release_product,
 ):
     for input_file in (input_xpi_file, input_tar_file):
         if not os.path.exists(input_file):
@@ -2398,21 +2405,30 @@ def repackage_deb_l10n(
     from mozbuild.repackaging.deb import repackage_deb_l10n
 
     repackage_deb_l10n(
-        input_xpi_file, input_tar_file, output, template_dir, version, build_number
+        input_xpi_file,
+        input_tar_file,
+        output,
+        template_dir,
+        version,
+        build_number,
+        release_product,
     )
 
 
 @SubCommand("repackage", "dmg", description="Repackage a tar file into a .dmg for OSX")
 @CommandArgument("--input", "-i", type=str, required=True, help="Input filename")
 @CommandArgument("--output", "-o", type=str, required=True, help="Output filename")
-def repackage_dmg(command_context, input, output):
+@CommandArgument(
+    "--attribution_sentinel", type=str, required=False, help="DMGs with attribution."
+)
+def repackage_dmg(command_context, input, output, attribution_sentinel):
     if not os.path.exists(input):
         print("Input file does not exist: %s" % input)
         return 1
 
     from mozbuild.repackaging.dmg import repackage_dmg
 
-    repackage_dmg(input, output)
+    repackage_dmg(input, output, attribution_sentinel)
 
 
 @SubCommand("repackage", "pkg", description="Repackage a tar file into a .pkg for OSX")

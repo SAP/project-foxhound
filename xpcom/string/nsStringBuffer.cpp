@@ -66,7 +66,7 @@ already_AddRefed<nsStringBuffer> nsStringBuffer::Alloc(size_t aSize) {
                    sizeof(nsStringBuffer) + aSize > aSize,
                "mStorageSize will truncate");
 
-  nsStringBuffer* hdr = (nsStringBuffer*)malloc(sizeof(nsStringBuffer) + aSize);
+  auto* hdr = (nsStringBuffer*)malloc(sizeof(nsStringBuffer) + aSize);
   if (hdr) {
     STRING_STAT_INCREMENT(Alloc);
 
@@ -76,6 +76,47 @@ already_AddRefed<nsStringBuffer> nsStringBuffer::Alloc(size_t aSize) {
     NS_LOG_ADDREF(hdr, 1, "nsStringBuffer", sizeof(*hdr));
   }
   return already_AddRefed(hdr);
+}
+
+template <typename CharT>
+static already_AddRefed<nsStringBuffer> DoCreate(const CharT* aData,
+                                                 size_t aLength,
+                                                 const StringTaint& aTaint) {
+  RefPtr<nsStringBuffer> buffer =
+      nsStringBuffer::Alloc((aLength + 1) * sizeof(CharT));
+  if (MOZ_UNLIKELY(!buffer)) {
+    return nullptr;
+  }
+  auto* data = reinterpret_cast<CharT*>(buffer->Data());
+  memcpy(data, aData, aLength * sizeof(CharT));
+  data[aLength] = 0;
+
+  if (aTaint) {
+    buffer->AssignTaint(aTaint);
+  }
+  return buffer.forget();
+}
+
+already_AddRefed<nsStringBuffer> nsStringBuffer::Create(const char* aData,
+                                                        size_t aLength) {
+  return DoCreate(aData, aLength, EmptyTaint);
+}
+
+already_AddRefed<nsStringBuffer> nsStringBuffer::Create(const char16_t* aData,
+                                                        size_t aLength) {
+  return DoCreate(aData, aLength, EmptyTaint);
+}
+
+already_AddRefed<nsStringBuffer> nsStringBuffer::Create(const char* aData,
+                                                        size_t aLength,
+                                                        const StringTaint& aTaint) {
+  return DoCreate(aData, aLength, aTaint);
+}
+
+already_AddRefed<nsStringBuffer> nsStringBuffer::Create(const char16_t* aData,
+                                                        size_t aLength,
+                                                        const StringTaint& aTaint) {
+  return DoCreate(aData, aLength, aTaint);
 }
 
 nsStringBuffer* nsStringBuffer::Realloc(nsStringBuffer* aHdr, size_t aSize) {

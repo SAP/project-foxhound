@@ -1,4 +1,7 @@
-use crate::arena::{Handle, UniqueArena};
+use crate::{
+    arena::{Handle, UniqueArena},
+    Scalar,
+};
 
 use super::{Error, LookupExpression, LookupHelper as _};
 
@@ -61,8 +64,11 @@ fn extract_image_coordinates(
     ctx: &mut super::BlockContext,
 ) -> (Handle<crate::Expression>, Option<Handle<crate::Expression>>) {
     let (given_size, kind) = match ctx.type_arena[coordinate_ty].inner {
-        crate::TypeInner::Scalar { kind, .. } => (None, kind),
-        crate::TypeInner::Vector { size, kind, .. } => (Some(size), kind),
+        crate::TypeInner::Scalar(Scalar { kind, .. }) => (None, kind),
+        crate::TypeInner::Vector {
+            size,
+            scalar: Scalar { kind, .. },
+        } => (Some(size), kind),
         ref other => unreachable!("Unexpected texture coordinate {:?}", other),
     };
 
@@ -73,8 +79,7 @@ fn extract_image_coordinates(
                 name: None,
                 inner: crate::TypeInner::Vector {
                     size,
-                    kind,
-                    width: 4,
+                    scalar: Scalar { kind, width: 4 },
                 },
             })
             .expect("Required coordinate type should have been set up by `parse_type_image`!")
@@ -256,7 +261,7 @@ impl<I: Iterator<Item = u32>> super::Frontend<I> {
         &mut self,
         words_left: u16,
         ctx: &mut super::BlockContext,
-        emitter: &mut crate::front::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         body_idx: usize,
     ) -> Result<crate::Statement, Error> {
@@ -315,7 +320,7 @@ impl<I: Iterator<Item = u32>> super::Frontend<I> {
         &mut self,
         mut words_left: u16,
         ctx: &mut super::BlockContext,
-        emitter: &mut crate::front::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -415,7 +420,7 @@ impl<I: Iterator<Item = u32>> super::Frontend<I> {
         mut words_left: u16,
         options: SamplingOptions,
         ctx: &mut super::BlockContext,
-        emitter: &mut crate::front::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,
@@ -663,7 +668,7 @@ impl<I: Iterator<Item = u32>> super::Frontend<I> {
         &mut self,
         at_level: bool,
         ctx: &mut super::BlockContext,
-        emitter: &mut crate::front::Emitter,
+        emitter: &mut crate::proc::Emitter,
         block: &mut crate::Block,
         block_id: spirv::Word,
         body_idx: usize,

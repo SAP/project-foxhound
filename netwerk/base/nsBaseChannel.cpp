@@ -942,14 +942,32 @@ nsBaseChannel::CheckListenerChain() {
   return listener->CheckListenerChain();
 }
 
+NS_IMETHODIMP
+nsBaseChannel::OnDataFinished(nsresult aStatus) {
+  if (!mListener) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!mAllowThreadRetargeting) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  nsCOMPtr<nsIThreadRetargetableStreamListener> listener =
+      do_QueryInterface(mListener);
+  if (listener) {
+    return listener->OnDataFinished(aStatus);
+  }
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsBaseChannel::GetCanceled(bool* aCanceled) {
   *aCanceled = mCanceled;
   return NS_OK;
 }
 
 void nsBaseChannel::SetupNeckoTarget() {
-  mNeckoTarget =
-      nsContentUtils::GetEventTargetByLoadInfo(mLoadInfo, TaskCategory::Other);
+  mNeckoTarget = GetMainThreadSerialEventTarget();
 }
 
 nsBaseChannel::ContentRange::ContentRange(const nsACString& aRangeHeader,

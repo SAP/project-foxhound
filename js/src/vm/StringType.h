@@ -33,6 +33,8 @@
 #include "js/UniquePtr.h"
 #include "util/Text.h"
 
+#define TAINT_DEBUG
+
 class JSDependentString;
 class JSExtensibleString;
 class JSExternalString;
@@ -670,7 +672,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   }
 
   /* Taintfox: enable cleanup of strings in nursery */
-  static void sweepAfterMinorGC(JSString* str);
+  static void sweepAfterMinorGC(JS::GCContext* gcx, JSString* str);
 
  private:
   // To help avoid writing Spectre-unsafe code, we only allow MacroAssembler
@@ -731,6 +733,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   void dump(js::GenericPrinter& out);
   void dumpNoNewline(js::GenericPrinter& out);
   void dumpCharsNoNewline(js::GenericPrinter& out);
+  void dumpRepresentation() const;
   void dumpRepresentation(js::GenericPrinter& out, int indent) const;
   void dumpRepresentationHeader(js::GenericPrinter& out,
                                 const char* subclass) const;
@@ -1052,8 +1055,8 @@ class JSDependentString : public JSLinearString {
   }
 
  public:
-  // This may return an inline string if the chars fit rather than a dependent
-  // string.
+  // This will always return a dependent string, and will assert if the chars
+  // could fit into an inline string.
   static inline JSLinearString* new_(JSContext* cx, JSLinearString* base,
                                      size_t start, size_t length,
                                      js::gc::Heap heap);
@@ -1458,10 +1461,9 @@ namespace js {
  * property, as follows:
  *
  *   - uint32_t indexes,
- *   - PropertyName strings which don't encode uint32_t indexes, and
- *   - jsspecial special properties (non-ES5 properties like object-valued
- *     jsids, JSID_EMPTY, JSID_VOID, and maybe in the future Harmony-proposed
- *     private names).
+ *   - PropertyName strings which don't encode uint32_t indexes,
+ *   - Symbol, and
+ *   - JS::PropertyKey::isVoid.
  */
 class PropertyName : public JSAtom {
  private:
@@ -1511,6 +1513,7 @@ extern JSLinearString* NewStringDontDeflate(
     JSContext* cx, UniquePtr<CharT[], JS::FreePolicy> chars, size_t length,
     js::gc::Heap heap = js::gc::Heap::Default);
 
+/* This may return a static string/atom or an inline string. */
 extern JSLinearString* NewDependentString(
     JSContext* cx, JSString* base, size_t start, size_t length,
     js::gc::Heap heap = js::gc::Heap::Default);
@@ -1634,7 +1637,11 @@ extern bool EqualStrings(const JSLinearString* str1,
  * Compare two strings that are known to be the same length.
  * Exposed for the JITs; for ordinary uses, EqualStrings() is more sensible.
  *
- * Precondition: str1->length() == str2->length().
+ * The caller must have checked for the following cases that can be handled
+ * efficiently without requiring a character comparison:
+ *   - str1 == str2
+ *   - str1->length() != str2->length()
+ *   - str1->isAtom() && str2->isAtom()
  */
 extern bool EqualChars(const JSLinearString* str1, const JSLinearString* str2);
 

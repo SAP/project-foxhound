@@ -18,6 +18,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   modal: "chrome://remote/content/shared/Prompt.sys.mjs",
+  registerNavigationId:
+    "chrome://remote/content/shared/NavigationManager.sys.mjs",
   NavigationListener:
     "chrome://remote/content/shared/listeners/NavigationListener.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
@@ -45,14 +47,15 @@ const MAX_WINDOW_SIZE = 10000000;
  */
 
 /**
- * Enum of possible clip rectangle types.
+ * Enum of possible clip rectangle types supported by the
+ * browsingContext.captureScreenshot command.
  *
  * @readonly
  * @enum {ClipRectangleType}
  */
 export const ClipRectangleType = {
+  Box: "box",
   Element: "element",
-  Viewport: "viewport",
 };
 
 /**
@@ -68,6 +71,22 @@ export const ClipRectangleType = {
 const CreateType = {
   tab: "tab",
   window: "window",
+};
+
+/**
+ * @typedef {string} OriginType
+ */
+
+/**
+ * Enum of origin type supported by the
+ * browsingContext.captureScreenshot command.
+ *
+ * @readonly
+ * @enum {OriginType}
+ */
+export const OriginType = {
+  document: "document",
+  viewport: "viewport",
 };
 
 /**
@@ -125,9 +144,9 @@ class BrowsingContextModule extends Module {
   constructor(messageHandler) {
     super(messageHandler);
 
-    // Create the browsing context listener and listen to "attached" events.
     this.#contextListener = new lazy.BrowsingContextListener();
     this.#contextListener.on("attached", this.#onContextAttached);
+    this.#contextListener.on("discarded", this.#onContextDiscarded);
 
     // Create the navigation listener and listen to "navigation-started" and
     // "location-changed" events.
@@ -147,10 +166,14 @@ class BrowsingContextModule extends Module {
 
     // Set of event names which have active subscriptions.
     this.#subscribedEvents = new Set();
+
+    // Treat the event of moving a page to BFCache as context discarded event for iframes.
+    this.messageHandler.on("windowglobal-pagehide", this.#onPageHideEvent);
   }
 
   destroy() {
     this.#contextListener.off("attached", this.#onContextAttached);
+    this.#contextListener.off("discarded", this.#onContextDiscarded);
     this.#contextListener.destroy();
 
     this.#promptListener.off("closed", this.#onPromptClosed);
@@ -158,6 +181,8 @@ class BrowsingContextModule extends Module {
     this.#promptListener.destroy();
 
     this.#subscribedEvents = null;
+
+    this.messageHandler.off("windowglobal-pagehide", this.#onPageHideEvent);
   }
 
   /**
@@ -203,11 +228,11 @@ class BrowsingContextModule extends Module {
 
   /**
    * Used as an argument for browsingContext.captureScreenshot command
-   * to represent a viewport which is going to be a target of the command.
+   * to represent a box which is going to be a target of the command.
    *
    * @typedef BoxClipRectangle
    *
-   * @property {ClipRectangleType} [type=ClipRectangleType.Viewport]
+   * @property {ClipRectangleType} [type=ClipRectangleType.Box]
    * @property {number} x
    * @property {number} y
    * @property {number} width
@@ -222,7 +247,6 @@ class BrowsingContextModule extends Module {
    *
    * @property {ClipRectangleType} [type=ClipRectangleType.Element]
    * @property {SharedReference} element
-   * @property {boolean=} scrollIntoView
    */
 
   /**
@@ -232,14 +256,19 @@ class BrowsingContextModule extends Module {
    * @param {string} options.context
    *     Id of the browsing context to screenshot.
    * @param {ClipRectangle=} options.clip
-   *     An element or a viewport of which a screenshot should be taken.
+   *     A box or an element of which a screenshot should be taken.
    *     If not present, take a screenshot of the whole viewport.
+   * @param {OriginType=} options.origin
    *
    * @throws {NoSuchFrameError}
    *     If the browsing context cannot be found.
    */
   async captureScreenshot(options = {}) {
-    const { clip = null, context: contextId } = options;
+    const {
+      clip = null,
+      context: contextId,
+      origin = OriginType.viewport,
+    } = options;
 
     lazy.assert.string(
       contextId,
@@ -247,30 +276,18 @@ class BrowsingContextModule extends Module {
     );
     const context = this.#getBrowsingContext(contextId);
 
+    const originTypeValues = Object.values(OriginType);
+    lazy.assert.that(
+      value => originTypeValues.includes(value),
+      `Expected "origin" to be one of ${originTypeValues}, got ${origin}`
+    )(origin);
+
     if (clip !== null) {
       lazy.assert.object(clip, `Expected "clip" to be a object, got ${clip}`);
 
       const { type } = clip;
       switch (type) {
-        case ClipRectangleType.Element: {
-          const { element, scrollIntoView = null } = clip;
-
-          lazy.assert.object(
-            element,
-            `Expected "element" to be an object, got ${element}`
-          );
-
-          if (scrollIntoView !== null) {
-            lazy.assert.boolean(
-              scrollIntoView,
-              `Expected "scrollIntoView" to be a boolean, got ${scrollIntoView}`
-            );
-          }
-
-          break;
-        }
-
-        case ClipRectangleType.Viewport: {
+        case ClipRectangleType.Box: {
           const { x, y, width, height } = clip;
 
           lazy.assert.number(x, `Expected "x" to be a number, got ${x}`);
@@ -282,6 +299,17 @@ class BrowsingContextModule extends Module {
           lazy.assert.number(
             height,
             `Expected "height" to be a number, got ${height}`
+          );
+
+          break;
+        }
+
+        case ClipRectangleType.Element: {
+          const { element } = clip;
+
+          lazy.assert.object(
+            element,
+            `Expected "element" to be an object, got ${element}`
           );
 
           break;
@@ -305,6 +333,7 @@ class BrowsingContextModule extends Module {
       },
       params: {
         clip,
+        origin,
       },
       retryOnAbort: true,
     });
@@ -1123,6 +1152,10 @@ class BrowsingContextModule extends Module {
       }
     });
 
+    const navigationId = lazy.registerNavigationId({
+      contextDetails: { context: webProgress.browsingContext },
+    });
+
     await startNavigationFn();
     await navigated;
 
@@ -1135,12 +1168,8 @@ class BrowsingContextModule extends Module {
       url = listener.currentURI.spec;
     }
 
-    const navigation =
-      this.messageHandler.navigationManager.getNavigationForBrowsingContext(
-        webProgress.browsingContext
-      );
     return {
-      navigation: navigation ? navigation.navigationId : null,
+      navigation: navigationId,
       url,
     };
   }
@@ -1216,36 +1245,94 @@ class BrowsingContextModule extends Module {
   }
 
   #onContextAttached = async (eventName, data = {}) => {
-    const { browsingContext, why } = data;
+    if (this.#subscribedEvents.has("browsingContext.contextCreated")) {
+      const { browsingContext, why } = data;
 
-    // Filter out top-level browsing contexts that are created because of a
-    // cross-group navigation.
-    if (why === "replace") {
-      return;
+      // Filter out top-level browsing contexts that are created because of a
+      // cross-group navigation.
+      if (why === "replace") {
+        return;
+      }
+
+      // TODO: Bug 1852941. We should also filter out events which are emitted
+      // for DevTools frames.
+
+      // Filter out notifications for chrome context until support gets
+      // added (bug 1722679).
+      if (!browsingContext.webProgress) {
+        return;
+      }
+
+      const browsingContextInfo = this.#getBrowsingContextInfo(
+        browsingContext,
+        {
+          maxDepth: 0,
+        }
+      );
+
+      // This event is emitted from the parent process but for a given browsing
+      // context. Set the event's contextInfo to the message handler corresponding
+      // to this browsing context.
+      const contextInfo = {
+        contextId: browsingContext.id,
+        type: lazy.WindowGlobalMessageHandler.type,
+      };
+      this.emitEvent(
+        "browsingContext.contextCreated",
+        browsingContextInfo,
+        contextInfo
+      );
     }
+  };
 
-    // Filter out notifications for chrome context until support gets
-    // added (bug 1722679).
-    if (!browsingContext.webProgress) {
-      return;
+  #onContextDiscarded = async (eventName, data = {}) => {
+    if (this.#subscribedEvents.has("browsingContext.contextDestroyed")) {
+      const { browsingContext, why } = data;
+
+      // Filter out top-level browsing contexts that are destroyed because of a
+      // cross-group navigation.
+      if (why === "replace") {
+        return;
+      }
+
+      // TODO: Bug 1852941. We should also filter out events which are emitted
+      // for DevTools frames.
+
+      // Filter out notifications for chrome context until support gets
+      // added (bug 1722679).
+      if (!browsingContext.webProgress) {
+        return;
+      }
+
+      // If this event is for a child context whose top or parent context is also destroyed,
+      // we don't need to send it, in this case the event for the top/parent context is enough.
+      if (
+        browsingContext.parent &&
+        (browsingContext.top.isDiscarded || browsingContext.parent.isDiscarded)
+      ) {
+        return;
+      }
+
+      const browsingContextInfo = this.#getBrowsingContextInfo(
+        browsingContext,
+        {
+          maxDepth: 0,
+        }
+      );
+
+      // This event is emitted from the parent process but for a given browsing
+      // context. Set the event's contextInfo to the message handler corresponding
+      // to this browsing context.
+      const contextInfo = {
+        contextId: browsingContext.id,
+        type: lazy.WindowGlobalMessageHandler.type,
+      };
+      this.emitEvent(
+        "browsingContext.contextDestroyed",
+        browsingContextInfo,
+        contextInfo
+      );
     }
-
-    const browsingContextInfo = this.#getBrowsingContextInfo(browsingContext, {
-      maxDepth: 0,
-    });
-
-    // This event is emitted from the parent process but for a given browsing
-    // context. Set the event's contextInfo to the message handler corresponding
-    // to this browsing context.
-    const contextInfo = {
-      contextId: browsingContext.id,
-      type: lazy.WindowGlobalMessageHandler.type,
-    };
-    this.emitEvent(
-      "browsingContext.contextCreated",
-      browsingContextInfo,
-      contextInfo
-    );
   };
 
   #onLocationChanged = async (eventName, data) => {
@@ -1314,13 +1401,25 @@ class BrowsingContextModule extends Module {
         type: lazy.WindowGlobalMessageHandler.type,
       };
 
+      const eventPayload = {
+        context: contextId,
+        type: prompt.promptType,
+        message: await prompt.getText(),
+      };
+
+      // Bug 1859814: Since the platform doesn't provide the access to the `defaultValue` of the prompt,
+      // we use prompt the `value` instead. The `value` is set to `defaultValue` when `defaultValue` is provided.
+      // This approach doesn't allow us to distinguish between the `defaultValue` being set to an empty string and
+      // `defaultValue` not set, because `value` is always defaulted to an empty string.
+      // We should switch to using the actual `defaultValue` when it's available and check for the `null` here.
+      const defaultValue = await prompt.getInputText();
+      if (defaultValue) {
+        eventPayload.defaultValue = defaultValue;
+      }
+
       this.emitEvent(
         "browsingContext.userPromptOpened",
-        {
-          context: contextId,
-          type: prompt.promptType,
-          message: await prompt.getText(),
-        },
+        eventPayload,
         contextInfo
       );
     }
@@ -1346,6 +1445,15 @@ class BrowsingContextModule extends Module {
         },
         contextInfo
       );
+    }
+  };
+
+  #onPageHideEvent = (name, eventPayload) => {
+    const { context } = eventPayload;
+    if (context.parent) {
+      this.#onContextDiscarded("windowglobal-pagehide", {
+        browsingContext: context,
+      });
     }
   };
 
@@ -1375,7 +1483,8 @@ class BrowsingContextModule extends Module {
 
   #subscribeEvent(event) {
     switch (event) {
-      case "browsingContext.contextCreated": {
+      case "browsingContext.contextCreated":
+      case "browsingContext.contextDestroyed": {
         this.#contextListener.startListening();
         this.#subscribedEvents.add(event);
         break;
@@ -1397,7 +1506,8 @@ class BrowsingContextModule extends Module {
 
   #unsubscribeEvent(event) {
     switch (event) {
-      case "browsingContext.contextCreated": {
+      case "browsingContext.contextCreated":
+      case "browsingContext.contextDestroyed": {
         this.#contextListener.stopListening();
         this.#subscribedEvents.delete(event);
         break;
@@ -1448,6 +1558,7 @@ class BrowsingContextModule extends Module {
   static get supportedEvents() {
     return [
       "browsingContext.contextCreated",
+      "browsingContext.contextDestroyed",
       "browsingContext.domContentLoaded",
       "browsingContext.fragmentNavigated",
       "browsingContext.load",

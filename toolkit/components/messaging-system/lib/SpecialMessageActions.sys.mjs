@@ -193,7 +193,6 @@ export const SpecialMessageActions = {
     const allowedPrefs = [
       "browser.dataFeatureRecommendations.enabled",
       "browser.migrate.content-modal.about-welcome-behavior",
-      "browser.migrate.content-modal.enabled",
       "browser.migrate.content-modal.import-all.enabled",
       "browser.migrate.preferences-entrypoint.enabled",
       "browser.shopping.experience2023.active",
@@ -202,6 +201,7 @@ export const SpecialMessageActions = {
       "browser.shopping.experience2023.survey.hasSeen",
       "browser.shopping.experience2023.survey.pdpVisits",
       "browser.startup.homepage",
+      "browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt",
       "browser.privateWindowSeparation.enabled",
       "browser.firefox-view.feature-tour",
       "browser.pdfjs.feature-tour",
@@ -209,6 +209,7 @@ export const SpecialMessageActions = {
       "cookiebanners.service.mode",
       "cookiebanners.service.mode.privateBrowsing",
       "cookiebanners.service.detectOnly",
+      "messaging-system.askForFeedback",
     ];
 
     if (
@@ -369,6 +370,7 @@ export const SpecialMessageActions = {
    * @param browser {Browser} The browser most relevant to the message.
    * @returns {Promise<unknown>} Type depends on action type. See cases below.
    */
+  /* eslint-disable-next-line complexity */
   async handleAction(action, browser) {
     const window = browser.ownerGlobal;
     switch (action.type) {
@@ -450,6 +452,18 @@ export const SpecialMessageActions = {
           window,
           action.data?.onlyIfKnownBrowser ?? false
         );
+        break;
+      case "DECLINE_DEFAULT_PDF_HANDLER":
+        Services.prefs.setBoolPref(
+          "browser.shell.checkDefaultPDF.silencedByUser",
+          true
+        );
+        break;
+      case "CONFIRM_LAUNCH_ON_LOGIN":
+        const { WindowsLaunchOnLogin } = ChromeUtils.importESModule(
+          "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs"
+        );
+        await WindowsLaunchOnLogin.createLaunchOnLoginRegistryKey();
         break;
       case "PIN_CURRENT_TAB":
         let tab = window.gBrowser.selectedTab;

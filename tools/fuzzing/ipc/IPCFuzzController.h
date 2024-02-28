@@ -12,6 +12,7 @@
 #include "mozilla/HashTable.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/fuzzing/Nyx.h"
+#include "mozilla/ipc/MessageLink.h"
 
 #include "nsIRunnable.h"
 #include "nsThreadUtils.h"
@@ -90,6 +91,8 @@ class IPCFuzzController {
 
   void OnActorConnected(mozilla::ipc::IProtocol* protocol);
   void OnActorDestroyed(mozilla::ipc::IProtocol* protocol);
+  void OnMessageError(mozilla::ipc::HasResultCodes::Result code,
+                      const IPC::Message& aMsg);
   void OnDropPeer(const char* reason, const char* file, int line);
   void OnMessageTaskStart();
   void OnMessageTaskStop();
@@ -108,6 +111,10 @@ class IPCFuzzController {
   void AddToplevelActor(mojo::core::ports::PortName name,
                         mozilla::ipc::ProtocolId protocolId);
 
+  // Used for the IPC_SingleMessage fuzzer
+  UniquePtr<IPC::Message> replaceIPCMessage(UniquePtr<IPC::Message> aMsg);
+  void syncAfterReplace();
+
  private:
   // This is a mapping from port name to a pair of last seen sequence numbers.
   std::unordered_map<mojo::core::ports::PortName, SeqNoPair> portSeqNos;
@@ -115,6 +122,10 @@ class IPCFuzzController {
   // This is a mapping from port name to node name.
   std::unordered_map<mojo::core::ports::PortName, mojo::core::ports::NodeName>
       portNodeName;
+
+  // This is a mapping from port name to protocol name, purely for debugging.
+  std::unordered_map<mojo::core::ports::PortName, std::string>
+      portNameToProtocolName;
 
   // This maps each ProtocolId (IPCMessageStart) to the number of valid
   // messages for that particular type.
@@ -182,6 +193,18 @@ class IPCFuzzController {
   // its own fuzzing thread. Those methods that alter non-threadsafe data
   // structures need to aquire this mutex first.
   Mutex mMutex;  // MOZ_UNANNOTATED;
+
+  // Can be used to specify a non-standard trigger message, e.h. to target
+  // a specific actor.
+  uint32_t mIPCTriggerMsg;
+
+  // Used to dump IPC messages in single message mode
+  Maybe<uint32_t> mIPCDumpMsg;
+  Maybe<uint32_t> mIPCDumpAllMsgsSize;
+  uint32_t mIPCDumpCount = 0;
+
+  // Used to select a particular packet instance in single message mode
+  uint32_t mIPCTriggerSingleMsgWait = 0;
 
   IPCFuzzController();
   NYX_DISALLOW_COPY_AND_ASSIGN(IPCFuzzController);

@@ -89,6 +89,7 @@ ADD_TEST_SUPPORTED_SUITES = [
     "mochitest-chrome",
     "mochitest-plain",
     "mochitest-browser-chrome",
+    "web-platform-tests-privatebrowsing",
     "web-platform-tests-testharness",
     "web-platform-tests-reftest",
     "xpcshell",
@@ -97,6 +98,7 @@ ADD_TEST_SUPPORTED_DOCS = ["js", "html", "xhtml", "xul"]
 
 SUITE_SYNONYMS = {
     "wpt": "web-platform-tests-testharness",
+    "wpt-privatebrowsing": "web-platform-tests-privatebrowsing",
     "wpt-testharness": "web-platform-tests-testharness",
     "wpt-reftest": "web-platform-tests-reftest",
 }
@@ -339,6 +341,13 @@ def guess_suite(abs_test):
     return guessed_suite, err
 
 
+class MachTestRunner:
+    """Adapter for mach test to simplify it's import externally."""
+
+    def test(command_context, what, extra_args, **log_args):
+        return test(command_context, what, extra_args, **log_args)
+
+
 @Command(
     "test",
     category="testing",
@@ -421,6 +430,9 @@ def test(command_context, what, extra_args, **log_args):
     for handler in log.handlers:
         if isinstance(handler, StreamHandler):
             handler.formatter.inner.summary_on_shutdown = True
+
+    if log_args.get("custom_handler", None) is not None:
+        log.add_handler(log_args.get("custom_handler"))
 
     status = None
     for suite_name in run_suites:

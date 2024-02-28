@@ -411,6 +411,54 @@ SectionEnd
 ################################################################################
 # Uninstall Sections
 
+/**
+ * Deletes the registry keys for a protocol handler but only if those registry
+ * keys were pointed to the installation being uninstalled.
+ * Does this with both the HKLM and the HKCU registry entries.
+ *
+ * @param   _PROTOCOL
+ *          The protocol to delete the registry keys for
+ */
+!macro DeleteProtocolRegistryIfSetToInstallation _PROTOCOL
+  Push $0
+  Push $1
+  ; Check if there is a protocol handler registered by fetching the DefaultIcon value
+  ; in the registry.
+  ; If there is something registered for the icon, it will be the path to the executable,
+  ; plus a comma and a number for the id of the resource for the icon.
+  ; Use StrCpy with -2 to remove the comma and the resource id so that
+  ; the whole path to the executable can be compared against what's being
+  ; uninstalled.
+
+  ; Do all of that twice, once for the local machine and once for the current user
+
+  ; Remove protocol handlers
+  ClearErrors
+  ${un.GetLongPath} "$INSTDIR\${FileMainEXE}" $1
+  ReadRegStr $0 HKLM "Software\Classes\${_PROTOCOL}\DefaultIcon" ""
+  ${If} $0 != ""
+    StrCpy $0 $0 -2
+    ${If} $0 == $1
+      DeleteRegKey HKLM "Software\Classes\${_PROTOCOL}"
+    ${EndIf}
+  ${EndIf}
+
+  ClearErrors
+  ReadRegStr $0 HKCU "Software\Classes\${_PROTOCOL}\DefaultIcon" ""
+  ${If} $0 != ""
+    StrCpy $0 $0 -2
+    ${If} $0 == $1
+      DeleteRegKey HKCU "Software\Classes\${_PROTOCOL}"
+    ${EndIf}
+  ${EndIf}
+
+  ClearErrors
+
+  Pop $0
+  Pop $1
+!macroend
+!define DeleteProtocolRegistryIfSetToInstallation '!insertmacro DeleteProtocolRegistryIfSetToInstallation'
+
 Section "Uninstall"
   SetDetailsPrint textonly
   DetailPrint $(STATUS_UNINSTALL_MAIN)
@@ -424,6 +472,15 @@ Section "Uninstall"
   ; from being set.
   Var /GLOBAL UnusedExecCatchReturn
   ExecWait '"$INSTDIR\${FileMainEXE}" --backgroundtask uninstall' $UnusedExecCatchReturn
+
+  ; Uninstall the default browser agent scheduled task and all other scheduled
+  ; tasks registered by Firefox.
+  ; This also removes the registry entries that the WDBA creates.
+  ; One of the scheduled tasks that this will remove is the Background Update
+  ; Task. Ideally, this will eventually be changed so that it doesn't rely on
+  ; the WDBA. See Bug 1710143.
+  ExecWait '"$INSTDIR\default-browser-agent.exe" uninstall $AppUserModelID'
+  ${RemoveDefaultBrowserAgentShortcut}
 
   ; Delete the app exe to prevent launching the app while we are uninstalling.
   ClearErrors
@@ -510,6 +567,13 @@ Section "Uninstall"
 
   DeleteRegKey HKCU "Software\Clients\StartMenuInternet\${AppRegName}-$AppUserModelID"
   DeleteRegValue HKCU "Software\RegisteredApplications" "${AppRegName}-$AppUserModelID"
+
+  ; Clean up "launch on login" registry key for this installation.
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Mozilla-${AppName}-$AppUserModelID"
+
+  ; Remove dual browser extension protocol handlers
+  ${DeleteProtocolRegistryIfSetToInstallation} "firefox"
+  ${DeleteProtocolRegistryIfSetToInstallation} "firefox-private"
 
   ; Remove old protocol handler and StartMenuInternet keys without install path
   ; hashes, but only if they're for this installation.  We've never supported
@@ -644,15 +708,6 @@ Section "Uninstall"
     DeleteRegKey HKCU "Software\Classes\CLSID\$0"
   ${EndIf}
 
-  ; Uninstall the default browser agent scheduled task and all other scheduled
-  ; tasks registered by Firefox.
-  ; This also removes the registry entries that the WDBA creates.
-  ; One of the scheduled tasks that this will remove is the Background Update
-  ; Task. Ideally, this will eventually be changed so that it doesn't rely on
-  ; the WDBA. See Bug 1710143.
-  ExecWait '"$INSTDIR\default-browser-agent.exe" uninstall $AppUserModelID'
-  ${RemoveDefaultBrowserAgentShortcut}
-
   ${un.RemovePrecompleteEntries} "false"
 
   ${If} ${FileExists} "$INSTDIR\defaults\pref\channel-prefs.js"
@@ -675,9 +730,6 @@ Section "Uninstall"
   ${EndIf}
   ${If} ${FileExists} "$INSTDIR\postSigningData"
     Delete /REBOOTOK "$INSTDIR\postSigningData"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\zoneIdProvenanceData"
-    Delete /REBOOTOK "$INSTDIR\zoneIdProvenanceData"
   ${EndIf}
 
   ; Explicitly remove empty webapprt dir in case it exists (bug 757978).

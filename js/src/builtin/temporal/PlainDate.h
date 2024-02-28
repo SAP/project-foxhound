@@ -62,6 +62,7 @@ inline PlainDate ToPlainDate(const PlainDateObject* date) {
 
 enum class TemporalOverflow;
 enum class TemporalUnit;
+class ZonedDateTimeObject;
 
 #ifdef DEBUG
 /**
@@ -89,8 +90,8 @@ bool ThrowIfInvalidISODate(JSContext* cx, double year, double month,
 /**
  * ToTemporalDate ( item [ , options ] )
  */
-Wrapped<PlainDateObject*> ToTemporalDate(JSContext* cx,
-                                         JS::Handle<JSObject*> item);
+PlainDateObject* ToTemporalDate(JSContext* cx,
+                                JS::Handle<Wrapped<ZonedDateTimeObject*>> item);
 
 /**
  * ToTemporalDate ( item [ , options ] )
@@ -138,9 +139,8 @@ bool AddISODate(JSContext* cx, const PlainDate& date, const Duration& duration,
 /**
  * DifferenceISODate ( y1, m1, d1, y2, m2, d2, largestUnit )
  */
-bool DifferenceISODate(JSContext* cx, const PlainDate& start,
-                       const PlainDate& end, TemporalUnit largestUnit,
-                       DateDuration* result);
+DateDuration DifferenceISODate(const PlainDate& start, const PlainDate& end,
+                               TemporalUnit largestUnit);
 
 /**
  * CompareISODate ( y1, m1, d1, y2, m2, d2 )

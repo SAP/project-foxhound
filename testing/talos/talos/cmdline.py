@@ -171,6 +171,12 @@ def create_parser(mach_interface=False):
         help="Comma-separated list of threads to sample",
     )
     add_arg(
+        "--gecko-profile-extra-threads",
+        dest="gecko_profile_extra_threads",
+        type=str,
+        help="Comma-separated list of extra threads to add to the default list of threads to profile.",
+    )
+    add_arg(
         "--extension",
         dest="extensions",
         action="append",
@@ -316,6 +322,13 @@ def create_parser(mach_interface=False):
         default="mozilla-central",
         help="The project branch we're running tests on. Used for "
         "disabling/skipping tests.",
+    )
+    add_arg(
+        "--screenshot-on-failure",
+        action="store_true",
+        dest="screenshot_on_failure",
+        default=False,
+        help="Take a screenshot when the test fails.",
     )
 
     add_logging_group(parser)

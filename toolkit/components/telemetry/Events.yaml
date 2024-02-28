@@ -212,13 +212,13 @@ addonsManager:
           - site_warning, site_blocked, install_disabled_warning
           - download_started, download_completed, download_failed
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "122"
+    expiry_version: "132"
     products:
       - "firefox"
       - "fennec"
       - "thunderbird"
     record_in_processes: ["main"]
-    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100]
+    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295]
     release_channel_collection: opt-out
   install_stats:
     description: >
@@ -284,13 +284,13 @@ addonsManager:
         e.g. install events with source "about:addons" may have "install-from-file" or "url" as method).
       num_strings: The number of permission description strings in the extension permission doorhanger
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "122"
+    expiry_version: "132"
     products:
       - "firefox"
       - "fennec"
       - "thunderbird"
     record_in_processes: ["main"]
-    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100]
+    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295]
     release_channel_collection: opt-out
   report:
     description: >
@@ -311,13 +311,13 @@ addonsManager:
         ERROR_ABORTED_SUBMIT, ERROR_ADDON_NOT_FOUND, ERROR_CLIENT, ERROR_NETWORK, ERROR_UNKNOWN,
         ERROR_RECENT_SUBMIT, ERROR_SERVER, ERROR_AMODETAILS_NOTFOUND, ERROR_AMODETAILS_FAILURE.
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "122"
+    expiry_version: "132"
     products:
       - "firefox"
       - "fennec"
       - "thunderbird"
     record_in_processes: ["main"]
-    bug_numbers: [1544927, 1580561, 1590736, 1630596, 1672570, 1714251, 1749878, 1780746, 1781974, 1817100]
+    bug_numbers: [1544927, 1580561, 1590736, 1630596, 1672570, 1714251, 1749878, 1780746, 1781974, 1817100, 1861295]
     release_channel_collection: opt-out
   reportSuspiciousSite:
     description: >
@@ -327,11 +327,11 @@ addonsManager:
     objects:
       - suspiciousSite
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "122"
+    expiry_version: "132"
     products:
       - "firefox"
     record_in_processes: ["main"]
-    bug_numbers: [1806056, 1817100]
+    bug_numbers: [1806056, 1817100, 1861295]
     release_channel_collection: opt-out
 
 blocklist:
@@ -353,7 +353,7 @@ blocklist:
     extra_keys:
       blocklistState: >
         The blocklistState of the add-on. 0 is unblocked, 2 is blocked.
-        1 is soft blocked (only if blocklist v3 was disabled in favor of v2).
+        1 is soft blocked (this state does not exist in blocklist v3).
       addon_version: >
         Version of the add-on. Used together with an add-on's ID (value) to identify
         add-ons to block.
@@ -379,11 +379,11 @@ blocklist:
         This field is documented in more detail in the definition of the blocklist.mlbf_source scalar.
         Possible values are "dump_match", "cache_match", "remote_match", "dump_fallback", "cache_fallback", "unknown".
     notification_emails: ["addons-dev-internal@mozilla.com", "rwu@mozilla.com"]
-    expiry_version: "122"
+    expiry_version: "132"
     products:
       - "firefox"
     record_in_processes: ["main"]
-    bug_numbers: [1662857, 1730037, 1763529, 1811159]
+    bug_numbers: [1662857, 1730037, 1763529, 1811159, 1861296]
     release_channel_collection: opt-out
 
 downloads:
@@ -417,7 +417,7 @@ form_autocomplete:
       insecureWarning: The number of insecure login field warning rows shown (should be 0 or 1).
       login: The number of login rows shown (with or without the domain line).
       importableLogin: The number of import suggestion rows shown.
-      loginsFooter: The number of "View Saved Logins" footer row shown.
+      loginsFooter: The number of "Manage Passwords" footer row shown.
       stringLength: Length of the text in the field that triggered these results.
     notification_emails: ["passwords-dev@mozilla.org"]
     products:
@@ -432,6 +432,7 @@ address:
     objects:
       - "capture_doorhanger"
       - "update_doorhanger"
+      - "edit_doorhanger"
     methods:
       - "show"
       - "save"
@@ -439,6 +440,7 @@ address:
       - "cancel"
       - "disable"
       - "pref"
+      - "learn_more"
     bug_numbers: [1801039]
     notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
     expiry_version: never
@@ -637,9 +639,9 @@ creditcard:
 extensions.data:
   migrateResult:
     objects: ["storageLocal"]
-    bug_numbers: [1470213, 1553297, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100]
+    bug_numbers: [1470213, 1553297, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295]
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "122"
+    expiry_version: "132"
     products:
       - "firefox"
       - "fennec"
@@ -660,9 +662,9 @@ extensions.data:
       the value of this event is the addon id.
   storageLocalError:
     objects: ["get", "set", "remove", "clear"]
-    bug_numbers: [1606903, 1649948, 1689255, 1730038, 1763523, 1811148]
+    bug_numbers: [1606903, 1649948, 1689255, 1730038, 1763523, 1811148, 1861297]
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "122"
+    expiry_version: "132"
     products:
       - "firefox"
     record_in_processes: ["main", "content"]
@@ -756,56 +758,6 @@ aboutpreferences:
       - "gijs@mozilla.com"
     expiry_version: never
 
-urlbar:
-  engagement:
-    objects: ["click", "enter", "paste_go", "drop_go"]
-    release_channel_collection: opt-out
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    description: >
-      This is recorded on urlbar engagement, that is when the user picks a
-      search result.
-      The value field records the initial interaction type. One of:
-        "typed", "dropped", "pasted", "topsites"
-    bug_numbers: [1559136, 1671404, 1466103]
-    notification_emails:
-      - "fx-search-telemetry@mozilla.com"
-    expiry_version: never
-    extra_keys:
-      elapsed: engagement time in milliseconds.
-      numChars: number of input characters.
-      numWords: number of words in the input.
-      selIndex: index of the selected result in the urlbar panel, or -1.
-      selType: >
-        type of the selected result in the urlbar panel. One of:
-          "autofill", "visit", "bookmark", "bookmark_adaptive", "history",
-          "history_adaptive", "keyword", "search", "searchsuggestion",
-          "searchsuggestion_rich", "switchtab", "remotetab", "extension",
-          "oneoff", "keywordoffer", "canonized", "tip", "tiphelp",
-          "formhistory", "tabtosearch", "quicksuggest", "weather",
-          "clipboard", "dynamic-wikipedia", "navigational", "none"
-      provider: The name of the provider that presented the result.
-  abandonment:
-    objects: ["blur"]
-    release_channel_collection: opt-out
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    description: >
-      This is recorded on urlbar search abandon, that is when the user starts
-      an interaction but then blurs the urlbar.
-      The value field records the initial interaction type. One of:
-        "typed", "dropped", "pasted", "topsites"
-    bug_numbers: [1559136]
-    notification_emails:
-      - "fx-search-telemetry@mozilla.com"
-    expiry_version: never
-    extra_keys:
-      elapsed: abandonement time in milliseconds.
-      numChars: number of input characters.
-      numWords: number of words in the input.
-
 normandy:
   enroll:
     objects: ["preference_study", "addon_study", "preference_rollout", "addon_rollout", "nimbus_experiment"]
@@ -818,7 +770,6 @@ normandy:
         The slug of the branch that was chosen for this client.
       addonId: For addon_study recipes, the ID of the addon that was installed.
       addonVersion: For addon_study recipes, the version of the addon that was installed.
-      enrollmentId: A unique ID for this enrollment that will be included in all related Telemetry.
     bug_numbers: [1443560]
     notification_emails: ["normandy-notifications@mozilla.com"]
     products:
@@ -1058,7 +1009,7 @@ browser.launched_to_handle:
 
 browser.migration:
   opened:
-    objects: ["legacy_wizard", "wizard"]
+    objects: ["wizard"]
     description: >
       Recorded when the migration wizard opens.
     bug_numbers:
@@ -1071,7 +1022,7 @@ browser.migration:
     release_channel_collection: opt-out
     expiry_version: never
   no_browsers_found:
-    objects: ["legacy_wizard", "wizard"]
+    objects: ["wizard"]
     description: >
       Recorded when the migration wizard reports that there are no browsers to migrate from.
     bug_numbers:
@@ -1084,7 +1035,7 @@ browser.migration:
     release_channel_collection: opt-out
     expiry_version: never
   browser_selected:
-    objects: ["legacy_wizard", "wizard"]
+    objects: ["wizard"]
     description: >
       Recorded when the user selects a browser to migrate from.
     bug_numbers:
@@ -1099,7 +1050,7 @@ browser.migration:
     extra_keys:
       migrator_key: The key of the browser that was selected.
   profile_selected:
-    objects: ["legacy_wizard", "wizard"]
+    objects: ["wizard"]
     description: >
       Recorded when the user selects a profile to migrate from. If the browser doesn't
       support multiple profiles, this will not be recorded.
@@ -1115,7 +1066,7 @@ browser.migration:
     extra_keys:
       migrator_key: The key of the browser that had a profile selected for it.
   resources_selected:
-    objects: ["legacy_wizard", "wizard"]
+    objects: ["wizard"]
     description: >
       Recorded when the user selects resources from the browser / profile to import.
     bug_numbers:
@@ -1145,8 +1096,26 @@ browser.migration:
       configured: >
         "1" if Variant 2 of the new Migration Wizard was being used, and the list of
         resources was expanded. "0" otherwise.
+  linux_perms:
+    objects: ["wizard"]
+    description: >
+      Recorded if the user is on Linux and the browser is installed in a sandboxed
+      environment that prevents it from reading other browser's data, and the user
+      is presented with instructions and an option to grant the browser permission
+      to read that other data.
+    bug_numbers:
+      - 1824786
+    notification_emails:
+      - mconley@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes: [main]
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      migrator_key: The key of the migrator that will perform the migration.
   safari_perms:
-    objects: ["legacy_wizard", "wizard"]
+    objects: ["wizard"]
     description: >
       Recorded if the user is on macOS, chose to migrate from Safari, and was presented with
       the page of the wizard requesting permission to read from the Safari profile folder.
@@ -1175,7 +1144,7 @@ browser.migration:
     release_channel_collection: opt-out
     expiry_version: never
   migration_started:
-    objects: ["legacy_wizard", "wizard"]
+    objects: ["wizard"]
     description: >
       Recorded when the user begins a migration.
     bug_numbers:
@@ -1203,7 +1172,7 @@ browser.migration:
         "1" if extensions are being migrated. "0" otherwise.
       other: A count of the number of other resource types that are being migrated.
   migration_finished:
-    objects: ["legacy_wizard", "wizard"]
+    objects: ["wizard"]
     description: >
       Recorded when the user finishes a migration.
     bug_numbers:
@@ -2353,7 +2322,7 @@ devtools.main:
     release_channel_collection: opt-out
     expiry_version: never
     extra_keys:
-      mode: No throttling, GPRS, Regular 2G, Good 2G, Regular 3G, Good 3G, Regular 4G / LTE, DSL or WI-FI.
+      mode: No throttling, GPRS, Regular 2G, Good 2G, Regular 3G, Good 3G, Regular 4G / LTE, DSL, WI-FI, or Offline.
       session_id: The toolbox session start time e.g. 13963.
   tool_timer:
     objects: ["animationinspector", "compatibilityview", "computedview", "changesview", "fontinspector", "layoutview", "ruleview"]
@@ -2665,7 +2634,7 @@ intl.ui.browserLanguage:
       installId: The id for an install.
     products:
       - firefox
-    expiry_version: "122"
+    expiry_version: "135"
     notification_emails:
       - flod@mozilla.com
       - mstriemer@mozilla.com
@@ -2678,6 +2647,7 @@ intl.ui.browserLanguage:
       - 1672571
       - 1739288
       - 1796396
+      - 1861299
 
 network.dns:
   trrConfirmation:
@@ -3030,6 +3000,23 @@ pictureinpicture.settings:
       - main
     bug_numbers:
       - 1639774
+    expiry_version: "never"
+    release_channel_collection: opt-out
+
+launch_on_login:
+  last_profile_disable:
+    objects: ["startup"]
+    description: >
+      Recorded when Launch on login is disabled because the
+      start with last profile setting has been disabled.
+    notification_emails:
+      - nalexander@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1858223
     expiry_version: "never"
     release_channel_collection: opt-out
 
@@ -3516,55 +3503,6 @@ installation:
       - application-update-telemetry-alerts@mozilla.com
       - rtestard@mozilla.com
     expiry_version: never
-  first_seen_prov_ext:
-    description: >
-      This is an extension of the `installation.first_seen` event. It will always be recorded at
-      the same time as that event, so an event ping that contains one will generally contain the
-      other (the exception being if the event ping splits between the two and one of the two pings
-      fails to be received properly, which should be exceedingly rare). The reason for this event
-      to exist is that we want to include more than 10 `extra_keys`, but the limit is 10. The
-      specific extra keys that we want to include are related to provenance data (see Bug 1814968).
-    objects:
-      - full # if the full installer was run directly
-      - stub # if the stub installer was used
-      - msix # if the installation was done through an MSIX package
-    release_channel_collection: opt-out
-    record_in_processes: ["main"]
-    products: ["firefox"]
-    operating_systems: ["windows"]
-    extra_keys:
-      data_exists: >
-        Will be "true" if the "zoneIdProvenanceData" file is present in the installation directory
-        and we were able to successfully read it. This key is only present on platforms that
-        support provenance data.
-      file_system: >
-        The file system that the installer resided on at installation time. Possible values are:
-        "NTFS", "FAT32", "other". In error cases, it can also be "missing", "error" or
-        "readIniError". This key is only present if `data_exists` is "true".
-      ads_exists: >
-        Will always be false if `data_exists` is false. Will be "true" if the provenance data
-        indicates that the :Zone.Identifier Alternate Data Stream existed on the installer.
-      security_zone: >
-        The zone identifier in the installer's :Zone.Identifier ADS. Possible values are integers
-        between 0 and 4, inclusive (encoded as strings). In error cases, it can also be
-        "unexpected", "missing", "error", or "readIniError". This key is only present if
-        `ads_exists` is "true".
-      refer_url_exist: >
-        Will be "true" if the zone identifier ADS contained a referrer URL. Will be false if a
-        referrer URL is specified, but it isn't a valid URL. Only sent if `ads_exists` is "true".
-      refer_url_moz: >
-        Will be "true" if the referrer URL from the zone identifier ADS appeared to be a Mozilla
-        URL. Only sent if `refer_url_exist` is "true".
-      host_url_exist: >
-        Will be "true" if the zone identifier ADS contained a host URL. Will be false if a host URL
-        is specified, but it isn't a valid URL. Only sent if `ads_exists` is "true".
-      host_url_moz: >
-        Will be "true" if the host URL from the zone identifier ADS appeared to be a Mozilla URL.
-        Only sent if `host_url_exists` is "true".
-    bug_numbers: [1814968, 1821189]
-    notification_emails:
-      - application-update-telemetry-alerts@mozilla.com
-    expiry_version: "121"
 
 contextservices.quicksuggest:
   data_collect_toggled:
@@ -4071,6 +4009,23 @@ firefoxview_next:
       - 1842616
     expiry_version: "never"
     release_channel_collection: opt-out
+  browser_context_menu:
+    objects: ["tabs"]
+    description: >
+      Recorded when a browser context menu selection is made in Firefox View
+    extra_keys:
+      menu_action: The menu action the user has selected for a given tab
+      page: The short page name used as the location hash when selecting the Firefox View tab
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1851197
+    expiry_version: "never"
+    release_channel_collection: opt-out
   entered:
     objects: ["firefoxview"]
     description: >
@@ -4248,7 +4203,8 @@ cookie_banner:
       - tihuang@mozilla.com
     bug_numbers:
       - 1797079
-    expiry_version: "115"
+      - 1861317
+    expiry_version: "128"
     extra_keys:
       no_rule: There is no cookie banner rule for the reloading domain.
       has_cookie_rule: There is a matching cookie rule for the reloading domain.
@@ -4269,6 +4225,13 @@ screenshots:
       - 1801019
     expiry_version: "never"
     release_channel_collection: opt-out
+    extra_keys:
+      fullpage: Number of times a full page was selected
+      visible: Number of times a visible page was selected
+      element: Number of times an element was selected
+      region: Number of times a region was selected
+      move: Number of times a region was moved
+      resize: Number of times a region was resized
   copy:
     objects: ["overlay_copy", "preview_copy"]
     description: >
@@ -4283,6 +4246,13 @@ screenshots:
       - 1801019
     expiry_version: "never"
     release_channel_collection: opt-out
+    extra_keys:
+      fullpage: Number of times a full page was selected
+      visible: Number of times a visible page was selected
+      element: Number of times an element was selected
+      region: Number of times a region was selected
+      move: Number of times a region was moved
+      resize: Number of times a region was resized
   selected:
     objects: ["element", "region_selection", "visible", "full_page"]
     description: >

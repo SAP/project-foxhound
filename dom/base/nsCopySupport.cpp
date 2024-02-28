@@ -24,7 +24,7 @@
 #include "mozilla/dom/DataTransfer.h"
 
 #include "nsIDocShell.h"
-#include "nsIContentViewerEdit.h"
+#include "nsIDocumentViewerEdit.h"
 #include "nsISelectionController.h"
 
 #include "nsPIDOMWindow.h"
@@ -40,6 +40,7 @@
 #include "nsContentCID.h"
 
 #ifdef XP_WIN
+#  include "mozilla/StaticPrefs_clipboard.h"
 #  include "nsCExternalHandlerService.h"
 #  include "nsEscape.h"
 #  include "nsIMIMEInfo.h"
@@ -462,7 +463,7 @@ nsresult nsCopySupport::ImageCopy(nsIImageLoadingContent* aImageElement,
   NS_ENSURE_SUCCESS(rv, rv);
   trans->Init(aLoadContext);
 
-  if (aCopyFlags & nsIContentViewerEdit::COPY_IMAGE_TEXT) {
+  if (aCopyFlags & nsIDocumentViewerEdit::COPY_IMAGE_TEXT) {
     // get the location from the element
     nsCOMPtr<nsIURI> uri;
     rv = aImageElement->GetCurrentURI(getter_AddRefs(uri));
@@ -478,7 +479,7 @@ nsresult nsCopySupport::ImageCopy(nsIImageLoadingContent* aImageElement,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  if (aCopyFlags & nsIContentViewerEdit::COPY_IMAGE_HTML) {
+  if (aCopyFlags & nsIDocumentViewerEdit::COPY_IMAGE_HTML) {
     // append HTML data to the transferable
     nsCOMPtr<nsINode> node(do_QueryInterface(aImageElement, &rv));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -487,7 +488,7 @@ nsresult nsCopySupport::ImageCopy(nsIImageLoadingContent* aImageElement,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  if (aCopyFlags & nsIContentViewerEdit::COPY_IMAGE_DATA) {
+  if (aCopyFlags & nsIDocumentViewerEdit::COPY_IMAGE_DATA) {
     // get the image data and its request from the element
     nsCOMPtr<imgIRequest> imgRequest;
     nsCOMPtr<imgIContainer> image = nsContentUtils::GetImageFromContent(
@@ -502,8 +503,10 @@ nsresult nsCopySupport::ImageCopy(nsIImageLoadingContent* aImageElement,
     }
 
 #ifdef XP_WIN
-    rv = AppendImagePromise(trans, imgRequest, aImageElement);
-    NS_ENSURE_SUCCESS(rv, rv);
+    if (StaticPrefs::clipboard_imageAsFile_enabled()) {
+      rv = AppendImagePromise(trans, imgRequest, aImageElement);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
 #endif
 
     // copy the image data onto the transferable

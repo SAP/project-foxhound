@@ -1972,22 +1972,22 @@ void MacroAssembler::spectreBoundsCheckPtr(Register index,
 // ========================================================================
 // Memory access primitives.
 
-void MacroAssembler::storeUncanonicalizedFloat32(FloatRegister src,
-                                                 const Address& addr) {
-  ma_fst_s(src, addr);
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat32(
+    FloatRegister src, const Address& addr) {
+  return ma_fst_s(src, addr);
 }
-void MacroAssembler::storeUncanonicalizedFloat32(FloatRegister src,
-                                                 const BaseIndex& addr) {
-  ma_fst_s(src, addr);
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat32(
+    FloatRegister src, const BaseIndex& addr) {
+  return ma_fst_s(src, addr);
 }
 
-void MacroAssembler::storeUncanonicalizedDouble(FloatRegister src,
-                                                const Address& addr) {
-  ma_fst_d(src, addr);
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedDouble(
+    FloatRegister src, const Address& addr) {
+  return ma_fst_d(src, addr);
 }
-void MacroAssembler::storeUncanonicalizedDouble(FloatRegister src,
-                                                const BaseIndex& addr) {
-  ma_fst_d(src, addr);
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedDouble(
+    FloatRegister src, const BaseIndex& addr) {
+  return ma_fst_d(src, addr);
 }
 
 void MacroAssembler::memoryBarrier(MemoryBarrierBits barrier) {

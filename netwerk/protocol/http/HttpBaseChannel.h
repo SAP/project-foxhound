@@ -184,6 +184,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD DoApplyContentConversions(nsIStreamListener* aNextListener,
                                        nsIStreamListener** aNewNextListener,
                                        nsISupports* aCtxt) override;
+  NS_IMETHOD SetHasContentDecompressed(bool value) override;
+  NS_IMETHOD GetHasContentDecompressed(bool* value) override;
 
   // HttpBaseChannel::nsIHttpChannel
   NS_IMETHOD GetRequestMethod(nsACString& aMethod) override;
@@ -570,6 +572,16 @@ class HttpBaseChannel : public nsHashPropertyBag,
     return mCachedOpaqueResponseBlockingPref;
   }
 
+  TimeStamp GetOnStartRequestStartTime() const {
+    return mOnStartRequestStartTime;
+  }
+  TimeStamp GetDataAvailableStartTime() const {
+    return mOnDataAvailableStartTime;
+  }
+  TimeStamp GetOnStopRequestStartTime() const {
+    return mOnStopRequestStartTime;
+  }
+
  protected:
   nsresult GetTopWindowURI(nsIURI* aURIBeingLoaded, nsIURI** aTopWindowURI);
 
@@ -782,6 +794,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
   TimeStamp mDispatchFetchEventEnd;
   TimeStamp mHandleFetchEventStart;
   TimeStamp mHandleFetchEventEnd;
+  TimeStamp mOnStartRequestStartTime;
+  TimeStamp mOnDataAvailableStartTime;
+  TimeStamp mOnStopRequestStartTime;
   // copied from the transaction before we null out mTransaction
   // so that the timing can still be queried from OnStopRequest
   TimingStruct mTransactionTimings;
@@ -813,6 +828,10 @@ class HttpBaseChannel : public nsHashPropertyBag,
   Atomic<bool, ReleaseAcquire> mCanceled;
   Atomic<uint32_t, ReleaseAcquire> mFirstPartyClassificationFlags;
   Atomic<uint32_t, ReleaseAcquire> mThirdPartyClassificationFlags;
+
+  // mutex to guard members accessed during OnDataFinished in
+  // HttpChannelChild.cpp
+  Mutex mOnDataFinishedMutex{"HttpChannelChild::OnDataFinishedMutex"};
 
   UniquePtr<ProfileChunkedBuffer> mSource;
 
@@ -986,6 +1005,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   bool mChannelBlockedByOpaqueResponse;
 
   bool mDummyChannelForImageCache;
+
+  bool mHasContentDecompressed;
 
   // clang-format off
   MOZ_ATOMIC_BITFIELDS(mAtomicBitfields3, 8, (

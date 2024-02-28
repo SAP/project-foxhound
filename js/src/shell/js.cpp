@@ -752,6 +752,7 @@ bool shell::enableArrayGrouping = false;
 bool shell::enableNewSetMethods = false;
 // Pref for ArrayBuffer.prototype.transfer{,ToFixedLength}() methods.
 bool shell::enableArrayBufferTransfer = false;
+bool shell::enableSymbolsAsWeakMapKeys = false;
 #endif
 bool shell::enableImportAssertions = false;
 #ifdef JS_GC_ZEAL
@@ -3459,7 +3460,7 @@ static bool PCToLine(JSContext* cx, unsigned argc, Value* vp) {
 
 static bool Notes(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  Sprinter sprinter(cx);
+  JSSprinter sprinter(cx);
   if (!sprinter.init()) {
     return false;
   }
@@ -3475,7 +3476,7 @@ static bool Notes(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  JSString* str = JS_NewStringCopyZ(cx, sprinter.string());
+  JSString* str = sprinter.release(cx);
   if (!str) {
     return false;
   }
@@ -3518,7 +3519,7 @@ struct DisassembleOptionParser {
 } /* anonymous namespace */
 
 static bool DisassembleToSprinter(JSContext* cx, unsigned argc, Value* vp,
-                                  Sprinter* sprinter) {
+                                  StringPrinter* sp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   DisassembleOptionParser p(args.length(), args.array());
   if (!p.parse(cx)) {
@@ -3530,7 +3531,7 @@ static bool DisassembleToSprinter(JSContext* cx, unsigned argc, Value* vp,
     RootedScript script(cx, GetTopScript(cx));
     if (script) {
       JSAutoRealm ar(cx, script);
-      if (!JSScript::dump(cx, script, p.options, sprinter)) {
+      if (!JSScript::dump(cx, script, p.options, sp)) {
         return false;
       }
     }
@@ -3551,18 +3552,18 @@ static bool DisassembleToSprinter(JSContext* cx, unsigned argc, Value* vp,
         return false;
       }
 
-      if (!JSScript::dump(cx, script, p.options, sprinter)) {
+      if (!JSScript::dump(cx, script, p.options, sp)) {
         return false;
       }
     }
   }
 
-  return !sprinter->hadOutOfMemory();
+  return true;
 }
 
 static bool DisassembleToString(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  Sprinter sprinter(cx);
+  JSSprinter sprinter(cx);
   if (!sprinter.init()) {
     return false;
   }
@@ -3570,16 +3571,7 @@ static bool DisassembleToString(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  const char* chars = sprinter.string();
-  size_t len;
-  JS::UniqueTwoByteChars buf(
-      JS::LossyUTF8CharsToNewTwoByteCharsZ(
-          cx, JS::UTF8Chars(chars, strlen(chars)), &len, js::MallocArena)
-          .get());
-  if (!buf) {
-    return false;
-  }
-  JSString* str = JS_NewUCStringCopyN(cx, buf.get(), len);
+  JSString* str = sprinter.release(cx);
   if (!str) {
     return false;
   }
@@ -3603,7 +3595,11 @@ static bool Disassemble(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  fprintf(gOutFile->fp, "%s\n", sprinter.string());
+  JS::UniqueChars str = sprinter.release();
+  if (!str) {
+    return false;
+  }
+  fprintf(gOutFile->fp, "%s\n", str.get());
   args.rval().setUndefined();
   return true;
 }
@@ -3661,7 +3657,11 @@ static bool DisassFile(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  fprintf(gOutFile->fp, "%s\n", sprinter.string());
+  JS::UniqueChars chars = sprinter.release();
+  if (!chars) {
+    return false;
+  }
+  fprintf(gOutFile->fp, "%s\n", chars.get());
 
   args.rval().setUndefined();
   return true;
@@ -3724,15 +3724,11 @@ static bool DisassWithSrc(JSContext* cx, unsigned argc, Value* vp) {
       if (line2 < line1) {
         if (bupline != line2) {
           bupline = line2;
-          if (!sprinter.jsprintf("%s %3u: BACKUP\n", sep, line2)) {
-            return false;
-          }
+          sprinter.printf("%s %3u: BACKUP\n", sep, line2);
         }
       } else {
         if (bupline && line1 == line2) {
-          if (!sprinter.jsprintf("%s %3u: RESTORE\n", sep, line2)) {
-            return false;
-          }
+          sprinter.printf("%s %3u: RESTORE\n", sep, line2);
         }
         bupline = 0;
         while (line1 < line2) {
@@ -3742,9 +3738,7 @@ static bool DisassWithSrc(JSContext* cx, unsigned argc, Value* vp) {
             return false;
           }
           line1++;
-          if (!sprinter.jsprintf("%s %3u: %s", sep, line1, linebuf)) {
-            return false;
-          }
+          sprinter.printf("%s %3u: %s", sep, line1, linebuf);
         }
       }
 
@@ -3757,7 +3751,11 @@ static bool DisassWithSrc(JSContext* cx, unsigned argc, Value* vp) {
       pc += len;
     }
 
-    fprintf(gOutFile->fp, "%s\n", sprinter.string());
+    JS::UniqueChars str = sprinter.release();
+    if (!str) {
+      return false;
+    }
+    fprintf(gOutFile->fp, "%s\n", str.get());
   }
 
   args.rval().setUndefined();
@@ -4206,6 +4204,7 @@ static void SetStandardRealmOptions(JS::RealmOptions& options) {
 #ifdef NIGHTLY_BUILD
       .setNewSetMethodsEnabled(enableNewSetMethods)
       .setArrayBufferTransferEnabled(enableArrayBufferTransfer)
+      .setSymbolsAsWeakMapKeysEnabled(enableSymbolsAsWeakMapKeys)
 #endif
       ;
 }
@@ -4896,6 +4895,38 @@ static bool InterruptRegexp(JSContext* cx, unsigned argc, Value* vp) {
                               args.rval());
 }
 #endif
+
+static bool CheckRegExpSyntax(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject callee(cx, &args.callee());
+
+  if (args.length() != 1) {
+    ReportUsageErrorASCII(cx, callee, "Wrong number of arguments.");
+    return false;
+  }
+  if (!args[0].isString()) {
+    ReportUsageErrorASCII(cx, callee, "First argument must be a string.");
+    return false;
+  }
+
+  RootedString string(cx, args[0].toString());
+  AutoStableStringChars stableChars(cx);
+  if (!stableChars.initTwoByte(cx, string)) {
+    return false;
+  }
+
+  const char16_t* chars = stableChars.twoByteRange().begin().get();
+  size_t length = string->length();
+
+  Rooted<JS::Value> error(cx);
+  if (!JS::CheckRegExpSyntax(cx, chars, length, JS::RegExpFlag::NoFlags,
+                             &error)) {
+    return false;
+  }
+
+  args.rval().set(error);
+  return true;
+}
 
 static bool SetJitCompilerOption(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -5662,13 +5693,13 @@ static bool DumpAST(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
 
   js::frontend::ParseNode* pn;
   if (goal == frontend::ParseGoal::Script) {
-    pn = parser.parse();
+    pn = parser.parse().unwrapOr(nullptr);
   } else {
     ModuleBuilder builder(&fc, &parser);
 
     SourceExtent extent = SourceExtent::makeGlobalExtent(length);
     ModuleSharedContext modulesc(&fc, options, builder, extent);
-    pn = parser.moduleBody(&modulesc);
+    pn = parser.moduleBody(&modulesc).unwrapOr(nullptr);
   }
 
   if (!pn) {
@@ -6024,7 +6055,7 @@ static bool SyntaxParse(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  bool succeeded = parser.parse();
+  bool succeeded = parser.parse().isOk();
   if (fc.hadErrors()) {
     return false;
   }
@@ -7274,6 +7305,7 @@ static void SingleStepCallback(void* arg, jit::Simulator* sim, void* pc) {
   state.sp = (void*)sim->get_register(jit::Simulator::sp);
   state.lr = (void*)sim->get_register(jit::Simulator::lr);
   state.fp = (void*)sim->get_register(jit::Simulator::fp);
+  state.tempFP = (void*)sim->get_register(jit::Simulator::r7);
 #  elif defined(JS_SIMULATOR_MIPS64) || defined(JS_SIMULATOR_MIPS32)
   state.sp = (void*)sim->getRegister(jit::Simulator::sp);
   state.lr = (void*)sim->getRegister(jit::Simulator::ra);
@@ -8332,7 +8364,7 @@ class ShellAutoEntryMonitor : JS::dbg::AutoEntryMonitor {
     MOZ_ASSERT(!enteredWithoutExit);
     enteredWithoutExit = true;
 
-    RootedString displayId(cx, JS_GetFunctionDisplayId(function));
+    RootedString displayId(cx, JS_GetMaybePartialFunctionDisplayId(function));
     if (displayId) {
       UniqueChars displayIdStr = JS_EncodeStringToUTF8(cx, displayId);
       if (!displayIdStr) {
@@ -9372,10 +9404,14 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "interruptRegexp(<regexp>, <string>)",
 "  Interrrupt the execution of regular expression.\n"),
 #endif
+    JS_FN_HELP("checkRegExpSyntax", CheckRegExpSyntax, 1, 0,
+"checkRegExpSyntax(<string>)",
+"  Return undefined if the string parses as a RegExp. If the string does not\n"
+"  parse correctly, return the SyntaxError that occurred."),
+
     JS_FN_HELP("enableLastWarning", EnableLastWarning, 0, 0,
 "enableLastWarning()",
 "  Enable storing the last warning."),
-
     JS_FN_HELP("disableLastWarning", DisableLastWarning, 0, 0,
 "disableLastWarning()",
 "  Disable storing the last warning."),
@@ -11724,6 +11760,8 @@ bool InitOptionParser(OptionParser& op) {
                         "Enable New Set methods") ||
       !op.addBoolOption('\0', "enable-arraybuffer-transfer",
                         "Enable ArrayBuffer.prototype.transfer() methods") ||
+      !op.addBoolOption('\0', "enable-symbols-as-weakmap-keys",
+                        "Enable Symbols As WeakMap keys") ||
       !op.addBoolOption('\0', "enable-top-level-await",
                         "Enable top-level await") ||
       !op.addBoolOption('\0', "enable-class-static-blocks",
@@ -11836,6 +11874,14 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption('\0', "no-baseline", "Disable baseline compiler") ||
       !op.addBoolOption('\0', "baseline-eager",
                         "Always baseline-compile methods") ||
+#ifdef ENABLE_PORTABLE_BASELINE_INTERP
+      !op.addBoolOption('\0', "portable-baseline-eager",
+                        "Always use the porbale baseline interpreter") ||
+      !op.addBoolOption('\0', "portable-baseline",
+                        "Enable Portable Baseline Interpreter (default)") ||
+      !op.addBoolOption('\0', "no-portable-baseline",
+                        "Disable Portable Baseline Interpreter") ||
+#endif
       !op.addIntOption(
           '\0', "baseline-warmup-threshold", "COUNT",
           "Wait for COUNT calls or iterations before baseline-compiling "
@@ -12235,6 +12281,8 @@ bool SetContextOptions(JSContext* cx, const OptionParser& op) {
 #ifdef NIGHTLY_BUILD
   enableNewSetMethods = op.getBoolOption("enable-new-set-methods");
   enableArrayBufferTransfer = op.getBoolOption("enable-arraybuffer-transfer");
+  enableSymbolsAsWeakMapKeys =
+      op.getBoolOption("enable-symbols-as-weakmap-keys");
 #endif
   enableImportAssertions = op.getBoolOption("enable-import-assertions");
   useFdlibmForSinCosTan = op.getBoolOption("use-fdlibm-for-sin-cos-tan");
@@ -12634,6 +12682,18 @@ bool SetContextJITOptions(JSContext* cx, const OptionParser& op) {
   if (op.getBoolOption("baseline-eager")) {
     jit::JitOptions.setEagerBaselineCompilation();
   }
+
+#ifdef ENABLE_PORTABLE_BASELINE_INTERP
+  if (op.getBoolOption("portable-baseline-eager")) {
+    jit::JitOptions.setEagerPortableBaselineInterpreter();
+  }
+  if (op.getBoolOption("portable-baseline")) {
+    jit::JitOptions.portableBaselineInterpreter = true;
+  }
+  if (op.getBoolOption("no-portable-baseline")) {
+    jit::JitOptions.portableBaselineInterpreter = false;
+  }
+#endif
 
   if (op.getBoolOption("blinterp")) {
     jit::JitOptions.baselineInterpreter = true;

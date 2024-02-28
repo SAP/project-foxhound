@@ -21,6 +21,7 @@
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/EventSourceEventService.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/Try.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIThreadRetargetableStreamListener.h"
@@ -72,7 +73,6 @@ static LazyLogModule gEventSourceLog("EventSource");
   PR_IntervalToMilliseconds(DELAY_INTERVAL_LIMIT)
 
 class EventSourceImpl final : public nsIObserver,
-                              public nsIStreamListener,
                               public nsIChannelEventSink,
                               public nsIInterfaceRequestor,
                               public nsSupportsWeakReference,
@@ -714,8 +714,8 @@ EventSourceImpl::OnStartRequest(nsIRequest* aRequest) {
 
   if (NS_FAILED(status)) {
     // EventSource::OnStopRequest will evaluate if it shall either reestablish
-    // or fail the connection
-    return NS_ERROR_ABORT;
+    // or fail the connection, based on the status.
+    return status;
   }
 
   uint32_t httpStatus;
@@ -1827,7 +1827,7 @@ class WorkerRunnableDispatcher final : public WorkerRunnable {
   WorkerRunnableDispatcher(RefPtr<EventSourceImpl>&& aImpl,
                            WorkerPrivate* aWorkerPrivate,
                            already_AddRefed<nsIRunnable> aEvent)
-      : WorkerRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount),
+      : WorkerRunnable(aWorkerPrivate, WorkerThread),
         mEventSourceImpl(std::move(aImpl)),
         mEvent(std::move(aEvent)) {}
 
@@ -1951,6 +1951,10 @@ EventSourceImpl::CheckListenerChain() {
   MOZ_ASSERT(NS_IsMainThread(), "Should be on the main thread!");
   return NS_OK;
 }
+
+NS_IMETHODIMP
+EventSourceImpl::OnDataFinished(nsresult) { return NS_OK; }
+
 ////////////////////////////////////////////////////////////////////////////////
 // EventSource
 ////////////////////////////////////////////////////////////////////////////////

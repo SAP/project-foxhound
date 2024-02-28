@@ -6,6 +6,7 @@
 
 const {
   VIEW_NODE_CSS_QUERY_CONTAINER,
+  VIEW_NODE_CSS_SELECTOR_WARNINGS,
   VIEW_NODE_FONT_TYPE,
   VIEW_NODE_IMAGE_URL_TYPE,
   VIEW_NODE_INACTIVE_CSS,
@@ -140,6 +141,9 @@ function getNodeInfo(node, elementStyle) {
       ancestorIndex: containerQueryEl.getAttribute("data-ancestor-index"),
       rule,
     };
+  } else if (node.classList.contains("ruleview-selector-warnings")) {
+    type = VIEW_NODE_CSS_SELECTOR_WARNINGS;
+    value = node.getAttribute("data-selector-warning-kind").split(",");
   } else if (declaration && classList.contains("ruleview-shapeswatch")) {
     type = VIEW_NODE_SHAPE_SWATCH;
     value = {
@@ -180,10 +184,9 @@ function getNodeInfo(node, elementStyle) {
       textProperty: declaration,
     };
   } else if (
-    classList.contains("ruleview-selector-unmatched") ||
-    classList.contains("ruleview-selector-matched") ||
-    classList.contains("ruleview-selectorcontainer") ||
+    classList.contains("ruleview-selectors-container") ||
     classList.contains("ruleview-selector") ||
+    classList.contains("ruleview-selector-element") ||
     classList.contains("ruleview-selector-attribute") ||
     classList.contains("ruleview-selector-pseudo-class") ||
     classList.contains("ruleview-selector-pseudo-class-lock")
@@ -195,7 +198,11 @@ function getNodeInfo(node, elementStyle) {
     classList.contains("ruleview-rule-source-label")
   ) {
     type = VIEW_NODE_LOCATION_TYPE;
-    value = rule.sheet?.href ? rule.sheet.href : rule.title;
+    const sourceLabelEl = classList.contains("ruleview-rule-source-label")
+      ? node
+      : node.querySelector(".ruleview-rule-source-label");
+    value =
+      sourceLabelEl.getAttribute("data-url") || rule.sheet?.href || rule.title;
   } else {
     return null;
   }

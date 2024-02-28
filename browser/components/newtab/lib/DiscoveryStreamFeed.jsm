@@ -21,12 +21,10 @@ const { actionTypes: at, actionCreators: ac } = ChromeUtils.importESModule(
 );
 
 const CACHE_KEY = "discovery_stream";
-const LAYOUT_UPDATE_TIME = 30 * 60 * 1000; // 30 minutes
 const STARTUP_CACHE_EXPIRE_TIME = 7 * 24 * 60 * 60 * 1000; // 1 week
 const COMPONENT_FEEDS_UPDATE_TIME = 30 * 60 * 1000; // 30 minutes
 const SPOCS_FEEDS_UPDATE_TIME = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_RECS_EXPIRE_TIME = 60 * 60 * 1000; // 1 hour
-const MIN_PERSONALIZATION_UPDATE_TIME = 12 * 60 * 60 * 1000; // 12 hours
 const MAX_LIFETIME_CAP = 500; // Guard against misconfiguration on the server
 const FETCH_TIMEOUT = 45 * 1000;
 const SPOCS_URL = "https://spocs.getpocket.com/spocs";
@@ -46,6 +44,7 @@ const PREF_USER_TOPSITES = "feeds.topsites";
 const PREF_SYSTEM_TOPSITES = "feeds.system.topsites";
 const PREF_SPOCS_CLEAR_ENDPOINT = "discoverystream.endpointSpocsClear";
 const PREF_SHOW_SPONSORED = "showSponsored";
+const PREF_SYSTEM_SHOW_SPONSORED = "system.showSponsored";
 const PREF_SHOW_SPONSORED_TOPSITES = "showSponsoredTopSites";
 // Nimbus variable to enable the SOV feature for sponsored tiles.
 const NIMBUS_VARIABLE_CONTILE_SOV_ENABLED = "topSitesContileSovEnabled";
@@ -56,9 +55,6 @@ const PREF_COLLECTIONS_ENABLED =
   "discoverystream.sponsored-collections.enabled";
 const PREF_POCKET_BUTTON = "extensions.pocket.enabled";
 const PREF_COLLECTION_DISMISSIBLE = "discoverystream.isCollectionDismissible";
-const PREF_PERSONALIZATION = "discoverystream.personalization.enabled";
-const PREF_PERSONALIZATION_OVERRIDE =
-  "discoverystream.personalization.override";
 
 let getHardcodedLayout;
 
@@ -84,15 +80,6 @@ class DiscoveryStreamFeed {
     return impressionId;
   }
 
-  finalLayoutEndpoint(url, apiKey) {
-    if (url.includes("$apiKey") && !apiKey) {
-      throw new Error(
-        `Layout Endpoint - An API key was specified but none configured: ${url}`
-      );
-    }
-    return url.replace("$apiKey", apiKey);
-  }
-
   get config() {
     if (this._prefCache.config) {
       return this._prefCache.config;
@@ -101,16 +88,6 @@ class DiscoveryStreamFeed {
       this._prefCache.config = JSON.parse(
         this.store.getState().Prefs.values[PREF_CONFIG]
       );
-      const layoutUrl = this._prefCache.config.layout_endpoint;
-
-      const apiKeyPref = this._prefCache.config.api_key_pref;
-      if (layoutUrl && apiKeyPref) {
-        const apiKey = Services.prefs.getCharPref(apiKeyPref, "");
-        this._prefCache.config.layout_endpoint = this.finalLayoutEndpoint(
-          layoutUrl,
-          apiKey
-        );
-      }
     } catch (e) {
       // istanbul ignore next
       this._prefCache.config = {};
@@ -166,7 +143,7 @@ class DiscoveryStreamFeed {
     // Combine user-set sponsored opt-out with Mozilla-set config
     return (
       this.store.getState().Prefs.values[PREF_SHOW_SPONSORED] &&
-      this.config.show_spocs
+      this.store.getState().Prefs.values[PREF_SYSTEM_SHOW_SPONSORED]
     );
   }
 
@@ -196,29 +173,7 @@ class DiscoveryStreamFeed {
   }
 
   get personalized() {
-    // If stories are not displayed, no point in trying to personalize them.
-    if (!this.showStories) {
-      return false;
-    }
-    const spocsPersonalized =
-      this.store.getState().Prefs.values?.pocketConfig?.spocsPersonalized;
-    const recsPersonalized =
-      this.store.getState().Prefs.values?.pocketConfig?.recsPersonalized;
-    const personalization =
-      this.store.getState().Prefs.values[PREF_PERSONALIZATION];
-
-    // There is a server sent flag to keep personalization on.
-    // If the server stops sending this, we turn personalization off,
-    // until the server starts returning the signal.
-    const overrideState =
-      this.store.getState().Prefs.values[PREF_PERSONALIZATION_OVERRIDE];
-
-    return (
-      personalization &&
-      !overrideState &&
-      !!this.recommendationProvider &&
-      (spocsPersonalized || recsPersonalized)
-    );
+    return this.recommendationProvider.personalized;
   }
 
   get recommendationProvider() {
@@ -385,12 +340,9 @@ class DiscoveryStreamFeed {
       return null;
     }
 
-    const apiKeyPref = this._prefCache.config.api_key_pref;
+    const apiKeyPref = this.config.api_key_pref;
     const apiKey = Services.prefs.getCharPref(apiKeyPref, "");
 
-    // The server somtimes returns this value already replaced, but we try this for two reasons:
-    // 1. Layout endpoints are not from the server.
-    // 2. Hardcoded layouts don't have this already done for us.
     const endpoint = rawEndpoint
       .replace("$apiKey", apiKey)
       .replace("$locale", this.locale)
@@ -467,9 +419,8 @@ class DiscoveryStreamFeed {
    * @param {boolean} is this check done at initial browser load
    */
   isExpired({ cachedData, key, url, isStartup }) {
-    const { layout, spocs, feeds } = cachedData;
+    const { spocs, feeds } = cachedData;
     const updateTimePerComponent = {
-      layout: LAYOUT_UPDATE_TIME,
       spocs: this.spocsCacheUpdateTime,
       feed: COMPONENT_FEEDS_UPDATE_TIME,
     };
@@ -477,12 +428,6 @@ class DiscoveryStreamFeed {
       ? STARTUP_CACHE_EXPIRE_TIME
       : updateTimePerComponent[key];
     switch (key) {
-      case "layout":
-        // This never needs to expire, as it's not expected to change.
-        if (this.config.hardcoded_layout) {
-          return false;
-        }
-        return !layout || !(Date.now() - layout.lastUpdated < EXPIRATION_TIME);
       case "spocs":
         return !spocs || !(Date.now() - spocs.lastUpdated < EXPIRATION_TIME);
       case "feed":
@@ -501,7 +446,6 @@ class DiscoveryStreamFeed {
     const cachedData = (await this.cache.get()) || {};
     const { feeds } = cachedData;
     return {
-      layout: this.isExpired({ cachedData, key: "layout" }),
       spocs: this.showSpocs && this.isExpired({ cachedData, key: "spocs" }),
       feeds:
         this.showStories &&
@@ -517,34 +461,7 @@ class DiscoveryStreamFeed {
    */
   async checkIfAnyCacheExpired() {
     const expirationPerComponent = await this._checkExpirationPerComponent();
-    return (
-      expirationPerComponent.layout ||
-      expirationPerComponent.spocs ||
-      expirationPerComponent.feeds
-    );
-  }
-
-  async fetchLayout(isStartup) {
-    const cachedData = (await this.cache.get()) || {};
-    let { layout } = cachedData;
-    if (this.isExpired({ cachedData, key: "layout", isStartup })) {
-      const layoutResponse = await this.fetchFromEndpoint(
-        this.config.layout_endpoint
-      );
-      if (layoutResponse && layoutResponse.layout) {
-        layout = {
-          lastUpdated: Date.now(),
-          spocs: layoutResponse.spocs,
-          layout: layoutResponse.layout,
-          status: "success",
-        };
-
-        await this.cache.set("layout", layout);
-      } else {
-        console.error("No response for response.layout prop");
-      }
-    }
-    return layout;
+    return expirationPerComponent.spocs || expirationPerComponent.feeds;
   }
 
   updatePlacements(sendUpdate, layout, isStartup = false) {
@@ -638,127 +555,123 @@ class DiscoveryStreamFeed {
     return gridPositions;
   }
 
-  async loadLayout(sendUpdate, isStartup) {
-    let layoutResp = {};
+  generateFeedUrl(isBff) {
+    if (isBff) {
+      return `https://${lazy.NimbusFeatures.saveToPocket.getVariable(
+        "bffApi"
+      )}/desktop/v1/recommendations?locale=$locale&region=$region&count=30`;
+    }
+    return FEED_URL;
+  }
+
+  loadLayout(sendUpdate, isStartup) {
+    let layoutData = {};
     let url = "";
 
-    if (!this.config.hardcoded_layout) {
-      layoutResp = await this.fetchLayout(isStartup);
+    const isBasicLayout =
+      this.config.hardcoded_basic_layout ||
+      this.store.getState().Prefs.values[PREF_HARDCODED_BASIC_LAYOUT] ||
+      this.store.getState().Prefs.values[PREF_REGION_BASIC_LAYOUT];
+
+    const sponsoredCollectionsEnabled =
+      this.store.getState().Prefs.values[PREF_COLLECTIONS_ENABLED];
+
+    const pocketConfig = this.store.getState().Prefs.values?.pocketConfig || {};
+    const onboardingExperience =
+      this.isBff && pocketConfig.onboardingExperience;
+    const { spocTopsitesPlacementEnabled } = pocketConfig;
+
+    let items = isBasicLayout ? 3 : 21;
+    if (pocketConfig.fourCardLayout || pocketConfig.hybridLayout) {
+      items = isBasicLayout ? 4 : 24;
     }
 
-    if (!layoutResp || !layoutResp.layout) {
-      const isBasicLayout =
-        this.config.hardcoded_basic_layout ||
-        this.store.getState().Prefs.values[PREF_HARDCODED_BASIC_LAYOUT] ||
-        this.store.getState().Prefs.values[PREF_REGION_BASIC_LAYOUT];
+    const prepConfArr = arr => {
+      return arr
+        ?.split(",")
+        .filter(item => item)
+        .map(item => parseInt(item, 10));
+    };
 
-      const sponsoredCollectionsEnabled =
-        this.store.getState().Prefs.values[PREF_COLLECTIONS_ENABLED];
+    const spocAdTypes = prepConfArr(pocketConfig.spocAdTypes);
+    const spocZoneIds = prepConfArr(pocketConfig.spocZoneIds);
+    const spocTopsitesAdTypes = prepConfArr(pocketConfig.spocTopsitesAdTypes);
+    const spocTopsitesZoneIds = prepConfArr(pocketConfig.spocTopsitesZoneIds);
+    const { spocSiteId } = pocketConfig;
+    let spocPlacementData;
+    let spocTopsitesPlacementData;
+    let spocsUrl;
 
-      const pocketConfig =
-        this.store.getState().Prefs.values?.pocketConfig || {};
-      const onboardingExperience =
-        this.isBff && pocketConfig.onboardingExperience;
-      const { spocTopsitesPlacementEnabled } = pocketConfig;
-
-      let items = isBasicLayout ? 3 : 21;
-      if (pocketConfig.fourCardLayout || pocketConfig.hybridLayout) {
-        items = isBasicLayout ? 4 : 24;
-      }
-
-      const prepConfArr = arr => {
-        return arr
-          ?.split(",")
-          .filter(item => item)
-          .map(item => parseInt(item, 10));
+    if (spocAdTypes?.length && spocZoneIds?.length) {
+      spocPlacementData = {
+        ad_types: spocAdTypes,
+        zone_ids: spocZoneIds,
       };
-
-      const spocAdTypes = prepConfArr(pocketConfig.spocAdTypes);
-      const spocZoneIds = prepConfArr(pocketConfig.spocZoneIds);
-      const spocTopsitesAdTypes = prepConfArr(pocketConfig.spocTopsitesAdTypes);
-      const spocTopsitesZoneIds = prepConfArr(pocketConfig.spocTopsitesZoneIds);
-      const { spocSiteId } = pocketConfig;
-      let spocPlacementData;
-      let spocTopsitesPlacementData;
-      let spocsUrl;
-
-      if (spocAdTypes?.length && spocZoneIds?.length) {
-        spocPlacementData = {
-          ad_types: spocAdTypes,
-          zone_ids: spocZoneIds,
-        };
-      }
-
-      if (spocTopsitesAdTypes?.length && spocTopsitesZoneIds?.length) {
-        spocTopsitesPlacementData = {
-          ad_types: spocTopsitesAdTypes,
-          zone_ids: spocTopsitesZoneIds,
-        };
-      }
-
-      if (spocSiteId) {
-        const newUrl = new URL(SPOCS_URL);
-        newUrl.searchParams.set("site", spocSiteId);
-        spocsUrl = newUrl.href;
-      }
-
-      let feedUrl = FEED_URL;
-
-      if (this.isBff) {
-        feedUrl = `https://${lazy.NimbusFeatures.saveToPocket.getVariable(
-          "bffApi"
-        )}/desktop/v1/recommendations?locale=$locale&region=$region&count=30`;
-      }
-
-      // Set a hardcoded layout if one is needed.
-      // Changing values in this layout in memory object is unnecessary.
-      layoutResp = getHardcodedLayout({
-        spocsUrl,
-        feedUrl,
-        items,
-        sponsoredCollectionsEnabled,
-        spocPlacementData,
-        spocTopsitesPlacementEnabled,
-        spocTopsitesPlacementData,
-        spocPositions: this.parseGridPositions(
-          pocketConfig.spocPositions?.split(`,`)
-        ),
-        spocTopsitesPositions: this.parseGridPositions(
-          pocketConfig.spocTopsitesPositions?.split(`,`)
-        ),
-        widgetPositions: this.parseGridPositions(
-          pocketConfig.widgetPositions?.split(`,`)
-        ),
-        widgetData: [
-          ...(this.locale.startsWith("en-") ? [{ type: "TopicsWidget" }] : []),
-        ],
-        hybridLayout: pocketConfig.hybridLayout,
-        hideCardBackground: pocketConfig.hideCardBackground,
-        fourCardLayout: pocketConfig.fourCardLayout,
-        newFooterSection: pocketConfig.newFooterSection,
-        compactGrid: pocketConfig.compactGrid,
-        // For now essentialReadsHeader and editorsPicksHeader are English only.
-        essentialReadsHeader:
-          this.locale.startsWith("en-") && pocketConfig.essentialReadsHeader,
-        editorsPicksHeader:
-          this.locale.startsWith("en-") && pocketConfig.editorsPicksHeader,
-        onboardingExperience,
-      });
     }
+
+    if (spocTopsitesAdTypes?.length && spocTopsitesZoneIds?.length) {
+      spocTopsitesPlacementData = {
+        ad_types: spocTopsitesAdTypes,
+        zone_ids: spocTopsitesZoneIds,
+      };
+    }
+
+    if (spocSiteId) {
+      const newUrl = new URL(SPOCS_URL);
+      newUrl.searchParams.set("site", spocSiteId);
+      spocsUrl = newUrl.href;
+    }
+
+    let feedUrl = this.generateFeedUrl(this.isBff);
+
+    // Set layout config.
+    // Changing values in this layout in memory object is unnecessary.
+    layoutData = getHardcodedLayout({
+      spocsUrl,
+      feedUrl,
+      items,
+      sponsoredCollectionsEnabled,
+      spocPlacementData,
+      spocTopsitesPlacementEnabled,
+      spocTopsitesPlacementData,
+      spocPositions: this.parseGridPositions(
+        pocketConfig.spocPositions?.split(`,`)
+      ),
+      spocTopsitesPositions: this.parseGridPositions(
+        pocketConfig.spocTopsitesPositions?.split(`,`)
+      ),
+      widgetPositions: this.parseGridPositions(
+        pocketConfig.widgetPositions?.split(`,`)
+      ),
+      widgetData: [
+        ...(this.locale.startsWith("en-") ? [{ type: "TopicsWidget" }] : []),
+      ],
+      hybridLayout: pocketConfig.hybridLayout,
+      hideCardBackground: pocketConfig.hideCardBackground,
+      fourCardLayout: pocketConfig.fourCardLayout,
+      newFooterSection: pocketConfig.newFooterSection,
+      compactGrid: pocketConfig.compactGrid,
+      // For now essentialReadsHeader and editorsPicksHeader are English only.
+      essentialReadsHeader:
+        this.locale.startsWith("en-") && pocketConfig.essentialReadsHeader,
+      editorsPicksHeader:
+        this.locale.startsWith("en-") && pocketConfig.editorsPicksHeader,
+      onboardingExperience,
+    });
 
     sendUpdate({
       type: at.DISCOVERY_STREAM_LAYOUT_UPDATE,
-      data: layoutResp,
+      data: layoutData,
       meta: {
         isStartup,
       },
     });
 
-    if (layoutResp.spocs) {
+    if (layoutData.spocs) {
       url =
         this.store.getState().Prefs.values[PREF_SPOCS_ENDPOINT] ||
         this.config.spocs_endpoint ||
-        layoutResp.spocs.url;
+        layoutData.spocs.url;
 
       const spocsEndpointQuery =
         this.store.getState().Prefs.values[PREF_SPOCS_ENDPOINT_QUERY];
@@ -779,7 +692,7 @@ class DiscoveryStreamFeed {
             isStartup,
           },
         });
-        this.updatePlacements(sendUpdate, layoutResp.layout, isStartup);
+        this.updatePlacements(sendUpdate, layoutData.layout, isStartup);
       }
     }
   }
@@ -962,38 +875,6 @@ class DiscoveryStreamFeed {
     };
   }
 
-  // This turns personalization on/off if the server sends the override command.
-  // The server sends a true signal to keep personalization on. So a malfunctioning
-  // server would more likely mistakenly turn off personalization, and not turn it on.
-  // This is safer, because the override is for cases where personalization is causing issues.
-  // So having it mistakenly go off is safe, but it mistakenly going on could be bad.
-  personalizationOverride(overrideCommand) {
-    // Are we currently in an override state.
-    // This is useful to know if we want to do a cleanup.
-    const overrideState =
-      this.store.getState().Prefs.values[PREF_PERSONALIZATION_OVERRIDE];
-
-    // Is this profile currently set to be personalized.
-    const personalization =
-      this.store.getState().Prefs.values[PREF_PERSONALIZATION];
-
-    // If we have an override command, profile is currently personalized,
-    // and is not currently being overridden, we can set the override pref.
-    if (overrideCommand && personalization && !overrideState) {
-      this.store.dispatch(ac.SetPref(PREF_PERSONALIZATION_OVERRIDE, true));
-    }
-
-    // This is if we need to revert an override and do cleanup.
-    // We do this if we are in an override state,
-    // but not currently receiving the override signal.
-    if (!overrideCommand && overrideState) {
-      this.store.dispatch({
-        type: at.CLEAR_PREF,
-        data: { name: PREF_PERSONALIZATION_OVERRIDE },
-      });
-    }
-  }
-
   updateSponsoredCollectionsPref(collectionEnabled = false) {
     const currentState =
       this.store.getState().Prefs.values[PREF_COLLECTIONS_ENABLED];
@@ -1056,7 +937,7 @@ class DiscoveryStreamFeed {
         const headers = new Headers();
         headers.append("content-type", "application/json");
 
-        const apiKeyPref = this._prefCache.config.api_key_pref;
+        const apiKeyPref = this.config.api_key_pref;
         const apiKey = Services.prefs.getCharPref(apiKeyPref, "");
 
         const spocsResponse = await this.fetchFromEndpoint(endpoint, {
@@ -1079,11 +960,13 @@ class DiscoveryStreamFeed {
           };
 
           if (spocsResponse.settings && spocsResponse.settings.feature_flags) {
-            this.personalizationOverride(
-              // The server's old signal was for a version override.
-              // When we removed version 1, version 2 was now the defacto only version.
-              // Without a version 1, the override is now a command to turn off personalization.
-              !spocsResponse.settings.feature_flags.spoc_v2
+            this.store.dispatch(
+              ac.OnlyToMain({
+                type: at.DISCOVERY_STREAM_PERSONALIZATION_OVERRIDE,
+                data: {
+                  override: !spocsResponse.settings.feature_flags.spoc_v2,
+                },
+              })
             );
             this.updateSponsoredCollectionsPref(
               spocsResponse.settings.feature_flags.collections
@@ -1133,10 +1016,8 @@ class DiscoveryStreamFeed {
 
               const { data: blockedResults } = this.filterBlocked(capResult);
 
-              const { data: scoredResults } = await this.scoreItems(
-                blockedResults,
-                "spocs"
-              );
+              const { data: scoredResults, personalized } =
+                await this.scoreItems(blockedResults, "spocs");
 
               spocsState.spocs = {
                 ...spocsState.spocs,
@@ -1145,6 +1026,7 @@ class DiscoveryStreamFeed {
                   context,
                   sponsor,
                   sponsored_by_override,
+                  personalized,
                   items: scoredResults,
                 },
               };
@@ -1153,10 +1035,6 @@ class DiscoveryStreamFeed {
           await Promise.all(spocsResultPromises);
 
           this.cleanUpFlightImpressionPref(spocsState.spocs);
-          await this.cache.set("spocs", {
-            lastUpdated: spocsState.lastUpdated,
-            spocs: spocsState.spocs,
-          });
         } else {
           console.error("No response for spocs_endpoint prop");
         }
@@ -1174,6 +1052,10 @@ class DiscoveryStreamFeed {
             lastUpdated: Date.now(),
             spocs: {},
           };
+    await this.cache.set("spocs", {
+      lastUpdated: spocsState.lastUpdated,
+      spocs: spocsState.spocs,
+    });
 
     sendUpdate({
       type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
@@ -1205,76 +1087,8 @@ class DiscoveryStreamFeed {
     });
   }
 
-  /*
-   * This just re hydrates the provider from cache.
-   * We can call this on startup because it's generally fast.
-   * It reports to devtools the last time the data in the cache was updated.
-   */
-  async loadPersonalizationScoresCache(isStartup = false) {
-    const cachedData = (await this.cache.get()) || {};
-    const { personalization } = cachedData;
-
-    if (this.personalized && personalization && personalization.scores) {
-      this.recommendationProvider.setProvider(personalization.scores);
-
-      this.personalizationLastUpdated = personalization._timestamp;
-
-      this.store.dispatch(
-        ac.BroadcastToContent({
-          type: at.DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED,
-          data: {
-            lastUpdated: this.personalizationLastUpdated,
-          },
-          meta: {
-            isStartup,
-          },
-        })
-      );
-    }
-  }
-
-  /*
-   * This creates a new recommendationProvider using fresh data,
-   * It's run on a last updated timer. This is the opposite of loadPersonalizationScoresCache.
-   * This is also much slower so we only trigger this in the background on idle-daily.
-   * It causes new profiles to pick up personalization slowly because the first time
-   * a new profile is run you don't have any old cache to use, so it needs to wait for the first
-   * idle-daily. Older profiles can rely on cache during the idle-daily gap. Idle-daily is
-   * usually run once every 24 hours.
-   */
-  async updatePersonalizationScores() {
-    if (
-      !this.personalized ||
-      Date.now() - this.personalizationLastUpdated <
-        MIN_PERSONALIZATION_UPDATE_TIME
-    ) {
-      return;
-    }
-
-    this.recommendationProvider.setProvider();
-
-    await this.recommendationProvider.init();
-
-    const personalization = { scores: this.recommendationProvider.getScores() };
-    this.personalizationLastUpdated = Date.now();
-
-    this.store.dispatch(
-      ac.BroadcastToContent({
-        type: at.DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED,
-        data: {
-          lastUpdated: this.personalizationLastUpdated,
-        },
-      })
-    );
-    personalization._timestamp = this.personalizationLastUpdated;
-    this.cache.set("personalization", personalization);
-  }
-
   observe(subject, topic, data) {
     switch (topic) {
-      case "idle-daily":
-        this.updatePersonalizationScores();
-        break;
       case "nsPref:changed":
         // If the Pocket button was turned on or off, we need to update the cards
         // because cards show menu options for the Pocket button that need to be removed.
@@ -1322,6 +1136,8 @@ class DiscoveryStreamFeed {
       this.store.getState().Prefs.values?.pocketConfig?.recsPersonalized;
     const personalizedByType =
       type === "feed" ? recsPersonalized : spocsPersonalized;
+    // If this is initialized, we are ready to go.
+    const personalized = this.store.getState().Personalization.initialized;
 
     const data = (
       await Promise.all(
@@ -1331,7 +1147,7 @@ class DiscoveryStreamFeed {
       // Sort by highest scores.
       .sort(this.sortItem);
 
-    return { data };
+    return { data, personalized };
   }
 
   async scoreItem(item, personalizedByType) {
@@ -1507,9 +1323,10 @@ class DiscoveryStreamFeed {
             publisher: item.publisher,
             time_to_read: item.timeToRead,
             raw_image_src: item.imageUrl,
+            recommendation_id: item.recommendationId,
           }));
         }
-        const { data: scoredItems } = await this.scoreItems(
+        const { data: scoredItems, personalized } = await this.scoreItems(
           recommendations,
           "feed"
         );
@@ -1518,6 +1335,7 @@ class DiscoveryStreamFeed {
         this.componentFeedFetched = true;
         feed = {
           lastUpdated: Date.now(),
+          personalized,
           data: {
             settings,
             recommendations: rotatedItems,
@@ -1545,9 +1363,6 @@ class DiscoveryStreamFeed {
   async _maybeUpdateCachedData() {
     const expirationPerComponent = await this._checkExpirationPerComponent();
     // Pass in `store.dispatch` to send the updates only to main
-    if (expirationPerComponent.layout) {
-      await this.loadLayout(this.store.dispatch);
-    }
     if (expirationPerComponent.spocs) {
       await this.loadSpocs(this.store.dispatch);
     }
@@ -1556,78 +1371,22 @@ class DiscoveryStreamFeed {
     }
   }
 
-  /**
-   * @typedef {Object} RefreshAll
-   * @property {boolean} updateOpenTabs - Sends updates to open tabs immediately if true,
-   *                                      updates in background if false
-   * @property {boolean} isStartup - When the function is called at browser startup
-   *
-   * Refreshes layout, component feeds, and spocs in order if caches have expired.
-   * @param {RefreshAll} options
-   */
-  async refreshAll(options = {}) {
-    const personalizationCacheLoadPromise = this.loadPersonalizationScoresCache(
-      options.isStartup
-    );
-
-    const spocsPersonalized =
-      this.store.getState().Prefs.values?.pocketConfig?.spocsPersonalized;
-    const recsPersonalized =
-      this.store.getState().Prefs.values?.pocketConfig?.recsPersonalized;
-
-    let expirationPerComponent = {};
-    if (this.personalized) {
-      // We store this before we refresh content.
-      // This way, we can know what and if something got updated,
-      // so we can know to score the results.
-      expirationPerComponent = await this._checkExpirationPerComponent();
-    }
-    await this.refreshContent(options);
-
-    if (this.personalized) {
-      // personalizationCacheLoadPromise is probably done, because of the refreshContent await above,
-      // but to be sure, we should check that it's done, without making the parent function wait.
-      personalizationCacheLoadPromise.then(() => {
-        // If we don't have expired stories or feeds, we don't need to score after init.
-        // If we do have expired stories, we want to score after init.
-        // In both cases, we don't want these to block the parent function.
-        // This is why we store the promise, and call then to do our scoring work.
-        const initPromise = this.recommendationProvider.init();
-        initPromise.then(() => {
-          // Both scoreFeeds and scoreSpocs are promises,
-          // but they don't need to wait for each other.
-          // We can just fire them and forget at this point.
-          const { feeds, spocs } = this.store.getState().DiscoveryStream;
-          if (
-            recsPersonalized &&
-            feeds.loaded &&
-            expirationPerComponent.feeds
-          ) {
-            this.scoreFeeds(feeds);
-          }
-          if (
-            spocsPersonalized &&
-            spocs.loaded &&
-            expirationPerComponent.spocs
-          ) {
-            this.scoreSpocs(spocs);
-          }
-        });
-      });
-    }
-  }
-
   async scoreFeeds(feedsState) {
     if (feedsState.data) {
       const feeds = {};
       const feedsPromises = Object.keys(feedsState.data).map(url => {
         let feed = feedsState.data[url];
+        if (feed.personalized) {
+          // Feed was previously personalized then cached, we don't need to do this again.
+          return Promise.resolve();
+        }
         const feedPromise = this.scoreItems(feed.data.recommendations, "feed");
-        feedPromise.then(({ data: scoredItems }) => {
+        feedPromise.then(({ data: scoredItems, personalized }) => {
           const { recsExpireTime } = feed.data.settings;
           const recommendations = this.rotate(scoredItems, recsExpireTime);
           feed = {
             ...feed,
+            personalized,
             data: {
               ...feed.data,
               recommendations,
@@ -1658,16 +1417,20 @@ class DiscoveryStreamFeed {
       const nextSpocs = spocsState.data[placement.name] || {};
       const { items } = nextSpocs;
 
-      if (!items || !items.length) {
+      if (nextSpocs.personalized || !items || !items.length) {
         return;
       }
 
-      const { data: scoreResult } = await this.scoreItems(items, "spocs");
+      const { data: scoreResult, personalized } = await this.scoreItems(
+        items,
+        "spocs"
+      );
 
       spocsState.data = {
         ...spocsState.data,
         [placement.name]: {
           ...nextSpocs,
+          personalized,
           items: scoreResult,
         },
       };
@@ -1691,14 +1454,23 @@ class DiscoveryStreamFeed {
     );
   }
 
-  async refreshContent(options = {}) {
+  /**
+   * @typedef {Object} RefreshAll
+   * @property {boolean} updateOpenTabs - Sends updates to open tabs immediately if true,
+   *                                      updates in background if false
+   * @property {boolean} isStartup - When the function is called at browser startup
+   *
+   * Refreshes component feeds, and spocs in order if caches have expired.
+   * @param {RefreshAll} options
+   */
+  async refreshAll(options = {}) {
     const { updateOpenTabs, isStartup } = options;
 
     const dispatch = updateOpenTabs
       ? action => this.store.dispatch(ac.BroadcastToContent(action))
       : this.store.dispatch;
 
-    await this.loadLayout(dispatch, isStartup);
+    this.loadLayout(dispatch, isStartup);
     if (this.showStories || this.showTopsites) {
       const promises = [];
       // We could potentially have either or both sponsored topsites or stories.
@@ -1719,6 +1491,9 @@ class DiscoveryStreamFeed {
       }
       await Promise.all(promises);
       if (isStartup) {
+        // We don't pass isStartup in _maybeUpdateCachedData on purpose,
+        // because startup loads have a longer cache timer,
+        // and we want this to update in the background sooner.
         await this._maybeUpdateCachedData();
       }
     }
@@ -1749,24 +1524,20 @@ class DiscoveryStreamFeed {
   }
 
   enableStories() {
-    if (this.config.enabled && this.loaded) {
+    if (this.config.enabled) {
       // If stories are being re enabled, ensure we have stories.
       this.refreshAll({ updateOpenTabs: true });
     }
   }
 
-  async enable() {
-    await this.refreshAll({ updateOpenTabs: true, isStartup: true });
-    Services.obs.addObserver(this, "idle-daily");
+  async enable(options = {}) {
+    await this.refreshAll(options);
     this.loaded = true;
   }
 
   async reset() {
     this.resetDataPrefs();
     await this.resetCache();
-    if (this.loaded) {
-      Services.obs.removeObserver(this, "idle-daily");
-    }
     this.resetState();
   }
 
@@ -1775,7 +1546,6 @@ class DiscoveryStreamFeed {
   }
 
   async resetContentCache() {
-    await this.cache.set("layout", {});
     await this.cache.set("feeds", {});
     await this.cache.set("spocs", {});
     await this.cache.set("sov", {});
@@ -1783,7 +1553,6 @@ class DiscoveryStreamFeed {
 
   async resetAllCache() {
     await this.resetContentCache();
-    await this.cache.set("personalization", {});
     // Reset in-memory caches.
     this._isBff = undefined;
     this._spocsCacheUpdateTime = undefined;
@@ -1801,16 +1570,6 @@ class DiscoveryStreamFeed {
       ac.BroadcastToContent({ type: at.DISCOVERY_STREAM_LAYOUT_RESET })
     );
     this.setupPrefs(false /* isStartup */);
-    this.store.dispatch(
-      ac.BroadcastToContent({
-        type: at.DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE,
-        data: {
-          value:
-            this.store.getState().Prefs.values[PREF_COLLECTION_DISMISSIBLE],
-        },
-      })
-    );
-    this.personalizationLastUpdated = null;
     this.loaded = false;
   }
 
@@ -1819,7 +1578,7 @@ class DiscoveryStreamFeed {
     await this.reset();
     if (this.config.enabled) {
       // Load data from all endpoints
-      await this.enable();
+      await this.enable({ updateOpenTabs: true });
     }
   }
 
@@ -1938,7 +1697,6 @@ class DiscoveryStreamFeed {
       case PREF_HARDCODED_BASIC_LAYOUT:
       case PREF_SPOCS_ENDPOINT:
       case PREF_SPOCS_ENDPOINT_QUERY:
-      case PREF_PERSONALIZATION:
         // This is a config reset directly related to Discovery Stream pref.
         this.configReset();
         break;
@@ -2012,7 +1770,7 @@ class DiscoveryStreamFeed {
         this.setupPrefs(true /* isStartup */);
         // 2. If config.enabled is true, start loading data.
         if (this.config.enabled) {
-          await this.enable();
+          await this.enable({ updateOpenTabs: true, isStartup: true });
         }
         Services.prefs.addObserver(PREF_POCKET_BUTTON, this);
         break;
@@ -2026,9 +1784,6 @@ class DiscoveryStreamFeed {
         ) {
           await this.refreshAll({ updateOpenTabs: false });
         }
-        break;
-      case at.DISCOVERY_STREAM_DEV_IDLE_DAILY:
-        Services.obs.notifyObservers(null, "idle-daily");
         break;
       case at.DISCOVERY_STREAM_DEV_SYNC_RS:
         lazy.RemoteSettings.pollChanges();
@@ -2053,6 +1808,21 @@ class DiscoveryStreamFeed {
         break;
       case at.DISCOVERY_STREAM_POCKET_STATE_INIT:
         this.setupPocketState(action.meta.fromTarget);
+        break;
+      case at.DISCOVERY_STREAM_PERSONALIZATION_UPDATED:
+        if (this.personalized) {
+          const { feeds, spocs } = this.store.getState().DiscoveryStream;
+          const spocsPersonalized =
+            this.store.getState().Prefs.values?.pocketConfig?.spocsPersonalized;
+          const recsPersonalized =
+            this.store.getState().Prefs.values?.pocketConfig?.recsPersonalized;
+          if (recsPersonalized && feeds.loaded) {
+            this.scoreFeeds(feeds);
+          }
+          if (spocsPersonalized && spocs.loaded) {
+            this.scoreSpocs(spocs);
+          }
+        }
         break;
       case at.DISCOVERY_STREAM_CONFIG_RESET:
         // This is a generic config reset likely related to an external feed pref.

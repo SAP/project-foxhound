@@ -736,6 +736,11 @@ extern "C" {
     pub fn shmat(shmid: ::c_int, shmaddr: *const ::c_void, shmflg: ::c_int) -> *mut ::c_void;
     pub fn shmdt(shmaddr: *const ::c_void) -> ::c_int;
     pub fn shmctl(shmid: ::c_int, cmd: ::c_int, buf: *mut ::shmid_ds) -> ::c_int;
+    pub fn execvpe(
+        file: *const ::c_char,
+        argv: *const *const ::c_char,
+        envp: *const *const ::c_char,
+    ) -> ::c_int;
 }
 
 extern "C" {
@@ -746,6 +751,7 @@ extern "C" {
 
     pub fn dirname(path: *mut ::c_char) -> *mut ::c_char;
     pub fn basename(path: *mut ::c_char) -> *mut ::c_char;
+    pub fn getentropy(buf: *mut ::c_void, buflen: ::size_t) -> ::c_int;
 }
 
 cfg_if! {

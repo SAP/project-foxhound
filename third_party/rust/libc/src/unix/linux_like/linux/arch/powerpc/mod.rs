@@ -85,6 +85,9 @@ pub const SO_BINDTOIFINDEX: ::c_int = 62;
 // pub const SO_PREFER_BUSY_POLL: ::c_int = 69;
 // pub const SO_BUSY_POLL_BUDGET: ::c_int = 70;
 
+pub const FICLONE: ::c_ulong = 0x80049409;
+pub const FICLONERANGE: ::c_ulong = 0x8020940D;
+
 // Defined in unix/linux_like/mod.rs
 // pub const SCM_TIMESTAMP: ::c_int = SO_TIMESTAMP;
 pub const SCM_TIMESTAMPNS: ::c_int = SO_TIMESTAMPNS;
@@ -212,7 +215,10 @@ cfg_if! {
         pub const RLIMIT_NICE: ::__rlimit_resource_t = 13;
         pub const RLIMIT_RTPRIO: ::__rlimit_resource_t = 14;
         pub const RLIMIT_RTTIME: ::__rlimit_resource_t = 15;
+        #[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
         pub const RLIM_NLIMITS: ::__rlimit_resource_t = 16;
+        #[allow(deprecated)]
+        #[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
         pub const RLIMIT_NLIMITS: ::__rlimit_resource_t = RLIM_NLIMITS;
 
     } else if #[cfg(target_env = "musl")] {
@@ -233,7 +239,10 @@ cfg_if! {
         pub const RLIMIT_NICE: ::c_int = 13;
         pub const RLIMIT_RTPRIO: ::c_int = 14;
         pub const RLIMIT_RTTIME: ::c_int = 15;
+        #[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
         pub const RLIM_NLIMITS: ::c_int = 15;
+        #[allow(deprecated)]
+        #[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
         pub const RLIMIT_NLIMITS: ::c_int = RLIM_NLIMITS;
     }
 }

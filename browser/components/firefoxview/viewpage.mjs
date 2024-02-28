@@ -9,118 +9,66 @@ import "chrome://browser/content/firefoxview/card-container.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/firefoxview/fxview-empty-state.mjs";
 // eslint-disable-next-line import/no-unassigned-import
+import "chrome://browser/content/firefoxview/fxview-search-textbox.mjs";
+// eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/firefoxview/fxview-tab-list.mjs";
 
-const lazy = {};
+import { placeLinkOnClipboard } from "./helpers.mjs";
 
-ChromeUtils.defineESModuleGetters(lazy, {
-  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-});
-
-export class ViewPage extends MozLitElement {
+/**
+ * A base class for content container views displayed on firefox-view.
+ *
+ * @property {boolean} recentBrowsing
+ *   Is part of the recentbrowsing page view
+ * @property {boolean} paused
+ *   No content will be updated and rendered while paused
+ */
+export class ViewPageContent extends MozLitElement {
   static get properties() {
     return {
-      selectedTab: { type: Boolean },
       recentBrowsing: { type: Boolean },
+      paused: { type: Boolean },
     };
   }
-
   constructor() {
     super();
-    this.selectedTab = false;
-    this.recentBrowsing = Boolean(this.closest("VIEW-RECENTBROWSING"));
+    // don't update or render until explicitly un-paused
+    this.paused = true;
   }
 
-  connectedCallback() {
-    super.connectedCallback();
-    this.ownerDocument.addEventListener("visibilitychange", this);
+  get ownerViewPage() {
+    return this.closest("[type='page']") || this;
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this.ownerDocument.removeEventListener("visibilitychange", this);
-  }
-
-  handleEvent(event) {
-    switch (event.type) {
-      case "visibilitychange":
-        if (this.ownerDocument.visibilityState === "visible") {
-          this.viewTabVisibleCallback();
-        } else {
-          this.viewTabHiddenCallback();
-        }
-        break;
+  get isVisible() {
+    if (!this.isConnected || this.ownerDocument.visibilityState != "visible") {
+      return false;
     }
+    return this.ownerViewPage.selectedTab;
   }
 
   /**
-   * Override this function to run a callback whenever Firefox View is visible.
+   * Override this function to run a callback whenever this content is visible.
    */
-  viewTabVisibleCallback() {}
+  viewVisibleCallback() {}
 
   /**
-   * Override this function to run a callback whenever Firefox View is hidden.
+   * Override this function to run a callback whenever this content is hidden.
    */
-  viewTabHiddenCallback() {}
-
-  enter() {
-    this.selectedTab = true;
-  }
-
-  exit() {
-    this.selectedTab = false;
-  }
+  viewHiddenCallback() {}
 
   getWindow() {
     return window.browsingContext.embedderWindowGlobal.browsingContext.window;
   }
 
-  /**
-   * This function doesn't just copy the link to the clipboard, it creates a
-   * URL object on the clipboard, so when it's pasted into an application that
-   * supports it, it displays the title as a link.
-   */
+  getBrowserTab() {
+    return this.getWindow().gBrowser.getTabForBrowser(
+      window.browsingContext.embedderElement
+    );
+  }
+
   copyLink(e) {
-    // Copied from doCommand/placesCmd_copy in PlacesUIUtils.sys.mjs
-
-    // This is a little hacky, but there is a lot of code in Places that handles
-    // clipboard stuff, so it's easier to reuse.
-    let node = {};
-    node.type = 0;
-    node.title = this.triggerNode.title;
-    node.uri = this.triggerNode.url;
-
-    // This order is _important_! It controls how this and other applications
-    // select data to be inserted based on type.
-    let contents = [
-      { type: lazy.PlacesUtils.TYPE_X_MOZ_URL, entries: [] },
-      { type: lazy.PlacesUtils.TYPE_HTML, entries: [] },
-      { type: lazy.PlacesUtils.TYPE_PLAINTEXT, entries: [] },
-    ];
-
-    contents.forEach(function (content) {
-      content.entries.push(lazy.PlacesUtils.wrapNode(node, content.type));
-    });
-
-    let xferable = Cc["@mozilla.org/widget/transferable;1"].createInstance(
-      Ci.nsITransferable
-    );
-    xferable.init(null);
-
-    function addData(type, data) {
-      xferable.addDataFlavor(type);
-      xferable.setTransferData(type, lazy.PlacesUtils.toISupportsString(data));
-    }
-
-    contents.forEach(function (content) {
-      addData(content.type, content.entries.join(lazy.PlacesUtils.endl));
-    });
-
-    Services.clipboard.setData(
-      xferable,
-      null,
-      Ci.nsIClipboard.kGlobalClipboard
-    );
+    placeLinkOnClipboard(this.triggerNode.title, this.triggerNode.url);
     this.recordContextMenuTelemetry("copy-link", e);
   }
 
@@ -149,5 +97,74 @@ export class ViewPage extends MozLitElement {
         data_type: event.target.panel.dataset.tabType,
       }
     );
+  }
+
+  shouldUpdate(changedProperties) {
+    return !this.paused && super.shouldUpdate(changedProperties);
+  }
+}
+
+/**
+ * A "page" in firefox view, which may be hidden or shown by the named-deck container or
+ * via the owner document's visibility
+ *
+ * @property {boolean} selectedTab
+ *   Is this page the selected view in the named-deck container
+ */
+export class ViewPage extends ViewPageContent {
+  static get properties() {
+    return {
+      selectedTab: { type: Boolean },
+    };
+  }
+
+  constructor() {
+    super();
+    this.selectedTab = false;
+    this.recentBrowsing = Boolean(this.closest("VIEW-RECENTBROWSING"));
+    this.onVisibilityChange = this.onVisibilityChange.bind(this);
+  }
+
+  onVisibilityChange(event) {
+    if (this.isVisible) {
+      this.paused = false;
+      this.viewVisibleCallback();
+    } else if (
+      this.ownerViewPage.selectedTab &&
+      this.ownerDocument.visibilityState == "hidden"
+    ) {
+      this.paused = true;
+      this.viewHiddenCallback();
+    }
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.ownerDocument.addEventListener(
+      "visibilitychange",
+      this.onVisibilityChange
+    );
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.ownerDocument.removeEventListener(
+      "visibilitychange",
+      this.onVisibilityChange
+    );
+  }
+
+  enter() {
+    this.selectedTab = true;
+    if (this.isVisible) {
+      this.paused = false;
+      this.viewVisibleCallback();
+    }
+  }
+
+  exit() {
+    this.selectedTab = false;
+    this.paused = true;
+    this.viewHiddenCallback();
   }
 }

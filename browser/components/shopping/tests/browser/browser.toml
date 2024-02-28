@@ -1,16 +1,29 @@
 [DEFAULT]
-support-files = ["head.js"]
+support-files = [
+  "head.js",
+  "!/toolkit/components/shopping/test/mockapis/server_helper.js",
+  "!/toolkit/components/shopping/test/mockapis/analysis_status.sjs",
+  "!/toolkit/components/shopping/test/mockapis/analysis.sjs",
+  "!/toolkit/components/shopping/test/mockapis/analyze.sjs",
+  "!/toolkit/components/shopping/test/mockapis/attribution.sjs",
+  "!/toolkit/components/shopping/test/mockapis/recommendations.sjs",
+  "!/toolkit/components/shopping/test/mockapis/reporting.sjs",
+]
+
 prefs = [
   "browser.shopping.experience2023.enabled=true",
   "browser.shopping.experience2023.optedIn=1",
   "browser.shopping.experience2023.ads.enabled=true",
   "browser.shopping.experience2023.ads.userEnabled=true",
+  "toolkit.shopping.environment=test",
   "toolkit.shopping.ohttpRelayURL=https://example.com/relay", # These URLs don't actually host a relay or gateway config, but are needed to stop us making outside network connections.
   "toolkit.shopping.ohttpConfigURL=https://example.com/ohttp-config",
   "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features=false", # Disable the fakespot feature callouts to avoid interference. Individual tests that need them can re-enable them as needed.
 ]
 
 ["browser_adjusted_rating.js"]
+
+["browser_ads_exposure_telemetry.js"]
 
 ["browser_analysis_explainer.js"]
 
@@ -26,6 +39,8 @@ prefs = [
 
 ["browser_private_mode.js"]
 
+["browser_recommended_ad_test.js"]
+
 ["browser_review_highlights.js"]
 
 ["browser_settings_telemetry.js"]
@@ -37,7 +52,6 @@ prefs = [
 ["browser_shopping_message_triggers.js"]
 
 ["browser_shopping_onboarding.js"]
-skip-if = ["debug"]  # Bug 1850787
 
 ["browser_shopping_settings.js"]
 

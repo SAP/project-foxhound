@@ -133,6 +133,7 @@ struct LoadInfoArgs
   RedirectHistoryEntryInfo[]  redirectChainIncludingInternalRedirects;
   RedirectHistoryEntryInfo[]  redirectChain;
   bool                        hasInjectedCookieForCookieBannerHandling;
+  bool                        wasSchemelessInput;
 
   /**
    * ClientInfo structure representing the window or worker that triggered
@@ -182,6 +183,7 @@ struct LoadInfoArgs
   uint32_t                    requestBlockingReason;
   CSPInfo?                    cspToInheritInfo;
   StoragePermissionState      storagePermission;
+  uint64_t?                   overriddenFingerprintingSettings;
   bool                        isMetaRefresh;
   CrossOriginEmbedderPolicy   loadingEmbedderPolicy;
   bool                        originTrialCoepCredentiallessEnabledForTopLevel;
@@ -258,6 +260,8 @@ struct ParentLoadInfoForwarderArgs
   uint32_t requestBlockingReason;
 
   StoragePermissionState storagePermission;
+
+  uint64_t? overriddenFingerprintingSettings;
 
   bool isMetaRefresh;
 

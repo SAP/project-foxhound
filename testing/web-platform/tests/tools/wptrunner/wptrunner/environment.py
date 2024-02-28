@@ -45,7 +45,7 @@ def do_delayed_imports(logger, test_paths):
 
 
 def serve_path(test_paths):
-    return test_paths["/"]["tests_path"]
+    return test_paths["/"].tests_path
 
 
 def webtranport_h3_server_is_running(host, port, timeout):
@@ -247,18 +247,12 @@ class TestEnvironment:
             route_builder.add_static(path, format_args, content_type, route,
                                      headers=headers)
 
-        data = b""
-        with open(os.path.join(repo_root, "resources", "testdriver.js"), "rb") as fp:
-            data += fp.read()
-        with open(os.path.join(here, "testdriver-extra.js"), "rb") as fp:
-            data += fp.read()
-        route_builder.add_handler("GET", "/resources/testdriver.js",
-                                  StringHandler(data, "text/javascript"))
+        route_builder.add_handler("GET", "/resources/testdriver.js", TestdriverLoader())
 
-        for url_base, paths in self.test_paths.items():
+        for url_base, test_root in self.test_paths.items():
             if url_base == "/":
                 continue
-            route_builder.add_mount_point(url_base, paths["tests_path"])
+            route_builder.add_mount_point(url_base, test_root.tests_path)
 
         if "/" not in self.test_paths:
             del route_builder.mountpoint_routes["/"]
@@ -314,6 +308,27 @@ class TestEnvironment:
                         s.close()
 
         return failed, pending
+
+
+class TestdriverLoader:
+    """A special static handler for serving `/resources/testdriver.js`.
+
+    This handler lazily reads `testdriver{,-extra}.js` so that wptrunner doesn't
+    need to pass the entire file contents to child `wptserve` processes, which
+    can slow `wptserve` startup by several seconds (crbug.com/1479850).
+    """
+    def __init__(self):
+        self._handler = None
+
+    def __call__(self, request, response):
+        if not self._handler:
+            data = b""
+            with open(os.path.join(repo_root, "resources", "testdriver.js"), "rb") as fp:
+                data += fp.read()
+            with open(os.path.join(here, "testdriver-extra.js"), "rb") as fp:
+                data += fp.read()
+            self._handler = StringHandler(data, "text/javascript")
+        return self._handler(request, response)
 
 
 def wait_for_service(logger, host, port, timeout=60, server_process=None):

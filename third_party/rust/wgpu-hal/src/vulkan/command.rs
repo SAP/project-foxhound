@@ -23,7 +23,7 @@ impl super::Texture {
                 buffer_offset: r.buffer_layout.offset,
                 buffer_row_length: r.buffer_layout.bytes_per_row.map_or(0, |bpr| {
                     let block_size = format
-                        .block_size(Some(r.texture_base.aspect.map()))
+                        .block_copy_size(Some(r.texture_base.aspect.map()))
                         .unwrap();
                     block_width * (bpr / block_size)
                 }),
@@ -212,15 +212,44 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
     }
 
     unsafe fn clear_buffer(&mut self, buffer: &super::Buffer, range: crate::MemoryRange) {
-        unsafe {
-            self.device.raw.cmd_fill_buffer(
-                self.active,
-                buffer.raw,
-                range.start,
-                range.end - range.start,
-                0,
-            )
-        };
+        let range_size = range.end - range.start;
+        if self.device.workarounds.contains(
+            super::Workarounds::FORCE_FILL_BUFFER_WITH_SIZE_GREATER_4096_ALIGNED_OFFSET_16,
+        ) && range_size >= 4096
+            && range.start % 16 != 0
+        {
+            let rounded_start = wgt::math::align_to(range.start, 16);
+            let prefix_size = rounded_start - range.start;
+
+            unsafe {
+                self.device.raw.cmd_fill_buffer(
+                    self.active,
+                    buffer.raw,
+                    range.start,
+                    prefix_size,
+                    0,
+                )
+            };
+
+            // This will never be zero, as rounding can only add up to 12 bytes, and the total size is 4096.
+            let suffix_size = range.end - rounded_start;
+
+            unsafe {
+                self.device.raw.cmd_fill_buffer(
+                    self.active,
+                    buffer.raw,
+                    rounded_start,
+                    suffix_size,
+                    0,
+                )
+            };
+        } else {
+            unsafe {
+                self.device
+                    .raw
+                    .cmd_fill_buffer(self.active, buffer.raw, range.start, range_size, 0)
+            };
+        }
     }
 
     unsafe fn copy_buffer_to_buffer<T>(
@@ -571,7 +600,7 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
         &mut self,
         layout: &super::PipelineLayout,
         stages: wgt::ShaderStages,
-        offset: u32,
+        offset_bytes: u32,
         data: &[u32],
     ) {
         unsafe {
@@ -579,7 +608,7 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
                 self.active,
                 layout.raw,
                 conv::map_shader_stage(stages),
-                offset,
+                offset_bytes,
                 slice::from_raw_parts(data.as_ptr() as _, data.len() * 4),
             )
         };

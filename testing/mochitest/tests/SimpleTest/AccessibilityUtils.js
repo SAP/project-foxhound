@@ -105,6 +105,9 @@ this.AccessibilityUtils = (function () {
     interactiveRule: true,
     // Checks that accessible object has a non-empty label.
     labelRule: true,
+    // Checks that a node is enabled and is expected to be enabled via
+    // the accessibility API.
+    mustBeEnabled: true,
     // Checks that a node has a corresponging accessible object.
     mustHaveAccessibleRule: true,
     // Checks that accessible object (and its corresponding node) have a non-
@@ -219,6 +222,69 @@ this.AccessibilityUtils = (function () {
   }
 
   /**
+   * Determine if an accessible is a keyboard focusable browser toolbar button.
+   * Browser toolbar buttons aren't keyboard focusable in the normal way.
+   * Instead, focus is managed by JS code which sets tabindex on a single
+   * button at a time. Thus, we need to special case the focusable check for
+   * these buttons.
+   */
+  function isKeyboardFocusableBrowserToolbarButton(accessible) {
+    const node = accessible.DOMNode;
+    if (!node || !node.ownerGlobal) {
+      return false;
+    }
+    const toolbar = node.closest("toolbar");
+    if (!toolbar || toolbar.getAttribute("keyNav") != "true") {
+      return false;
+    }
+    return node.ownerGlobal.ToolbarKeyboardNavigator._isButton(node);
+  }
+
+  /**
+   * Determine if an accessible is a keyboard focusable PanelMultiView control.
+   * These controls aren't keyboard focusable in the normal way. Instead, focus
+   * is managed by JS code which sets tabindex dynamically. Thus, we need to
+   * special case the focusable check for these controls.
+   */
+  function isKeyboardFocusablePanelMultiViewControl(accessible) {
+    const node = accessible.DOMNode;
+    if (!node || !node.ownerGlobal) {
+      return false;
+    }
+    const panelview = node.closest("panelview");
+    if (!panelview || panelview.hasAttribute("disablekeynav")) {
+      return false;
+    }
+    return (
+      node.ownerGlobal.PanelView.forNode(panelview)._tabNavigableWalker.filter(
+        node
+      ) == NodeFilter.FILTER_ACCEPT
+    );
+  }
+
+  /**
+   * Determine if an accessible is a keyboard focusable XUL tab.
+   * Only one tab is focusable at a time, but after focusing it, you can use
+   * the keyboard to focus other tabs.
+   */
+  function isKeyboardFocusableXULTab(accessible) {
+    const node = accessible.DOMNode;
+    return node && XULElement.isInstance(node) && node.tagName == "tab";
+  }
+
+  /**
+   * Determine if a node is a XUL element for which tabIndex should be ignored.
+   * Some XUL elements report -1 for the .tabIndex property, even though they
+   * are in fact keyboard focusable.
+   */
+  function shouldIgnoreTabIndex(node) {
+    if (!XULElement.isInstance(node)) {
+      return false;
+    }
+    return node.tagName == "label" && node.getAttribute("is") == "text-link";
+  }
+
+  /**
    * Determine if accessible is focusable with the keyboard.
    *
    * @param   {nsIAccessible} accessible
@@ -228,13 +294,31 @@ this.AccessibilityUtils = (function () {
    *          True if focusable with the keyboard.
    */
   function isKeyboardFocusable(accessible) {
+    if (
+      isKeyboardFocusableBrowserToolbarButton(accessible) ||
+      isKeyboardFocusablePanelMultiViewControl(accessible) ||
+      isKeyboardFocusableXULTab(accessible)
+    ) {
+      return true;
+    }
     // State will be focusable even if the tabindex is negative.
+    const node = accessible.DOMNode;
+    const role = accessible.role;
     return (
       matchState(accessible, STATE_FOCUSABLE) &&
       // Platform accessibility will still report STATE_FOCUSABLE even with the
       // tabindex="-1" so we need to check that it is >= 0 to be considered
       // keyboard focusable.
-      (!gEnv.nonNegativeTabIndexRule || accessible.DOMNode.tabIndex > -1)
+      (!gEnv.nonNegativeTabIndexRule ||
+        node.tabIndex > -1 ||
+        node.closest('[aria-activedescendant][tabindex="0"]') ||
+        // If an ARIA toolbar uses a roving tabindex, some controls on the
+        // toolbar might not currently be focusable even though they can be
+        // reached with arrow keys and become focusable at that point.
+        ((role == Ci.nsIAccessibleRole.ROLE_PUSHBUTTON ||
+          role == Ci.nsIAccessibleRole.ROLE_TOGGLE_BUTTON) &&
+          node.closest('[role="toolbar"]')) ||
+        shouldIgnoreTabIndex(node))
     );
   }
 
@@ -281,9 +365,9 @@ this.AccessibilityUtils = (function () {
    *        Accessible object.
    */
   function assertEnabled(accessible) {
-    if (matchState(accessible, STATE_UNAVAILABLE)) {
+    if (gEnv.mustBeEnabled && matchState(accessible, STATE_UNAVAILABLE)) {
       a11yFail(
-        "Node is enabled but disabled via the accessibility API",
+        "Node expected to be enabled but is disabled via the accessibility API",
         accessible
       );
     }
@@ -297,7 +381,11 @@ this.AccessibilityUtils = (function () {
    *        Accessible object for a node.
    */
   function assertFocusable(accessible) {
-    if (gEnv.focusableRule && !isKeyboardFocusable(accessible)) {
+    if (
+      gEnv.mustBeEnabled &&
+      gEnv.focusableRule &&
+      !isKeyboardFocusable(accessible)
+    ) {
       const ariaRoles = getAriaRoles(accessible);
       // Do not force ARIA combobox or listbox to be focusable.
       if (!ariaRoles.includes("combobox") && !ariaRoles.includes("listbox")) {
@@ -334,13 +422,21 @@ this.AccessibilityUtils = (function () {
    *        Accessible object for a node.
    */
   function assertInteractive(accessible) {
-    if (gEnv.actionCountRule && accessible.actionCount === 0) {
+    if (
+      gEnv.mustBeEnabled &&
+      gEnv.actionCountRule &&
+      accessible.actionCount === 0
+    ) {
       a11yFail("Node does not support any accessible actions", accessible);
 
       return;
     }
 
-    if (gEnv.interactiveRule && !INTERACTIVE_ROLES.has(accessible.role)) {
+    if (
+      gEnv.mustBeEnabled &&
+      gEnv.interactiveRule &&
+      !INTERACTIVE_ROLES.has(accessible.role)
+    ) {
       if (
         // Labels that have a label for relation with their target are clickable.
         (accessible.role !== Ci.nsIAccessibleRole.ROLE_LABEL ||
@@ -379,15 +475,61 @@ this.AccessibilityUtils = (function () {
    * @param {nsIAccessible} accessible
    *        Accessible object for a node.
    */
-  function assertLabelled(accessible) {
-    const name = accessible.name && accessible.name.trim();
+  function assertLabelled(accessible, allowRecurse = true) {
+    const { DOMNode } = accessible;
+    let name = accessible.name;
+    if (!name) {
+      // If text has just been inserted into the tree, the a11y engine might not
+      // have picked it up yet.
+      forceRefreshDriverTick(DOMNode);
+      try {
+        name = accessible.name;
+      } catch (e) {
+        // The Accessible died because the DOM node was removed or hidden.
+        if (gEnv.labelRule) {
+          a11yWarn("Unlabeled element removed before l10n finished", {
+            DOMNode,
+          });
+        }
+        return;
+      }
+      const doc = DOMNode.ownerDocument;
+      if (
+        !name &&
+        allowRecurse &&
+        gEnv.labelRule &&
+        doc.hasPendingL10nMutations
+      ) {
+        // There are pending async l10n mutations which might result in a valid
+        // accessible name. Try this check again once l10n is finished.
+        doc.addEventListener(
+          "L10nMutationsFinished",
+          () => {
+            try {
+              accessible.name;
+            } catch (e) {
+              // The Accessible died because the DOM node was removed or hidden.
+              a11yWarn("Unlabeled element removed before l10n finished", {
+                DOMNode,
+              });
+              return;
+            }
+            assertLabelled(accessible, false);
+          },
+          { once: true }
+        );
+        return;
+      }
+    }
+    if (name) {
+      name = name.trim();
+    }
     if (gEnv.labelRule && !name) {
       a11yFail("Interactive elements must be labeled", accessible);
 
       return;
     }
 
-    const { DOMNode } = accessible;
     if (FORM_ROLES.has(accessible.role)) {
       const labels = getLabels(accessible);
       const hasNameFromVisibleLabel = labels.some(
@@ -484,6 +626,29 @@ this.AccessibilityUtils = (function () {
     return accessibilityService.getAccessibleFor(node);
   }
 
+  /**
+   * Find the nearest interactive accessible ancestor for a node.
+   */
+  function findInteractiveAccessible(node) {
+    let acc;
+    // Walk DOM ancestors until we find one with an accessible.
+    for (; node && !acc; node = node.parentNode) {
+      acc = getAccessible(node);
+    }
+    if (!acc) {
+      // No accessible ancestor.
+      return acc;
+    }
+    // Walk a11y ancestors until we find one which is interactive.
+    for (; acc; acc = acc.parent) {
+      if (INTERACTIVE_ROLES.has(acc.role)) {
+        return acc;
+      }
+    }
+    // No interactive ancestor.
+    return null;
+  }
+
   function runIfA11YChecks(task) {
     return (...args) => (gA11YChecks ? task(...args) : null);
   }
@@ -499,7 +664,11 @@ this.AccessibilityUtils = (function () {
    */
   const AccessibilityUtils = {
     assertCanBeClicked(node) {
-      const acc = getAccessible(node);
+      // Click events might fire on an inaccessible or non-interactive
+      // descendant, even if the test author targeted them at an interactive
+      // element. For example, if there's a button with an image inside it,
+      // node might be the image.
+      const acc = findInteractiveAccessible(node);
       if (!acc) {
         if (gEnv.mustHaveAccessibleRule) {
           a11yFail("Node is not accessible via accessibility API", {
@@ -542,6 +711,49 @@ this.AccessibilityUtils = (function () {
       // Reset accessibility environment flags that might've been set within the
       // test.
       this.resetEnv();
+    },
+
+    init() {
+      this._shouldHandleClicks = true;
+      // A top level xul window's DocShell doesn't have a chromeEventHandler
+      // attribute. In that case, the chrome event handler is just the global
+      // window object.
+      this._handler ??=
+        window.docShell.chromeEventHandler ?? window.docShell.domWindow;
+      this._handler.addEventListener("click", this, true, true);
+    },
+
+    uninit() {
+      this._handler?.removeEventListener("click", this, true);
+      this._handler = null;
+    },
+
+    /**
+     * Suppress (or disable suppression of) handling of captured click events.
+     * This should only be called by EventUtils, etc. when a click event will
+     * be generated but we know it is not actually a click intended to activate
+     * a control; e.g. drag/drop. Tests that wish to disable specific checks
+     * should use setEnv instead.
+     */
+    suppressClickHandling(shouldSuppress) {
+      this._shouldHandleClicks = !shouldSuppress;
+    },
+
+    handleEvent({ composedTarget }) {
+      if (!this._shouldHandleClicks) {
+        return;
+      }
+      const bounds =
+        composedTarget.ownerGlobal?.windowUtils?.getBoundsWithoutFlushing(
+          composedTarget
+        );
+      if (bounds && (bounds.width == 0 || bounds.height == 0)) {
+        // Some tests click hidden nodes. These clearly aren't testing the UI
+        // for the node itself (and presumably there is a test somewhere else
+        // that does). Therefore, we can't (and shouldn't) do a11y checks.
+        return;
+      }
+      this.assertCanBeClicked(composedTarget);
     },
   };
 

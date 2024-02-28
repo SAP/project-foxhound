@@ -6,6 +6,7 @@
 #ifndef _include_ipc_glue_UtilityProcessManager_h_
 #define _include_ipc_glue_UtilityProcessManager_h_
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/ipc/UtilityProcessHost.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/ProcInfo.h"
@@ -23,6 +24,10 @@ class JSOracleParent;
 class WindowsUtilsParent;
 }  // namespace dom
 
+namespace widget::filedialog {
+class ProcessProxy;
+}  // namespace widget::filedialog
+
 namespace ipc {
 
 class UtilityProcessParent;
@@ -34,12 +39,17 @@ class UtilityProcessManager final : public UtilityProcessHost::Listener {
   friend class UtilityProcessParent;
 
  public:
+  template <typename T>
+  using Promise = MozPromise<T, nsresult, true>;
+
   using StartRemoteDecodingUtilityPromise =
-      MozPromise<Endpoint<PRemoteDecoderManagerChild>, nsresult, true>;
+      Promise<Endpoint<PRemoteDecoderManagerChild>>;
   using JSOraclePromise = GenericNonExclusivePromise;
 
-  using WindowsUtilsPromise =
-      MozPromise<RefPtr<dom::WindowsUtilsParent>, nsresult, true>;
+#ifdef XP_WIN
+  using WindowsUtilsPromise = Promise<RefPtr<dom::WindowsUtilsParent>>;
+  using WinFileDialogPromise = Promise<widget::filedialog::ProcessProxy>;
+#endif
 
   static RefPtr<UtilityProcessManager> GetSingleton();
 
@@ -53,7 +63,8 @@ class UtilityProcessManager final : public UtilityProcessHost::Listener {
                                                   SandboxingKind aSandbox);
 
   RefPtr<StartRemoteDecodingUtilityPromise> StartProcessForRemoteMediaDecoding(
-      base::ProcessId aOtherProcess, SandboxingKind aSandbox);
+      base::ProcessId aOtherProcess, dom::ContentParentId aChildId,
+      SandboxingKind aSandbox);
 
   RefPtr<JSOraclePromise> StartJSOracle(mozilla::dom::JSOracleParent* aParent);
 
@@ -64,6 +75,10 @@ class UtilityProcessManager final : public UtilityProcessHost::Listener {
   // Releases the WindowsUtils actor so that it can be destroyed.
   // Subsequent attempts to use WindowsUtils will create a new process.
   void ReleaseWindowsUtils();
+
+  // Get a new Windows file-dialog utility-process actor. These are never
+  // reused; this will always return a fresh actor.
+  RefPtr<WinFileDialogPromise> CreateWinFileDialogAsync();
 #endif
 
   void OnProcessUnexpectedShutdown(UtilityProcessHost* aHost);

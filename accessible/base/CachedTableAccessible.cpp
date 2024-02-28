@@ -229,11 +229,30 @@ CachedTableCellAccessible* CachedTableCellAccessible::GetFrom(
     Accessible* aAcc) {
   MOZ_ASSERT(aAcc->IsTableCell());
   for (Accessible* parent = aAcc; parent; parent = parent->Parent()) {
-    if (auto* table = static_cast<CachedTableAccessible*>(parent->AsTable())) {
-      if (auto cellIdx = table->mAccToCellIdx.Lookup(aAcc)) {
-        return &table->mCells[*cellIdx];
+    if (parent->IsDoc()) {
+      break;  // Never cross document boundaries.
+    }
+    TableAccessible* table = parent->AsTable();
+    if (!table) {
+      continue;
+    }
+    if (LocalAccessible* local = parent->AsLocal()) {
+      nsIContent* content = local->GetContent();
+      if (content && content->IsXULElement()) {
+        // XUL tables don't use CachedTableAccessible.
+        break;
       }
     }
+    // Non-XUL tables only use CachedTableAccessible.
+    auto* cachedTable = static_cast<CachedTableAccessible*>(table);
+    if (auto cellIdx = cachedTable->mAccToCellIdx.Lookup(aAcc)) {
+      return &cachedTable->mCells[*cellIdx];
+    }
+    // We found a table, but it doesn't know about this cell. This can happen
+    // if a cell is outside of a row due to authoring error. We must not search
+    // ancestor tables, since this cell's data is not valid there and vice
+    // versa.
+    break;
   }
   return nullptr;
 }

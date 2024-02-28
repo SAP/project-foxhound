@@ -36,7 +36,6 @@
 #include "mozilla/Result.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StorageAccess.h"
-#include "mozilla/TaskCategory.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/AutoEntryScript.h"
@@ -338,13 +337,12 @@ void WorkerGlobalScopeBase::Control(
 }
 
 nsresult WorkerGlobalScopeBase::Dispatch(
-    TaskCategory aCategory, already_AddRefed<nsIRunnable>&& aRunnable) {
-  return EventTargetFor(aCategory)->Dispatch(std::move(aRunnable),
-                                             NS_DISPATCH_NORMAL);
+    already_AddRefed<nsIRunnable>&& aRunnable) const {
+  return SerialEventTarget()->Dispatch(std::move(aRunnable),
+                                       NS_DISPATCH_NORMAL);
 }
 
-nsISerialEventTarget* WorkerGlobalScopeBase::EventTargetFor(
-    TaskCategory) const {
+nsISerialEventTarget* WorkerGlobalScopeBase::SerialEventTarget() const {
   AssertIsOnWorkerThread();
   return mSerialEventTarget;
 }
@@ -826,15 +824,16 @@ WorkerGlobalScope::GetServiceWorkerRegistration(
     const ServiceWorkerRegistrationDescriptor& aDescriptor) const {
   AssertIsOnWorkerThread();
   RefPtr<ServiceWorkerRegistration> ref;
-  ForEachEventTargetObject([&](DOMEventTargetHelper* aTarget, bool* aDoneOut) {
-    RefPtr<ServiceWorkerRegistration> swr = do_QueryObject(aTarget);
-    if (!swr || !swr->MatchesDescriptor(aDescriptor)) {
-      return;
-    }
+  ForEachGlobalTeardownObserver(
+      [&](GlobalTeardownObserver* aObserver, bool* aDoneOut) {
+        RefPtr<ServiceWorkerRegistration> swr = do_QueryObject(aObserver);
+        if (!swr || !swr->MatchesDescriptor(aDescriptor)) {
+          return;
+        }
 
-    ref = std::move(swr);
-    *aDoneOut = true;
-  });
+        ref = std::move(swr);
+        *aDoneOut = true;
+      });
   return ref;
 }
 
@@ -908,16 +907,6 @@ bool DedicatedWorkerGlobalScope::WrapGlobalObject(
 
   JS::RealmOptions options;
   mWorkerPrivate->CopyJSRealmOptions(options);
-
-  const bool usesSystemPrincipal = mWorkerPrivate->UsesSystemPrincipal();
-
-  // Note that xpc::ShouldDiscardSystemSource() reads a prefs that is cached
-  // on the main thread. This is benignly racey.
-  const bool discardSource =
-      usesSystemPrincipal && xpc::ShouldDiscardSystemSource();
-
-  JS::RealmBehaviors& behaviors = options.behaviors();
-  behaviors.setDiscardSource(discardSource);
 
   xpc::SetPrefableRealmOptions(options);
 

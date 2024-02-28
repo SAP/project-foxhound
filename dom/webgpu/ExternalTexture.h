@@ -12,6 +12,10 @@
 
 namespace mozilla {
 
+namespace ipc {
+class Shmem;
+}
+
 namespace webgpu {
 
 // A texture that can be used by the WebGPU implementation but is created and
@@ -20,21 +24,27 @@ class ExternalTexture {
  public:
   static UniquePtr<ExternalTexture> Create(
       const uint32_t aWidth, const uint32_t aHeight,
-      const struct ffi::WGPUTextureFormat aFormat);
+      const struct ffi::WGPUTextureFormat aFormat,
+      const ffi::WGPUTextureUsages aUsage);
 
   ExternalTexture(const uint32_t aWidth, const uint32_t aHeight,
-                  const struct ffi::WGPUTextureFormat aFormat);
+                  const struct ffi::WGPUTextureFormat aFormat,
+                  const ffi::WGPUTextureUsages aUsage);
   virtual ~ExternalTexture();
 
   virtual void* GetExternalTextureHandle() { return nullptr; }
 
   virtual Maybe<layers::SurfaceDescriptor> ToSurfaceDescriptor() = 0;
 
+  virtual void GetSnapshot(const ipc::Shmem& aDestShmem,
+                           const gfx::IntSize& aSize) {}
+
   gfx::IntSize GetSize() { return gfx::IntSize(mWidth, mHeight); }
 
   const uint32_t mWidth;
   const uint32_t mHeight;
   const struct ffi::WGPUTextureFormat mFormat;
+  const ffi::WGPUTextureUsages mUsage;
 };
 
 }  // namespace webgpu

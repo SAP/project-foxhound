@@ -165,6 +165,118 @@ networking:
     expires: never
     telemetry_mirror: DNS_FAILED_LOOKUP_TIME
 
+  http_content_onstart_delay:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between dispatching OnStartRequest from the socket thread and processing it on the main thread (content process).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926#c
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_onstop_delay:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between dispatching OnStopRequest from the socket thread and processing it on the main thread (content process).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926#c
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_ondatafinished_delay:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between dispatching OnDataFinished from the socket thread and processing it.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615#c
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_ondatafinished_to_onstop_delay:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between processing OnDataFinished and processing OnStopRequest (if OnDataFinished comes first)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615#c
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_ondatafinished_to_onstop_delay_negative:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between processing OnStopRequest and processing OnDataFinished (if OnStopRequest comes first)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857615#c
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_html5parser_ondatafinished_to_onstop_delay:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between processing OnDataFinished and processing OnStopRequest (if OnDataFinished comes first)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
+  http_content_html5parser_ondatafinished_to_onstop_delay_negative:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time between processing OnStopRequest and processing OnDataFinished (if OnStopRequest comes first)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1857926
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - rjesup@mozilla.com
+    expires: 130
+
   http_1_download_throughput:
     type: custom_distribution
     unit: mbps
@@ -227,3 +339,66 @@ networking:
       - acreskey@mozilla.com
     expires: never
     telemetry_mirror: NETWORKING_DOWNLOAD_THROUGHPUT_HTTP_3
+
+  http_1_upload_throughput:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/1.0, http/1.1 requests larger than 10MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_1
+
+  http_2_upload_throughput:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/2 requests larger than 10MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_2
+
+  http_3_upload_throughput:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/3 requests larger than 10MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - acreskey@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_3

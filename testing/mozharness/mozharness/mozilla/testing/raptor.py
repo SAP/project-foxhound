@@ -16,6 +16,7 @@ import sys
 import tempfile
 from shutil import copyfile, rmtree
 
+from mozsystemmonitor.resourcemonitor import SystemResourceMonitor
 from six import string_types
 
 import mozharness
@@ -196,6 +197,7 @@ class Raptor(
                         "fenix",
                         "safari",
                         "custom-car",
+                        "cstm-car-m",
                     ],
                     "dest": "app",
                     "help": "Name of the application we are testing (default: firefox).",
@@ -718,7 +720,10 @@ class Raptor(
         self.debug_mode = self.config.get("debug_mode", False)
         self.chromium_dist_path = None
         self.firefox_android_browsers = ["fennec", "geckoview", "refbrow", "fenix"]
-        self.android_browsers = self.firefox_android_browsers + ["chrome-m"]
+        self.android_browsers = self.firefox_android_browsers + [
+            "chrome-m",
+            "cstm-car-m",
+        ]
         self.browsertime_visualmetrics = self.config.get("browsertime_visualmetrics")
         self.browsertime_node = self.config.get("browsertime_node")
         self.browsertime_user_args = self.config.get("browsertime_user_args")
@@ -726,6 +731,7 @@ class Raptor(
         self.enable_marionette_trace = self.config.get("enable_marionette_trace")
         self.browser_cycles = self.config.get("browser_cycles")
         self.clean = self.config.get("clean")
+        self.page_timeout = self.config.get("page_timeout", None)
 
         for (arg,), details in Raptor.browsertime_options:
             # Allow overriding defaults on the `./mach raptor-test ...` command-line.
@@ -777,7 +783,7 @@ class Raptor(
 
     def install_chrome_android(self):
         """Install Google Chrome for Android in production from tooltool"""
-        if self.app != "chrome-m":
+        if self.app not in ("chrome-m", "cstm-car-m"):
             self.info("Google Chrome for Android not required")
             return
         if self.config.get("run_local"):
@@ -821,9 +827,19 @@ class Raptor(
     def install_chromium_distribution(self):
         """Install Google Chromium distribution in production"""
         linux, mac, win = "linux", "mac", "win"
-        chrome, chromium, chromium_release = "chrome", "chromium", "custom-car"
+        chrome, chromium, chromium_release, chromium_release_android = (
+            "chrome",
+            "chromium",
+            "custom-car",
+            "cstm-car-m",
+        )
 
-        available_chromium_dists = [chrome, chromium, chromium_release]
+        available_chromium_dists = [
+            chrome,
+            chromium,
+            chromium_release,
+            chromium_release_android,
+        ]
         binary_location = {
             chromium: {
                 linux: ["chrome-linux", "chrome"],
@@ -834,6 +850,9 @@ class Raptor(
                 linux: ["chromium", "Default", "chrome"],
                 win: ["chromium", "Default", "chrome.exe"],
                 mac: ["chromium", "Chromium.app", "Contents", "MacOS", "chromium"],
+            },
+            chromium_release_android: {
+                linux: ["chromium", "apks", "ChromePublic.apk"],
             },
         }
 
@@ -1033,6 +1052,8 @@ class Raptor(
                     for method in self.config.get("extra_summary_methods")
                 ]
             )
+        if self.config.get("page_timeout"):
+            options.extend([f"--page-timeout={self.page_timeout}"])
 
         for (arg,), details in Raptor.browsertime_options:
             # Allow overriding defaults on the `./mach raptor-test ...` command-line
@@ -1084,6 +1105,7 @@ class Raptor(
         # Use in-tree wptserve for Python 3.10 compatibility
         extract_dirs = [
             "tools/wptserve/*",
+            "tools/wpt_third_party/h2/*",
             "tools/wpt_third_party/pywebsocket3/*",
         ]
         return super(Raptor, self).download_and_extract(
@@ -1421,4 +1443,6 @@ class RaptorOutputParser(OutputParser):
                 TBPL_RETRY, self.tbpl_status, levels=TBPL_WORST_LEVEL_TUPLE
             )
             return  # skip base parse_single_line
+        if line.startswith("raptor-browsertime Info: "):
+            SystemResourceMonitor.record_event(line[len("raptor-browsertime Info: ") :])
         super(RaptorOutputParser, self).parse_single_line(line)

@@ -10,8 +10,8 @@ origin:
 
   url: https://www.xiph.org/ogg/
 
-  release: v1.3.3 (2017-11-07T12:38:19-08:00).
-  revision: v1.3.3
+  release: v1.3.5 (2021-06-03T16:38:31-07:00).
+  revision: v1.3.5
 
   license: BSD-3-Clause
   license-file: COPYING
@@ -22,8 +22,6 @@ vendoring:
   tracking: tag
 
   exclude:
-    - ".*"
-    - "*"
     - "**"
 
   keep:
@@ -35,6 +33,7 @@ vendoring:
     - "include/ogg/ogg.h"
     - "include/ogg/os_types.h"
     - "src/bitwise.c"
+    - "src/crctable.h"
     - "src/framing.c"
     - AUTHORS
     - CHANGES
@@ -49,10 +48,11 @@ vendoring:
       from: '{vendor_dir}/src/bitwise.c'
       to: '{vendor_dir}/src/ogg_bitwise.c'
     - action: move-file
+      from: '{vendor_dir}/src/crctable.h'
+      to: '{vendor_dir}/src/crctable.h'
+    - action: move-file
       from: '{vendor_dir}/src/framing.c'
       to: '{vendor_dir}/src/ogg_framing.c'
-    - action: delete-path
-      path: '{vendor_dir}/win32/.gitignore'
 
     # Manually reproduce configure step here
     - action: replace-in-file
@@ -87,11 +87,21 @@ vendoring:
       pattern: '@SIZE64@'
       with: 'int64_t'
       file: '{vendor_dir}/include/ogg/config_types.h.in'
+    - action: replace-in-file
+      pattern: '@USIZE64@'
+      with: 'uint64_t'
+      file: '{vendor_dir}/include/ogg/config_types.h.in'
     - action: move-file
       from: '{vendor_dir}/include/ogg/config_types.h.in'
       to: '{vendor_dir}/include/ogg/config_types.h'
 
   patches:
-    - solaris-types.patch
     - memory-reporting.patch
-    - ogg-fuzzing.patch
+
+updatebot:
+  maintainer-phab: "#media-playback-reviewers"
+  maintainer-bz: padenot@mozilla.com
+  tasks:
+    - type: vendoring
+      enabled: true
+      frequency: release

@@ -103,6 +103,9 @@ pub const SO_TIMESTAMPING: ::c_int = 37;
 // pub const SO_PREFER_BUSY_POLL: ::c_int = 69;
 // pub const SO_BUSY_POLL_BUDGET: ::c_int = 70;
 
+pub const FICLONE: ::c_ulong = 0x80049409;
+pub const FICLONERANGE: ::c_ulong = 0x8020940D;
+
 // Defined in unix/linux_like/mod.rs
 // pub const SCM_TIMESTAMP: ::c_int = SO_TIMESTAMP;
 pub const SCM_TIMESTAMPNS: ::c_int = SO_TIMESTAMPNS;
@@ -234,6 +237,8 @@ cfg_if! {
         pub const RLIMIT_NICE: ::__rlimit_resource_t = 13;
         pub const RLIMIT_RTPRIO: ::__rlimit_resource_t = 14;
         pub const RLIMIT_RTTIME: ::__rlimit_resource_t = 15;
+        #[allow(deprecated)]
+        #[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
         pub const RLIMIT_NLIMITS: ::__rlimit_resource_t = RLIM_NLIMITS;
 
     } else if #[cfg(target_env = "musl")] {
@@ -254,7 +259,10 @@ cfg_if! {
         pub const RLIMIT_NICE: ::c_int = 13;
         pub const RLIMIT_RTPRIO: ::c_int = 14;
         pub const RLIMIT_RTTIME: ::c_int = 15;
+        #[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
         pub const RLIM_NLIMITS: ::c_int = 15;
+        #[allow(deprecated)]
+        #[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
         pub const RLIMIT_NLIMITS: ::c_int = RLIM_NLIMITS;
         pub const RLIM_INFINITY: ::rlim_t = !0;
     }
@@ -262,14 +270,16 @@ cfg_if! {
 
 cfg_if! {
     if #[cfg(target_env = "gnu")] {
+        #[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
         pub const RLIM_NLIMITS: ::__rlimit_resource_t = 16;
     } else if #[cfg(target_env = "uclibc")] {
+        #[deprecated(since = "0.2.64", note = "Not stable across OS versions")]
         pub const RLIM_NLIMITS: ::__rlimit_resource_t = 15;
     }
 }
 
 cfg_if! {
-    if #[cfg(target_arch = "mips64",
+    if #[cfg(any(target_arch = "mips64", target_arch = "mips64r6"),
          any(target_env = "gnu",
              target_env = "uclibc"))] {
         pub const RLIM_INFINITY: ::rlim_t = !0;
@@ -277,7 +287,7 @@ cfg_if! {
 }
 
 cfg_if! {
-    if #[cfg(target_arch = "mips",
+    if #[cfg(any(target_arch = "mips", target_arch = "mips32r6"),
          any(target_env = "gnu",
              target_env = "uclibc"))] {
         pub const RLIM_INFINITY: ::rlim_t = 0x7fffffff;

@@ -18,10 +18,7 @@
 #include "mozilla/gtest/WaitFor.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SpinEventLoopUntil.h"
-#include "mozilla/StaticPrefs_media.h"
 #include "WavDumper.h"
-
-#define DRIFT_BUFFERING_PREF "media.clockdrift.buffering"
 
 using namespace mozilla;
 
@@ -50,7 +47,7 @@ struct StartInputProcessing : public ControlMessage {
       : ControlMessage(aTrack),
         mProcessingTrack(aTrack),
         mInputProcessing(aInputProcessing) {}
-  void Run() override { mInputProcessing->Start(mTrack->GraphImpl()); }
+  void Run() override { mInputProcessing->Start(mTrack->Graph()); }
 };
 
 struct StopInputProcessing : public ControlMessage {
@@ -59,7 +56,7 @@ struct StopInputProcessing : public ControlMessage {
   explicit StopInputProcessing(AudioProcessingTrack* aTrack,
                                AudioInputProcessing* aInputProcessing)
       : ControlMessage(aTrack), mInputProcessing(aInputProcessing) {}
-  void Run() override { mInputProcessing->Stop(mTrack->GraphImpl()); }
+  void Run() override { mInputProcessing->Stop(mTrack->Graph()); }
 };
 
 struct SetPassThrough : public ControlMessage {
@@ -72,9 +69,8 @@ struct SetPassThrough : public ControlMessage {
         mInputProcessing(aInputProcessing),
         mPassThrough(aPassThrough) {}
   void Run() override {
-    EXPECT_EQ(mInputProcessing->PassThrough(mTrack->GraphImpl()),
-              !mPassThrough);
-    mInputProcessing->SetPassThrough(mTrack->GraphImpl(), mPassThrough);
+    EXPECT_EQ(mInputProcessing->PassThrough(mTrack->Graph()), !mPassThrough);
+    mInputProcessing->SetPassThrough(mTrack->Graph(), mPassThrough);
   }
 };
 
@@ -92,8 +88,8 @@ struct SetRequestedInputChannelCount : public ControlMessage {
         mInputProcessing(aInputProcessing),
         mChannelCount(aChannelCount) {}
   void Run() override {
-    mInputProcessing->SetRequestedInputChannelCount(mTrack->GraphImpl(),
-                                                    mDeviceId, mChannelCount);
+    mInputProcessing->SetRequestedInputChannelCount(mTrack->Graph(), mDeviceId,
+                                                    mChannelCount);
   }
 };
 #endif  // MOZ_WEBRTC
@@ -151,27 +147,23 @@ TEST(TestAudioTrackGraph, DifferentDeviceIDs)
 
   MediaTrackGraph* g1 = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::AUDIO_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
       /*OutputDeviceID*/ nullptr, GetMainThreadSerialEventTarget());
 
   MediaTrackGraph* g2 = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::AUDIO_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
       /*OutputDeviceID*/ reinterpret_cast<cubeb_devid>(1),
       GetMainThreadSerialEventTarget());
 
   MediaTrackGraph* g1_2 = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::AUDIO_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
       /*OutputDeviceID*/ nullptr, GetMainThreadSerialEventTarget());
 
   MediaTrackGraph* g2_2 = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::AUDIO_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
       /*OutputDeviceID*/ reinterpret_cast<cubeb_devid>(1),
       GetMainThreadSerialEventTarget());
 
@@ -207,8 +199,7 @@ TEST(TestAudioTrackGraph, SetOutputDeviceID)
   // used in cubeb_stream_init.
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::AUDIO_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
       /*OutputDeviceID*/ reinterpret_cast<cubeb_devid>(2),
       GetMainThreadSerialEventTarget());
 
@@ -228,6 +219,44 @@ TEST(TestAudioTrackGraph, SetOutputDeviceID)
   WaitFor(cubeb->StreamDestroyEvent());
 }
 
+TEST(TestAudioTrackGraph, StreamName)
+{
+  MockCubeb* cubeb = new MockCubeb();
+  CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
+
+  // Initialize a graph with a system thread driver to check that the stream
+  // name survives the driver switch.
+  MediaTrackGraphImpl* graph = MediaTrackGraphImpl::GetInstance(
+      MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      /*OutputDeviceID*/ reinterpret_cast<cubeb_devid>(1),
+      GetMainThreadSerialEventTarget());
+  nsLiteralCString name1("name1");
+  graph->CurrentDriver()->SetStreamName(name1);
+
+  // Dummy track to start the graph rolling and switch to an
+  // AudioCallbackDriver.
+  RefPtr<SourceMediaTrack> dummySource;
+  DispatchFunction(
+      [&] { dummySource = graph->CreateSourceTrack(MediaSegment::AUDIO); });
+
+  RefPtr<SmartMockCubebStream> stream = WaitFor(cubeb->StreamInitEvent());
+  EXPECT_STREQ(stream->StreamName(), name1.get());
+
+  // Test a name change on an existing stream.
+  nsLiteralCString name2("name2");
+  DispatchFunction([&] {
+    graph->QueueControlMessageWithNoShutdown(
+        [&] { graph->CurrentDriver()->SetStreamName(name2); });
+  });
+  nsCString name = WaitFor(stream->NameSetEvent());
+  EXPECT_EQ(name, name2);
+
+  // Test has finished. Destroy the track to shutdown the MTG.
+  DispatchMethod(dummySource, &SourceMediaTrack::Destroy);
+  WaitFor(cubeb->StreamDestroyEvent());
+}
+
 TEST(TestAudioTrackGraph, NotifyDeviceStarted)
 {
   MockCubeb* cubeb = new MockCubeb();
@@ -235,9 +264,8 @@ TEST(TestAudioTrackGraph, NotifyDeviceStarted)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::AUDIO_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   RefPtr<SourceMediaTrack> dummySource;
   Unused << WaitFor(Invoke([&] {
@@ -267,9 +295,8 @@ TEST(TestAudioTrackGraph, NonNativeInputTrackStartAndStop)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   const CubebUtils::AudioDeviceID deviceId = (CubebUtils::AudioDeviceID)1;
 
@@ -294,7 +321,6 @@ TEST(TestAudioTrackGraph, NonNativeInputTrackStartAndStop)
     const AudioInputSource::Id sourceId = 1;
     const uint32_t channels = 2;
     const TrackRate rate = 48000;
-    const uint32_t bufferingMs = StaticPrefs::media_clockdrift_buffering();
 
     // Start and stop the audio in NonNativeInputTrack.
     {
@@ -344,11 +370,10 @@ TEST(TestAudioTrackGraph, NonNativeInputTrackStartAndStop)
 
       DispatchFunction([&] {
         track->GraphImpl()->AppendMessage(MakeUnique<StartNonNativeInput>(
-            track.get(),
-            MakeRefPtr<AudioInputSource>(
-                MakeRefPtr<AudioInputSourceListener>(track.get()), sourceId,
-                deviceId, channels, true /* voice */, PRINCIPAL_HANDLE_NONE,
-                rate, graph->GraphRate(), bufferingMs)));
+            track.get(), MakeRefPtr<AudioInputSource>(
+                             MakeRefPtr<AudioInputSourceListener>(track.get()),
+                             sourceId, deviceId, channels, true /* voice */,
+                             PRINCIPAL_HANDLE_NONE, rate, graph->GraphRate())));
       });
       RefPtr<SmartMockCubebStream> nonNativeStream =
           WaitFor(cubeb->StreamInitEvent());
@@ -406,11 +431,10 @@ TEST(TestAudioTrackGraph, NonNativeInputTrackStartAndStop)
     {
       DispatchFunction([&] {
         track->GraphImpl()->AppendMessage(MakeUnique<StartNonNativeInput>(
-            track.get(),
-            MakeRefPtr<AudioInputSource>(
-                MakeRefPtr<AudioInputSourceListener>(track.get()), sourceId,
-                deviceId, channels, true, PRINCIPAL_HANDLE_NONE, rate,
-                graph->GraphRate(), bufferingMs)));
+            track.get(), MakeRefPtr<AudioInputSource>(
+                             MakeRefPtr<AudioInputSourceListener>(track.get()),
+                             sourceId, deviceId, channels, true,
+                             PRINCIPAL_HANDLE_NONE, rate, graph->GraphRate())));
       });
       RefPtr<SmartMockCubebStream> nonNativeStream =
           WaitFor(cubeb->StreamInitEvent());
@@ -447,9 +471,8 @@ TEST(TestAudioTrackGraph, NonNativeInputTrackErrorCallback)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   const CubebUtils::AudioDeviceID deviceId = (CubebUtils::AudioDeviceID)1;
 
@@ -474,16 +497,14 @@ TEST(TestAudioTrackGraph, NonNativeInputTrackErrorCallback)
     const AudioInputSource::Id sourceId = 1;
     const uint32_t channels = 2;
     const TrackRate rate = 48000;
-    const uint32_t bufferingMs = StaticPrefs::media_clockdrift_buffering();
 
     // Launch and start the non-native audio stream.
     DispatchFunction([&] {
       track->GraphImpl()->AppendMessage(MakeUnique<StartNonNativeInput>(
-          track.get(),
-          MakeRefPtr<AudioInputSource>(
-              MakeRefPtr<AudioInputSourceListener>(track.get()), sourceId,
-              deviceId, channels, true, PRINCIPAL_HANDLE_NONE, rate,
-              graph->GraphRate(), bufferingMs)));
+          track.get(), MakeRefPtr<AudioInputSource>(
+                           MakeRefPtr<AudioInputSourceListener>(track.get()),
+                           sourceId, deviceId, channels, true,
+                           PRINCIPAL_HANDLE_NONE, rate, graph->GraphRate())));
     });
     RefPtr<SmartMockCubebStream> nonNativeStream =
         WaitFor(cubeb->StreamInitEvent());
@@ -569,11 +590,10 @@ TEST(TestAudioTrackGraph, DeviceChangedCallback)
   MockCubeb* cubeb = new MockCubeb();
   CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
 
-  MediaTrackGraphImpl* graphImpl = MediaTrackGraphImpl::GetInstance(
+  MediaTrackGraph* graphImpl = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   class TestAudioDataListener : public AudioDataListener {
    public:
@@ -582,16 +602,16 @@ TEST(TestAudioTrackGraph, DeviceChangedCallback)
           mIsVoice(aIsVoice),
           mDeviceChangedCount(0) {}
 
-    uint32_t RequestedInputChannelCount(MediaTrackGraphImpl* aGraph) override {
+    uint32_t RequestedInputChannelCount(MediaTrackGraph* aGraph) override {
       return mChannelCount;
     }
-    bool IsVoiceInput(MediaTrackGraphImpl* aGraph) const override {
+    bool IsVoiceInput(MediaTrackGraph* aGraph) const override {
       return mIsVoice;
     };
-    void DeviceChanged(MediaTrackGraphImpl* aGraph) override {
+    void DeviceChanged(MediaTrackGraph* aGraph) override {
       ++mDeviceChangedCount;
     }
-    void Disconnect(MediaTrackGraphImpl* aGraph) override{/* Ignored */};
+    void Disconnect(MediaTrackGraph* aGraph) override{/* Ignored */};
     uint32_t DeviceChangedCount() { return mDeviceChangedCount; }
 
    private:
@@ -671,7 +691,7 @@ TEST(TestAudioTrackGraph, DeviceChangedCallback)
 //
 // The main focus for this test is to make sure DeviceInputTrack::OpenAudio and
 // ::CloseAudio works as what we expect. Besides, This test also confirms
-// MediaTrackGraphImpl::ReevaluateInputDevice works correctly by using a
+// MediaTrackGraph::ReevaluateInputDevice works correctly by using a
 // test-only AudioDataListener.
 //
 // This test is pretty similar to RestartAudioIfProcessingMaxChannelCountChanged
@@ -686,11 +706,10 @@ TEST(TestAudioTrackGraph, RestartAudioIfMaxChannelCountChanged)
   auto unforcer = WaitFor(cubeb->ForceAudioThread()).unwrap();
   Unused << unforcer;
 
-  MediaTrackGraphImpl* graphImpl = MediaTrackGraphImpl::GetInstance(
+  MediaTrackGraph* graphImpl = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   // A test-only AudioDataListener that simulates AudioInputProcessing's setter
   // and getter for the input channel count.
@@ -699,18 +718,18 @@ TEST(TestAudioTrackGraph, RestartAudioIfMaxChannelCountChanged)
     TestAudioDataListener(uint32_t aChannelCount, bool aIsVoice)
         : mChannelCount(aChannelCount), mIsVoice(aIsVoice) {}
     // Main thread API
-    void SetInputChannelCount(MediaTrackGraphImpl* aGraph,
+    void SetInputChannelCount(MediaTrackGraph* aGraph,
                               CubebUtils::AudioDeviceID aDevice,
                               uint32_t aChannelCount) {
       MOZ_ASSERT(NS_IsMainThread());
 
       struct Message : public ControlMessage {
-        MediaTrackGraphImpl* mGraph;
+        MediaTrackGraph* mGraph;
         TestAudioDataListener* mListener;
         CubebUtils::AudioDeviceID mDevice;
         uint32_t mChannelCount;
 
-        Message(MediaTrackGraphImpl* aGraph, TestAudioDataListener* aListener,
+        Message(MediaTrackGraph* aGraph, TestAudioDataListener* aListener,
                 CubebUtils::AudioDeviceID aDevice, uint32_t aChannelCount)
             : ControlMessage(nullptr),
               mGraph(aGraph),
@@ -723,20 +742,20 @@ TEST(TestAudioTrackGraph, RestartAudioIfMaxChannelCountChanged)
         }
       };
 
-      aGraph->AppendMessage(
+      static_cast<MediaTrackGraphImpl*>(aGraph)->AppendMessage(
           MakeUnique<Message>(aGraph, this, aDevice, aChannelCount));
     }
     // Graph thread APIs: AudioDataListenerInterface implementations.
-    uint32_t RequestedInputChannelCount(MediaTrackGraphImpl* aGraph) override {
-      MOZ_ASSERT(aGraph->OnGraphThread());
+    uint32_t RequestedInputChannelCount(MediaTrackGraph* aGraph) override {
+      aGraph->AssertOnGraphThread();
       return mChannelCount;
     }
-    bool IsVoiceInput(MediaTrackGraphImpl* aGraph) const override {
+    bool IsVoiceInput(MediaTrackGraph* aGraph) const override {
       return mIsVoice;
     };
-    void DeviceChanged(MediaTrackGraphImpl* aGraph) override { /* Ignored */
+    void DeviceChanged(MediaTrackGraph* aGraph) override { /* Ignored */
     }
-    void Disconnect(MediaTrackGraphImpl* aGraph) override{/* Ignored */};
+    void Disconnect(MediaTrackGraph* aGraph) override{/* Ignored */};
 
    private:
     ~TestAudioDataListener() = default;
@@ -956,16 +975,16 @@ TEST(TestAudioTrackGraph, SwitchNativeInputDevice)
           mIsVoice(aIsVoice),
           mDeviceChangedCount(0) {}
 
-    uint32_t RequestedInputChannelCount(MediaTrackGraphImpl* aGraph) override {
+    uint32_t RequestedInputChannelCount(MediaTrackGraph* aGraph) override {
       return mChannelCount;
     }
-    bool IsVoiceInput(MediaTrackGraphImpl* aGraph) const override {
+    bool IsVoiceInput(MediaTrackGraph* aGraph) const override {
       return mIsVoice;
     };
-    void DeviceChanged(MediaTrackGraphImpl* aGraph) override {
+    void DeviceChanged(MediaTrackGraph* aGraph) override {
       ++mDeviceChangedCount;
     }
-    void Disconnect(MediaTrackGraphImpl* aGraph) override{/* Ignored */};
+    void Disconnect(MediaTrackGraph* aGraph) override{/* Ignored */};
     uint32_t DeviceChangedCount() { return mDeviceChangedCount; }
 
    private:
@@ -978,11 +997,10 @@ TEST(TestAudioTrackGraph, SwitchNativeInputDevice)
   MockCubeb* cubeb = new MockCubeb();
   CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
 
-  MediaTrackGraphImpl* graph = MediaTrackGraphImpl::GetInstance(
+  MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   auto switchNativeDevice =
       [&](RefPtr<SmartMockCubebStream>&& aCurrentNativeStream,
@@ -1106,8 +1124,7 @@ TEST(TestAudioTrackGraph, SwitchNativeInputDevice)
   EXPECT_EQ(stream2->InputChannels(), 2U);
   EXPECT_EQ(stream2->GetInputDeviceID(), device2);
   {
-    NativeInputTrack* native =
-        track2->GraphImpl()->GetNativeInputTrackMainThread();
+    NativeInputTrack* native = track2->Graph()->GetNativeInputTrackMainThread();
     ASSERT_TRUE(!!native);
     EXPECT_EQ(native->mDeviceId, device2);
   }
@@ -1120,8 +1137,7 @@ TEST(TestAudioTrackGraph, SwitchNativeInputDevice)
   EXPECT_EQ(stream3->InputChannels(), 1U);
   EXPECT_EQ(stream3->GetInputDeviceID(), device3);
   {
-    NativeInputTrack* native =
-        track3->GraphImpl()->GetNativeInputTrackMainThread();
+    NativeInputTrack* native = track3->Graph()->GetNativeInputTrackMainThread();
     ASSERT_TRUE(!!native);
     EXPECT_EQ(native->mDeviceId, device3);
   }
@@ -1136,8 +1152,7 @@ TEST(TestAudioTrackGraph, SwitchNativeInputDevice)
       WaitFor(cubeb->StreamDestroyEvent());
   EXPECT_EQ(destroyedStream.get(), stream3.get());
   {
-    auto* graphImpl = static_cast<MediaTrackGraphImpl*>(graph);
-    NativeInputTrack* native = graphImpl->GetNativeInputTrackMainThread();
+    NativeInputTrack* native = graph->GetNativeInputTrackMainThread();
     ASSERT_TRUE(!native);
   }
   std::cerr << "No native input now" << std::endl;
@@ -1151,9 +1166,8 @@ TEST(TestAudioTrackGraph, ErrorCallback)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   const CubebUtils::AudioDeviceID deviceId = (CubebUtils::AudioDeviceID)1;
 
@@ -1223,9 +1237,8 @@ TEST(TestAudioTrackGraph, AudioProcessingTrack)
   // resolving early after checking the first audio driver only.
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   const CubebUtils::AudioDeviceID deviceId = (CubebUtils::AudioDeviceID)1;
 
@@ -1315,8 +1328,7 @@ TEST(TestAudioTrackGraph, ReConnectDeviceInput)
   const TrackRate rate = 48000;
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
-      MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false, rate, nullptr,
+      MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1, rate, nullptr,
       GetMainThreadSerialEventTarget());
 
   const CubebUtils::AudioDeviceID deviceId = (CubebUtils::AudioDeviceID)1;
@@ -1472,9 +1484,8 @@ TEST(TestAudioTrackGraph, AudioProcessingTrackDisabling)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   const CubebUtils::AudioDeviceID deviceId = (CubebUtils::AudioDeviceID)1;
 
@@ -1583,9 +1594,8 @@ TEST(TestAudioTrackGraph, SetRequestedInputChannelCount)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   // Open a 2-channel native input stream.
   const CubebUtils::AudioDeviceID device1 = (CubebUtils::AudioDeviceID)1;
@@ -1715,9 +1725,8 @@ TEST(TestAudioTrackGraph, RestartAudioIfProcessingMaxChannelCountChanged)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   // Request a new input channel count and expect to have a new stream.
   auto setNewChannelCount = [&](const RefPtr<AudioProcessingTrack>& aTrack,
@@ -1957,9 +1966,8 @@ TEST(TestAudioTrackGraph, SetInputChannelCountBeforeAudioCallbackDriver)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   // Set the input channel count of AudioInputProcessing, which will force
   // MediaTrackGraph to re-evaluate input device, when the MediaTrackGraph is
@@ -2046,9 +2054,8 @@ TEST(TestAudioTrackGraph, StartAudioDeviceBeforeStartingAudioProcessing)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   // Create a duplex AudioCallbackDriver
   const CubebUtils::AudioDeviceID deviceId = (CubebUtils::AudioDeviceID)1;
@@ -2116,9 +2123,8 @@ TEST(TestAudioTrackGraph, StopAudioProcessingBeforeStoppingAudioDevice)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   // Create a duplex AudioCallbackDriver
   const CubebUtils::AudioDeviceID deviceId = (CubebUtils::AudioDeviceID)1;
@@ -2191,9 +2197,8 @@ TEST(TestAudioTrackGraph, SwitchNativeAudioProcessingTrack)
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false,
-      MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE, nullptr,
-      GetMainThreadSerialEventTarget());
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
 
   auto switchNativeDevice =
       [&](RefPtr<SmartMockCubebStream>&& aCurrentNativeStream,
@@ -2333,8 +2338,7 @@ TEST(TestAudioTrackGraph, SwitchNativeAudioProcessingTrack)
   EXPECT_EQ(stream2->InputChannels(), 2U);
   EXPECT_EQ(stream2->GetInputDeviceID(), device2);
   {
-    NativeInputTrack* native =
-        track2->GraphImpl()->GetNativeInputTrackMainThread();
+    NativeInputTrack* native = track2->Graph()->GetNativeInputTrackMainThread();
     ASSERT_TRUE(!!native);
     EXPECT_EQ(native->mDeviceId, device2);
   }
@@ -2347,8 +2351,7 @@ TEST(TestAudioTrackGraph, SwitchNativeAudioProcessingTrack)
   EXPECT_EQ(stream3->InputChannels(), 1U);
   EXPECT_EQ(stream3->GetInputDeviceID(), device3);
   {
-    NativeInputTrack* native =
-        track3->GraphImpl()->GetNativeInputTrackMainThread();
+    NativeInputTrack* native = track3->Graph()->GetNativeInputTrackMainThread();
     ASSERT_TRUE(!!native);
     EXPECT_EQ(native->mDeviceId, device3);
   }
@@ -2365,36 +2368,47 @@ TEST(TestAudioTrackGraph, SwitchNativeAudioProcessingTrack)
       WaitFor(cubeb->StreamDestroyEvent());
   EXPECT_EQ(destroyedStream.get(), stream3.get());
   {
-    auto* graphImpl = static_cast<MediaTrackGraphImpl*>(graph);
-    NativeInputTrack* native = graphImpl->GetNativeInputTrackMainThread();
+    NativeInputTrack* native = graph->GetNativeInputTrackMainThread();
     ASSERT_TRUE(!native);
   }
   std::cerr << "No native input now" << std::endl;
 }
 
+class OnFallbackListener : public MediaTrackListener {
+  const RefPtr<MediaTrack> mTrack;
+  Atomic<bool> mOnFallback{true};
+
+ public:
+  explicit OnFallbackListener(MediaTrack* aTrack) : mTrack(aTrack) {}
+
+  bool OnFallback() { return mOnFallback; }
+
+  void NotifyOutput(MediaTrackGraph*, TrackTime) override {
+    if (auto* ad =
+            mTrack->GraphImpl()->CurrentDriver()->AsAudioCallbackDriver()) {
+      mOnFallback = ad->OnFallback();
+    }
+  }
+};
+
 void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
-                        float aDriftFactor, uint32_t aBufferMs = 50) {
+                        float aDriftFactor, uint32_t aRunTimeSeconds = 10,
+                        uint32_t aNumExpectedUnderruns = 0) {
   std::cerr << "TestCrossGraphPort input: " << aInputRate
             << ", output: " << aOutputRate << ", driftFactor: " << aDriftFactor
             << std::endl;
 
-  MockCubeb* cubeb = new MockCubeb();
+  MockCubeb* cubeb = new MockCubeb(MockCubeb::RunningMode::Manual);
   CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
-  auto unforcer = WaitFor(cubeb->ForceAudioThread()).unwrap();
-  Unused << unforcer;
-
-  cubeb->SetStreamStartFreezeEnabled(true);
 
   /* Primary graph: Create the graph. */
   MediaTrackGraph* primary = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER,
-      /*Window ID*/ 1, /* aShouldResistFingerprinting */ false, aInputRate,
-      nullptr, GetMainThreadSerialEventTarget());
+      /*Window ID*/ 1, aInputRate, nullptr, GetMainThreadSerialEventTarget());
 
   /* Partner graph: Create the graph. */
   MediaTrackGraph* partner = MediaTrackGraphImpl::GetInstance(
-      MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
-      /* aShouldResistFingerprinting */ false, aOutputRate,
+      MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1, aOutputRate,
       /*OutputDeviceID*/ reinterpret_cast<cubeb_devid>(1),
       GetMainThreadSerialEventTarget());
 
@@ -2402,7 +2416,8 @@ void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
 
   RefPtr<AudioProcessingTrack> processingTrack;
   RefPtr<AudioInputProcessing> listener;
-  auto primaryStarted = Invoke([&] {
+  RefPtr<OnFallbackListener> primaryFallbackListener;
+  DispatchFunction([&] {
     /* Primary graph: Create input track and open it */
     processingTrack = AudioProcessingTrack::Create(primary);
     listener = new AudioInputProcessing(2);
@@ -2413,15 +2428,26 @@ void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
         MakeUnique<StartInputProcessing>(processingTrack, listener));
     processingTrack->ConnectDeviceInput(deviceId, listener,
                                         PRINCIPAL_HANDLE_NONE);
-    return primary->NotifyWhenDeviceStarted(processingTrack);
+    primaryFallbackListener = new OnFallbackListener(processingTrack);
+    processingTrack->AddListener(primaryFallbackListener);
   });
 
   RefPtr<SmartMockCubebStream> inputStream = WaitFor(cubeb->StreamInitEvent());
 
+  // Wait for the primary AudioCallbackDriver to come into effect.
+  while (primaryFallbackListener->OnFallback()) {
+    EXPECT_EQ(inputStream->ManualDataCallback(0),
+              MockCubebStream::KeepProcessing::Yes);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
   RefPtr<CrossGraphTransmitter> transmitter;
   RefPtr<MediaInputPort> port;
   RefPtr<CrossGraphReceiver> receiver;
-  auto partnerStarted = Invoke([&] {
+  RefPtr<OnFallbackListener> partnerFallbackListener;
+  DispatchFunction([&] {
+    processingTrack->RemoveListener(primaryFallbackListener);
+
     /* Partner graph: Create CrossGraphReceiver */
     receiver = partner->CreateCrossGraphReceiver(primary->GraphRate());
 
@@ -2432,33 +2458,28 @@ void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
      * Check in MediaManager how it is connected to AudioStreamTrack. */
     port = transmitter->AllocateInputPort(processingTrack);
     receiver->AddAudioOutput((void*)1);
-    return partner->NotifyWhenDeviceStarted(receiver);
+
+    partnerFallbackListener = new OnFallbackListener(receiver);
+    receiver->AddListener(partnerFallbackListener);
   });
 
   RefPtr<SmartMockCubebStream> partnerStream =
       WaitFor(cubeb->StreamInitEvent());
-  partnerStream->SetDriftFactor(aDriftFactor);
 
-  cubeb->SetStreamStartFreezeEnabled(false);
+  // Process the CrossGraphTransmitter on the primary graph.
+  EXPECT_EQ(inputStream->ManualDataCallback(0),
+            MockCubebStream::KeepProcessing::Yes);
 
-  // One source of non-determinism in this type of test is that inputStream
-  // and partnerStream are started in sequence by the CubebOperation thread pool
-  // (of size 1). To minimize the chance that the stream that starts first sees
-  // an iteration before the other has started - this is a source of pre-silence
-  // - we freeze both on start and thaw them together here.
-  // Note that another source of non-determinism is the fallback driver. Handing
-  // over from the fallback to the audio driver requires first an audio callback
-  // (deterministic with the fake audio thread), then a fallback driver
-  // iteration (non-deterministic, since each graph has its own fallback driver,
-  // each with its own dedicated thread, which we have no control over). This
-  // non-determinism is worrisome, but both fallback drivers are likely to
-  // exhibit similar characteristics, hopefully keeping the level of
-  // non-determinism down sufficiently for this test to pass.
-  inputStream->Thaw();
-  partnerStream->Thaw();
+  // Wait for the partner AudioCallbackDriver to come into effect.
+  while (partnerFallbackListener->OnFallback()) {
+    EXPECT_EQ(partnerStream->ManualDataCallback(0),
+              MockCubebStream::KeepProcessing::Yes);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
 
-  Unused << WaitFor(primaryStarted);
-  Unused << WaitFor(partnerStarted);
+  DispatchFunction([&] { receiver->RemoveListener(partnerFallbackListener); });
+  while (NS_ProcessNextEvent(nullptr, false)) {
+  }
 
   nsIThread* currentThread = NS_GetCurrentThread();
   cubeb_state inputState = CUBEB_STATE_STARTED;
@@ -2468,16 +2489,28 @@ void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
   MediaEventListener partnerStateListener = partnerStream->StateEvent().Connect(
       currentThread, [&](cubeb_state aState) { partnerState = aState; });
 
-  // Wait for 3s worth of audio data on the receiver stream.
-  DispatchFunction([&] {
-    processingTrack->GraphImpl()->AppendMessage(MakeUnique<GoFaster>(cubeb));
-  });
-  uint32_t totalFrames = 0;
-  WaitUntil(partnerStream->FramesVerifiedEvent(), [&](uint32_t aFrames) {
-    totalFrames += aFrames;
-    return totalFrames > static_cast<uint32_t>(partner->GraphRate() * 3);
-  });
-  cubeb->DontGoFaster();
+  const media::TimeUnit runtime = media::TimeUnit::FromSeconds(aRunTimeSeconds);
+  // 10ms per iteration.
+  const media::TimeUnit step = media::TimeUnit::FromSeconds(0.01);
+  {
+    media::TimeUnit pos = media::TimeUnit::Zero();
+    long inputFrames = 0;
+    long outputFrames = 0;
+    while (pos < runtime) {
+      pos += step;
+      const long newInputFrames = pos.ToTicksAtRate(aInputRate);
+      const long newOutputFrames =
+          (pos.MultDouble(aDriftFactor)).ToTicksAtRate(aOutputRate);
+      EXPECT_EQ(inputStream->ManualDataCallback(newInputFrames - inputFrames),
+                MockCubebStream::KeepProcessing::Yes);
+      EXPECT_EQ(
+          partnerStream->ManualDataCallback(newOutputFrames - outputFrames),
+          MockCubebStream::KeepProcessing::Yes);
+
+      inputFrames = newInputFrames;
+      outputFrames = newOutputFrames;
+    }
+  }
 
   DispatchFunction([&] {
     // Clean up on MainThread
@@ -2491,8 +2524,20 @@ void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
     processingTrack->Destroy();
   });
 
+  while (NS_ProcessNextEvent(nullptr, false)) {
+  }
+
+  EXPECT_EQ(inputStream->ManualDataCallback(0),
+            MockCubebStream::KeepProcessing::Yes);
+  EXPECT_EQ(partnerStream->ManualDataCallback(0),
+            MockCubebStream::KeepProcessing::Yes);
+
+  EXPECT_EQ(inputStream->ManualDataCallback(128),
+            MockCubebStream::KeepProcessing::No);
+  EXPECT_EQ(partnerStream->ManualDataCallback(128),
+            MockCubebStream::KeepProcessing::No);
+
   uint32_t inputFrequency = inputStream->InputFrequency();
-  uint32_t partnerRate = partnerStream->InputSampleRate();
 
   uint64_t preSilenceSamples;
   float estimatedFreq;
@@ -2501,13 +2546,42 @@ void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
       WaitFor(partnerStream->OutputVerificationEvent());
 
   EXPECT_NEAR(estimatedFreq, inputFrequency / aDriftFactor, 5);
-  uint32_t expectedPreSilence =
-      static_cast<uint32_t>(partnerRate * aDriftFactor / 1000 * aBufferMs);
-  uint32_t margin = partnerRate / 20 /* +/- 50ms */;
+  // Note that pre-silence is in the output rate. The buffering is on the input
+  // side. There is one block buffered in NativeInputTrack. Then
+  // AudioDriftCorrection sets its pre-buffering so that *after* the first
+  // resample of real input data, the buffer contains enough data to match the
+  // desired level, which is initially 50ms. I.e. silence = buffering -
+  // inputStep + outputStep. Note that the steps here are rounded up to block
+  // size.
+  const media::TimeUnit inputBuffering(WEBAUDIO_BLOCK_SIZE, aInputRate);
+  const media::TimeUnit buffering =
+      media::TimeUnit::FromSeconds(0.05).ToBase(aInputRate);
+  const media::TimeUnit inputStepSize(
+      MediaTrackGraphImpl::RoundUpToEndOfAudioBlock(
+          step.ToTicksAtRate(aInputRate)),
+      aInputRate);
+  const media::TimeUnit outputStepSize =
+      media::TimeUnit(MediaTrackGraphImpl::RoundUpToEndOfAudioBlock(
+                          step.ToBase(aOutputRate)
+                              .MultDouble(aDriftFactor)
+                              .ToTicksAtRate(aOutputRate)),
+                      aOutputRate)
+          .ToBase(aInputRate);
+  const uint32_t expectedPreSilence =
+      (outputStepSize + inputBuffering + buffering - inputStepSize)
+          .ToBase(aInputRate)
+          .ToBase<media::TimeUnit::CeilingPolicy>(aOutputRate)
+          .ToTicksAtRate(aOutputRate);
+  // Use a margin of 0.1% of the expected pre-silence, since the resampler is
+  // adapting to drift and will process the pre-silence frames. Because of
+  // rounding errors, we don't use a margin lower than 1.
+  const uint32_t margin = std::max(1U, expectedPreSilence / 1000);
   EXPECT_NEAR(preSilenceSamples, expectedPreSilence, margin);
   // The waveform from AudioGenerator starts at 0, but we don't control its
-  // ending, so we expect a discontinuity there.
-  EXPECT_LE(nrDiscontinuities, 1U);
+  // ending, so we expect a discontinuity there. For each expected underrun
+  // there could be an additional 2 discontinuities (start and end of the silent
+  // period).
+  EXPECT_LE(nrDiscontinuities, 1U + 2 * aNumExpectedUnderruns);
 
   SpinEventLoopUntil("streams have stopped"_ns, [&] {
     return inputState == CUBEB_STATE_STOPPED &&
@@ -2520,34 +2594,35 @@ void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
 TEST(TestAudioTrackGraph, CrossGraphPort)
 {
   TestCrossGraphPort(44100, 44100, 1);
-  TestCrossGraphPort(44100, 44100, 1.08);
-  TestCrossGraphPort(44100, 44100, 0.92);
+  TestCrossGraphPort(44100, 44100, 1.006);
+  TestCrossGraphPort(44100, 44100, 0.994);
 
   TestCrossGraphPort(48000, 44100, 1);
-  TestCrossGraphPort(48000, 44100, 1.08);
-  TestCrossGraphPort(48000, 44100, 0.92);
+  TestCrossGraphPort(48000, 44100, 1.006);
+  TestCrossGraphPort(48000, 44100, 0.994);
 
   TestCrossGraphPort(44100, 48000, 1);
-  TestCrossGraphPort(44100, 48000, 1.08);
-  TestCrossGraphPort(44100, 48000, 0.92);
+  TestCrossGraphPort(44100, 48000, 1.006);
+  TestCrossGraphPort(44100, 48000, 0.994);
 
   TestCrossGraphPort(52110, 17781, 1);
-  TestCrossGraphPort(52110, 17781, 1.08);
-  TestCrossGraphPort(52110, 17781, 0.92);
+  TestCrossGraphPort(52110, 17781, 1.006);
+  TestCrossGraphPort(52110, 17781, 0.994);
 }
 
-TEST(TestAudioTrackGraph, CrossGraphPortLargeBuffer)
+TEST(TestAudioTrackGraph, CrossGraphPortUnderrun)
 {
-  const int32_t oldBuffering = Preferences::GetInt(DRIFT_BUFFERING_PREF);
-  const int32_t longBuffering = 5000;
-  Preferences::SetInt(DRIFT_BUFFERING_PREF, longBuffering);
+  TestCrossGraphPort(44100, 44100, 1.01, 30, 1);
+  TestCrossGraphPort(44100, 44100, 1.03, 40, 3);
 
-  TestCrossGraphPort(44100, 44100, 1.02, longBuffering);
-  TestCrossGraphPort(48000, 44100, 1.08, longBuffering);
-  TestCrossGraphPort(44100, 48000, 0.95, longBuffering);
-  TestCrossGraphPort(52110, 17781, 0.92, longBuffering);
+  TestCrossGraphPort(48000, 44100, 1.01, 30, 1);
+  TestCrossGraphPort(48000, 44100, 1.03, 40, 3);
 
-  Preferences::SetInt(DRIFT_BUFFERING_PREF, oldBuffering);
+  TestCrossGraphPort(44100, 48000, 1.01, 30, 1);
+  TestCrossGraphPort(44100, 48000, 1.03, 40, 3);
+
+  TestCrossGraphPort(52110, 17781, 1.01, 30, 1);
+  TestCrossGraphPort(52110, 17781, 1.03, 40, 3);
 }
 #endif  // MOZ_WEBRTC
 

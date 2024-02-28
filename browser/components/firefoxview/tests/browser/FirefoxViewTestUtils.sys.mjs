@@ -10,7 +10,7 @@ var testScope;
 /**
  * Module consumers can optionally initialize the module
  *
- * @param {Object} scope
+ * @param {object} scope
  *   object with SimpleTest and info properties.
  */
 function init(scope) {
@@ -51,35 +51,45 @@ async function openFirefoxViewTab(win) {
     );
   }
   await testScope.SimpleTest.promiseFocus(win);
+  let fxviewTab = win.FirefoxViewHandler.tab;
+  let alreadyLoaded =
+    fxviewTab?.linkedBrowser.currentURI.spec.includes(getFirefoxViewURL()) &&
+    fxviewTab?.linkedBrowser?.contentDocument?.readyState == "complete";
+  let enteredPromise = alreadyLoaded
+    ? Promise.resolve()
+    : TestUtils.topicObserved("firefoxview-entered");
 
-  const fxViewTab = win.FirefoxViewHandler.tab;
-  const alreadyLoaded =
-    fxViewTab?.linkedBrowser?.currentURI.spec.split("#")[0] ==
-    getFirefoxViewURL();
-  const enteredPromise =
-    alreadyLoaded &&
-    fxViewTab.linkedBrowser.contentDocument.visibilityState == "visible"
-      ? Promise.resolve()
-      : TestUtils.topicObserved("firefoxview-entered");
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    "#firefox-view-button",
-    { type: "mousedown" },
-    win.browsingContext
-  );
+  if (!fxviewTab?.selected) {
+    await BrowserTestUtils.synthesizeMouseAtCenter(
+      "#firefox-view-button",
+      { type: "mousedown" },
+      win.browsingContext
+    );
+    await TestUtils.waitForTick();
+  }
+
+  fxviewTab = win.FirefoxViewHandler.tab;
   assertFirefoxViewTab(win);
   Assert.ok(
     win.FirefoxViewHandler.tab.selected,
     "Firefox View tab is selected"
   );
 
-  if (!alreadyLoaded) {
-    testScope.info("Not already loaded, waiting for browserLoaded");
-    await BrowserTestUtils.browserLoaded(
-      win.FirefoxViewHandler.tab.linkedBrowser
-    );
-  }
-  await enteredPromise;
-  return win.FirefoxViewHandler.tab;
+  testScope.info(
+    "openFirefoxViewTab, waiting for complete readyState, visible and firefoxview-entered"
+  );
+  await Promise.all([
+    TestUtils.waitForCondition(() => {
+      const document = fxviewTab.linkedBrowser.contentDocument;
+      return (
+        document.readyState == "complete" &&
+        document.visibilityState == "visible"
+      );
+    }),
+    enteredPromise,
+  ]);
+  testScope.info("openFirefoxViewTab, ready resolved");
+  return fxviewTab;
 }
 
 function closeFirefoxViewTab(win) {
@@ -95,7 +105,7 @@ function closeFirefoxViewTab(win) {
 /**
  * Run a task with Firefox View open.
  *
- * @param {Object} options
+ * @param {object} options
  *   Options object.
  * @param {boolean} [options.openNewWindow]
  *   Whether to run the task in a new window. If false, the current window will
@@ -103,6 +113,8 @@ function closeFirefoxViewTab(win) {
  * @param {boolean} [options.resetFlowManager]
  *   Whether to reset the internal state of TabsSetupFlowManager before running
  *   the task.
+ * @param {Window} [options.win]
+ *   The window in which to run the task.
  * @param {function(MozBrowser)} taskFn
  *   The task to run. It can be asynchronous.
  * @returns {any}

@@ -26,8 +26,10 @@
 #include "mozilla/dom/MediaController.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/ChromeUtils.h"
+#include "mozilla/dom/UseCounterMetrics.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Components.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ServoCSSParser.h"
@@ -547,7 +549,10 @@ void WindowGlobalParent::NotifyContentBlockingEvent(
     const nsACString& aTrackingOrigin,
     const nsTArray<nsCString>& aTrackingFullHashes,
     const Maybe<ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
-        aReason) {
+        aReason,
+    const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
+        aCanvasFingerprinter,
+    const Maybe<bool> aCanvasFingerprinterKnownText) {
   MOZ_ASSERT(NS_IsMainThread());
   DebugOnly<bool> isCookiesBlocked =
       aEvent == nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
@@ -565,7 +570,8 @@ void WindowGlobalParent::NotifyContentBlockingEvent(
   }
 
   Maybe<uint32_t> event = GetContentBlockingLog()->RecordLogParent(
-      aTrackingOrigin, aEvent, aBlocked, aReason, aTrackingFullHashes);
+      aTrackingOrigin, aEvent, aBlocked, aReason, aTrackingFullHashes,
+      aCanvasFingerprinter, aCanvasFingerprinterKnownText);
 
   // Notify the OnContentBlockingEvent if necessary.
   if (event) {
@@ -1113,6 +1119,7 @@ void WindowGlobalParent::FinishAccumulatingPageUseCounters() {
     }
 
     Telemetry::Accumulate(Telemetry::TOP_LEVEL_CONTENT_DOCUMENTS_DESTROYED, 1);
+    glean::use_counter::top_level_content_documents_destroyed.Add();
 
     bool any = false;
     for (int32_t c = 0; c < eUseCounter_Count; ++c) {
@@ -1128,6 +1135,7 @@ void WindowGlobalParent::FinishAccumulatingPageUseCounters() {
                       Telemetry::GetHistogramName(id), urlForLogging->get());
       }
       Telemetry::Accumulate(id, 1);
+      IncrementUseCounter(uc, /* aIsPage = */ true);
     }
 
     if (!any) {
@@ -1396,21 +1404,21 @@ IPCResult WindowGlobalParent::RecvDiscoverIdentityCredentialFromExternalSource(
   return IPC_OK();
 }
 
-IPCResult WindowGlobalParent::RecvHasStorageAccessPermission(
-    HasStorageAccessPermissionResolver&& aResolve) {
+IPCResult WindowGlobalParent::RecvGetStorageAccessPermission(
+    GetStorageAccessPermissionResolver&& aResolve) {
   WindowGlobalParent* top = TopWindowContext();
   if (!top) {
     return IPC_FAIL_NO_REASON(this);
   }
   nsIPrincipal* topPrincipal = top->DocumentPrincipal();
   nsIPrincipal* principal = DocumentPrincipal();
-  bool result;
+  uint32_t result;
   nsresult rv = AntiTrackingUtils::TestStoragePermissionInParent(
       topPrincipal, principal, &result);
-  NS_ENSURE_SUCCESS(
-      rv, IPC_FAIL(
-              this,
-              "Storage Access Permission: Failed to test storage permission."));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aResolve(nsIPermissionManager::UNKNOWN_ACTION);
+    return IPC_OK();
+  }
 
   aResolve(result);
   return IPC_OK();
@@ -1501,6 +1509,10 @@ void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
 
         if (mDocumentURI && (net::SchemeIsHTTP(mDocumentURI) ||
                              net::SchemeIsHTTPS(mDocumentURI))) {
+          GetContentBlockingLog()->ReportCanvasFingerprintingLog(
+              DocumentPrincipal());
+          GetContentBlockingLog()->ReportFontFingerprintingLog(
+              DocumentPrincipal());
           GetContentBlockingLog()->ReportEmailTrackingLog(DocumentPrincipal());
         }
       }

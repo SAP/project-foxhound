@@ -732,7 +732,7 @@ void Promise::ReportRejectedPromise(JSContext* aCx,
         event->SerializeStack(aCx, resolutionSite);
       }
     }
-    winForDispatch->Dispatch(mozilla::TaskCategory::Other, event.forget());
+    winForDispatch->Dispatch(event.forget());
   } else {
     NS_DispatchToMainThread(event);
   }
@@ -776,8 +776,7 @@ class PromiseWorkerProxyRunnable : public WorkerRunnable {
  public:
   PromiseWorkerProxyRunnable(PromiseWorkerProxy* aPromiseWorkerProxy,
                              PromiseWorkerProxy::RunCallbackFunc aFunc)
-      : WorkerRunnable(aPromiseWorkerProxy->GetWorkerPrivate(),
-                       WorkerThreadUnchangedBusyCount),
+      : WorkerRunnable(aPromiseWorkerProxy->GetWorkerPrivate(), WorkerThread),
         mPromiseWorkerProxy(aPromiseWorkerProxy),
         mFunc(aFunc) {
     MOZ_ASSERT(NS_IsMainThread());

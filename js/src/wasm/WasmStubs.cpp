@@ -1932,7 +1932,7 @@ bool wasm::GenerateImportFunctions(const ModuleEnvironment& env,
       return false;
     }
     if (!code->codeRanges.emplaceBack(funcIndex, /* bytecodeOffset = */ 0,
-                                      offsets)) {
+                                      offsets, /* hasUnwindInfo = */ false)) {
       return false;
     }
   }
@@ -2875,12 +2875,8 @@ bool wasm::GenerateEntryStubs(MacroAssembler& masm, size_t funcExportIndex,
                         &jitOffsets)) {
     return false;
   }
-  if (!codeRanges->emplaceBack(CodeRange::JitEntry, fe.funcIndex(),
-                               jitOffsets)) {
-    return false;
-  }
-
-  return true;
+  return codeRanges->emplaceBack(CodeRange::JitEntry, fe.funcIndex(),
+                                 jitOffsets);
 }
 
 bool wasm::GenerateProvisionalLazyJitEntryStub(MacroAssembler& masm,

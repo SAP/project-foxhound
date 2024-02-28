@@ -19,7 +19,7 @@
 #include "jit/JitSpewer.h"
 #include "jit/ScriptFromCalleeToken.h"
 #include "jit/TrialInlining.h"
-#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberZeroOrigin
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin
 #include "vm/BytecodeUtil.h"
 #include "vm/Compartment.h"
 #include "vm/FrameIter.h"  // js::OnlyJSJitFrameIter
@@ -57,9 +57,9 @@ JitScript::JitScript(JSScript* script, Offset fallbackStubsOffset,
 
 #ifdef DEBUG
 JitScript::~JitScript() {
-  // The contents of the stub space are removed and freed separately after the
-  // next minor GC. See prepareForDestruction.
-  MOZ_ASSERT(jitScriptStubSpace_.isEmpty());
+  // The contents of the AllocSite LifoAlloc are removed and freed separately
+  // after the next minor GC. See prepareForDestruction.
+  MOZ_ASSERT(allocSitesSpace_.isEmpty());
 
   // BaselineScript and IonScript must have been destroyed at this point.
   MOZ_ASSERT(!hasBaselineScript());
@@ -318,13 +318,10 @@ void JitScript::Destroy(Zone* zone, JitScript* script) {
 }
 
 void JitScript::prepareForDestruction(Zone* zone) {
-  // When the script contains pointers to nursery things, the store buffer can
-  // contain entries that point into the fallback stub space. Since we can
-  // destroy scripts outside the context of a GC, this situation could result
-  // in us trying to mark invalid store buffer entries.
-  //
-  // Defer freeing any allocated blocks until after the next minor GC.
-  jitScriptStubSpace_.freeAllAfterMinorGC(zone);
+  // Defer freeing AllocSite memory until after the next minor GC, because the
+  // nursery can point to these alloc sites.
+  JSRuntime* rt = zone->runtimeFromMainThread();
+  rt->gc.queueAllLifoBlocksForFreeAfterMinorGC(&allocSitesSpace_);
 
   // Trigger write barriers.
   owningScript_ = nullptr;
@@ -402,7 +399,7 @@ ICEntry* ICScript::interpreterICEntryFromPCOffset(uint32_t pcOffset) {
   return nullptr;
 }
 
-void JitScript::purgeOptimizedStubs(JSScript* script) {
+void JitScript::purgeStubs(JSScript* script) {
   MOZ_ASSERT(script->jitScript() == this);
 
   Zone* zone = script->zone();
@@ -417,52 +414,20 @@ void JitScript::purgeOptimizedStubs(JSScript* script) {
 
   JitSpew(JitSpew_BaselineIC, "Purging optimized stubs");
 
-  icScript()->purgeOptimizedStubs(zone);
+  icScript()->purgeStubs(zone);
   if (hasInliningRoot()) {
-    inliningRoot()->purgeOptimizedStubs(zone);
+    inliningRoot()->purgeStubs(zone);
   }
 
   notePurgedStubs();
 }
 
-void ICScript::purgeOptimizedStubs(Zone* zone) {
+void ICScript::purgeStubs(Zone* zone) {
   for (size_t i = 0; i < numICEntries(); i++) {
     ICEntry& entry = icEntry(i);
-    ICStub* lastStub = entry.firstStub();
-    while (!lastStub->isFallback()) {
-      lastStub = lastStub->toCacheIRStub()->next();
-    }
-
-    // Unlink all stubs allocated in the optimized space.
-    ICStub* stub = entry.firstStub();
-    ICCacheIRStub* prev = nullptr;
-
-    while (stub != lastStub) {
-      if (!stub->toCacheIRStub()->allocatedInFallbackSpace()) {
-        lastStub->toFallbackStub()->unlinkStub(zone, &entry, prev,
-                                               stub->toCacheIRStub());
-        stub = stub->toCacheIRStub()->next();
-        continue;
-      }
-
-      prev = stub->toCacheIRStub();
-      stub = stub->toCacheIRStub()->next();
-    }
-
-    lastStub->toFallbackStub()->clearMayHaveFoldedStub();
+    ICFallbackStub* fallback = fallbackStub(i);
+    fallback->discardStubs(zone, &entry);
   }
-
-#ifdef DEBUG
-  // All remaining stubs must be allocated in the fallback space.
-  for (size_t i = 0; i < numICEntries(); i++) {
-    ICEntry& entry = icEntry(i);
-    ICStub* stub = entry.firstStub();
-    while (!stub->isFallback()) {
-      MOZ_ASSERT(stub->toCacheIRStub()->allocatedInFallbackSpace());
-      stub = stub->toCacheIRStub()->next();
-    }
-  }
-#endif
 }
 
 bool JitScript::ensureHasCachedBaselineJitData(JSContext* cx,
@@ -595,7 +560,7 @@ void jit::JitSpewBaselineICStats(JSScript* script, const char* dumpReason) {
     uint32_t pcOffset = fallback->pcOffset();
     jsbytecode* pc = script->offsetToPC(pcOffset);
 
-    JS::LimitedColumnNumberZeroOrigin column;
+    JS::LimitedColumnNumberOneOrigin column;
     unsigned int line = PCToLineNumber(script, pc, &column);
 
     spew->beginObject();
@@ -619,14 +584,24 @@ void jit::JitSpewBaselineICStats(JSScript* script, const char* dumpReason) {
 }
 #endif
 
-static void MarkActiveJitScripts(JSContext* cx,
-                                 const JitActivationIterator& activation) {
+static void MarkActiveJitScriptsAndCopyStubs(
+    JSContext* cx, const JitActivationIterator& activation,
+    ICStubSpace& newStubSpace) {
   for (OnlyJSJitFrameIter iter(activation); !iter.done(); ++iter) {
     const JSJitFrameIter& frame = iter.frame();
     switch (frame.type()) {
       case FrameType::BaselineJS:
         frame.script()->jitScript()->setActive();
         break;
+      case FrameType::BaselineStub: {
+        auto* layout = reinterpret_cast<BaselineStubFrameLayout*>(frame.fp());
+        if (layout->maybeStubPtr() && !layout->maybeStubPtr()->isFallback()) {
+          ICCacheIRStub* stub = layout->maybeStubPtr()->toCacheIRStub();
+          ICCacheIRStub* newStub = stub->clone(cx, newStubSpace);
+          layout->setStubPtr(newStub);
+        }
+        break;
+      }
       case FrameType::Exit:
         if (frame.exitFrame()->is<LazyLinkExitFrameLayout>()) {
           LazyLinkExitFrameLayout* ll =
@@ -652,14 +627,15 @@ static void MarkActiveJitScripts(JSContext* cx,
   }
 }
 
-void jit::MarkActiveJitScripts(Zone* zone) {
+void jit::MarkActiveJitScriptsAndCopyStubs(Zone* zone,
+                                           ICStubSpace& newStubSpace) {
   if (zone->isAtomsZone()) {
     return;
   }
   JSContext* cx = TlsContext.get();
   for (JitActivationIterator iter(cx); !iter.done(); ++iter) {
     if (iter->compartment()->zone() == zone) {
-      MarkActiveJitScripts(cx, iter);
+      MarkActiveJitScriptsAndCopyStubs(cx, iter, newStubSpace);
     }
   }
 }
@@ -691,14 +667,11 @@ gc::AllocSite* JitScript::createAllocSite(JSScript* script) {
     return nullptr;
   }
 
-  ICStubSpace* stubSpace = jitScriptStubSpace();
-  auto* site =
-      static_cast<gc::AllocSite*>(stubSpace->alloc(sizeof(gc::AllocSite)));
+  auto* site = allocSitesSpace_.new_<gc::AllocSite>(script->zone(), script,
+                                                    JS::TraceKind::Object);
   if (!site) {
     return nullptr;
   }
-
-  new (site) gc::AllocSite(script->zone(), script, JS::TraceKind::Object);
 
   allocSites_.infallibleAppend(site);
 
@@ -723,13 +696,6 @@ bool JitScript::resetAllocSites(bool resetNurserySites,
   }
 
   return anyReset;
-}
-
-JitScriptICStubSpace* ICScript::jitScriptStubSpace() {
-  if (isInlined()) {
-    return inliningRoot_->jitScriptStubSpace();
-  }
-  return outerJitScript()->jitScriptStubSpace();
 }
 
 JitScript* ICScript::outerJitScript() {

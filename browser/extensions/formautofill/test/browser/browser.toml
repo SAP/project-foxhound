@@ -25,6 +25,9 @@ skip-if = [
 
 ["browser_check_installed.js"]
 
+["browser_confirmation_popup.js"]
+skip-if = ["a11y_checks"] # Bug 1859968 - Add accessibility support for address doorhanger
+
 ["browser_dropdown_layout.js"]
 
 ["browser_editAddressDialog.js"]
@@ -35,9 +38,6 @@ skip-if = [
 ]
 
 ["browser_fathom_cc.js"]
-
-["browser_first_time_use_doorhanger.js"]
-skip-if = ["verify"]
 
 ["browser_manageAddressesDialog.js"]
 
@@ -51,6 +51,3 @@ skip-if = [
 ["browser_remoteiframe.js"]
 
 ["browser_submission_in_private_mode.js"]
-
-["browser_update_doorhanger.js"]
-skip-if = ["true"] # bug 1426981 # Bug 1445538

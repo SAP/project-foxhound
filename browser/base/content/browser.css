@@ -43,28 +43,6 @@ body {
   min-height: 0;
 }
 
-/* These live here because image loads don't go through otherwise,
- * see bug 1855151 */
-#navigator-toolbox:-moz-lwtheme {
-  background-image: var(--lwt-additional-images);
-  background-repeat: var(--lwt-background-tiling);
-  background-position: var(--lwt-background-alignment);
-  background-color: var(--lwt-accent-color);
-  color: inherit;
-
-  &:-moz-window-inactive {
-    background-color: var(--lwt-accent-color-inactive, var(--lwt-accent-color));
-  }
-
-  /* When a theme defines both theme_frame and additional_backgrounds, show
-     the latter atop the former. */
-  :root[lwtheme-image] & {
-    background-image: var(--lwt-header-image), var(--lwt-additional-images);
-    background-repeat: no-repeat, var(--lwt-background-tiling);
-    background-position: right top, var(--lwt-background-alignment);
-  }
-}
-
 /* We set large flex on both containers to allow the devtools toolbox to
  * set a flex value itself. We don't want the toolbox to actually take up free
  * space, but we do want it to collapse when the window shrinks, and with
@@ -155,7 +133,8 @@ panelview:not([visible]) {
   transition: height var(--panelui-subview-transition-duration);
 }
 
-@supports not -moz-bool-pref("browser.tabs.tabmanager.enabled") {
+/* stylelint-disable-next-line media-query-no-invalid */
+@media not (-moz-bool-pref: "browser.tabs.tabmanager.enabled") {
   #tabbrowser-tabs:not([overflow], [hashiddentabs]) ~ #alltabs-button {
     display: none;
   }
@@ -396,64 +375,31 @@ toolbarpaletteitem {
   width: 16px;
 }
 
-@media not all and (min-resolution: 1.1dppx) {
-  .webextension-browser-action {
-    list-style-image: var(--webextension-toolbar-image, inherit);
-  }
+.webextension-browser-action {
+  list-style-image: var(--webextension-toolbar-image, inherit);
 
-  toolbar[brighttext] .webextension-browser-action {
+  toolbar[brighttext] & {
     list-style-image: var(--webextension-toolbar-image-light, inherit);
   }
-
-  toolbar:not([brighttext]) .webextension-browser-action:-moz-lwtheme {
+  toolbar:not([brighttext]) &:-moz-lwtheme {
     list-style-image: var(--webextension-toolbar-image-dark, inherit);
   }
-
-  toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action {
+  toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > & {
     list-style-image: var(--webextension-menupanel-image, inherit);
-  }
-
-  :root[lwt-popup-brighttext] toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action {
-    list-style-image: var(--webextension-menupanel-image-light, inherit);
-  }
-
-  :root:not([lwt-popup-brighttext]) toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action:-moz-lwtheme  {
-    list-style-image: var(--webextension-menupanel-image-dark, inherit);
-  }
-
-  .webextension-menuitem {
-    list-style-image: var(--webextension-menuitem-image, inherit) !important;
+    /* TODO: This feels a bit odd, why do we have three images? It feels we
+     * should probably have only two (light/dark), and choose based on
+     * prefers-color-scheme + lwt-popup */
+    :root[lwt-popup="dark"] & {
+      list-style-image: var(--webextension-menupanel-image-light, inherit);
+    }
+    :root[lwt-popup="light"] & {
+      list-style-image: var(--webextension-menupanel-image-dark, inherit);
+    }
   }
 }
 
-@media (min-resolution: 1.1dppx) {
-  .webextension-browser-action {
-    list-style-image: var(--webextension-toolbar-image-2x, inherit);
-  }
-
-  toolbar[brighttext] .webextension-browser-action {
-    list-style-image: var(--webextension-toolbar-image-2x-light, inherit);
-  }
-
-  toolbar:not([brighttext]) .webextension-browser-action:-moz-lwtheme {
-    list-style-image: var(--webextension-toolbar-image-2x-dark, inherit);
-  }
-
-  toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action {
-    list-style-image: var(--webextension-menupanel-image-2x, inherit);
-  }
-
-  :root[lwt-popup-brighttext] toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action {
-    list-style-image: var(--webextension-menupanel-image-2x-light, inherit);
-  }
-
-  :root:not([lwt-popup-brighttext]) toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .webextension-browser-action:-moz-lwtheme {
-    list-style-image: var(--webextension-menupanel-image-2x-dark, inherit);
-  }
-
-  .webextension-menuitem {
-    list-style-image: var(--webextension-menuitem-image-2x, inherit) !important;
-  }
+.webextension-menuitem {
+  list-style-image: var(--webextension-menuitem-image, inherit) !important;
 }
 
 toolbarpaletteitem[removable="false"] {
@@ -461,9 +407,7 @@ toolbarpaletteitem[removable="false"] {
 }
 
 @media not (-moz-platform: macos) {
-  toolbarpaletteitem[place="palette"],
-  toolbarpaletteitem[place="panel"],
-  toolbarpaletteitem[place="toolbar"] {
+  toolbarpaletteitem:is([place="palette"], [place="panel"], [place="toolbar"]) {
     -moz-user-focus: normal;
   }
 }
@@ -1012,13 +956,15 @@ browser[tabmodalPromptShowing], browser[tabDialogShowing] {
   direction: ltr;
 }
 
-#statuspanel[inactive] {
+#statuspanel[inactive],
+:root[inDOMFullscreen] #statuspanel:not([type=overLink]) {
   transition: none;
   opacity: 0;
   visibility: hidden;
 }
 
-#statuspanel[inactive][previoustype=overLink] {
+#statuspanel[inactive][previoustype=overLink],
+:root[inDOMFullscreen] #statuspanel:not([type=overLink])[previoustype=overLink] {
   transition: opacity 200ms ease-out, visibility 200ms;
 }
 
@@ -1204,15 +1150,6 @@ toolbarpaletteitem[dragover] {
   flex-wrap: wrap;
 }
 
-#customization-toolbar-visibility-button > .box-inherit > .button-menu-dropmarker {
-  display: flex;
-}
-
-#customization-lwtheme-button > .box-inherit > .button-menu-dropmarker,
-#customization-uidensity-button > .box-inherit > .button-menu-dropmarker {
-  display: flex;
-}
-
 toolbarpaletteitem[place="palette"] {
   flex-direction: column;
   width: 7em;
@@ -1317,12 +1254,6 @@ toolbarpaletteitem:not([place="palette"]) > #stop-reload-button {
   animation-duration: 2s;
 }
 
-/* Combined context-menu items */
-#context-navigation > .menuitem-iconic > .menu-iconic-text,
-#context-navigation > .menuitem-iconic > .menu-accel-container {
-  display: none;
-}
-
 .popup-notification-invalid-input {
   box-shadow: 0 0 1.5px 1px red;
 }
@@ -1342,19 +1273,9 @@ toolbarpaletteitem:not([place="palette"]) > #stop-reload-button {
 }
 
 /* Page action buttons */
-.pageAction-panel-button > .toolbarbutton-icon {
-  list-style-image: var(--pageAction-image-16px, inherit);
-}
+.pageAction-panel-button > .toolbarbutton-icon,
 .urlbar-page-action {
-  list-style-image: var(--pageAction-image-16px, inherit);
-}
-@media (min-resolution: 1.1dppx) {
-  .pageAction-panel-button > .toolbarbutton-icon {
-    list-style-image: var(--pageAction-image-32px, inherit);
-  }
-  .urlbar-page-action {
-    list-style-image: var(--pageAction-image-32px, inherit);
-  }
+  list-style-image: var(--pageAction-image, inherit);
 }
 
 /* Print pending */
@@ -1452,12 +1373,6 @@ printpreview-pagination:focus-within,
   fill: currentColor;
   width: 16px;
   height: 16px;
-}
-
-@media (min-resolution: 1.1dppx) {
-  #sidebar-box[sidebarcommand$="-sidebar-action"] > #sidebar-header > #sidebar-switcher-target > #sidebar-icon {
-    list-style-image: var(--webextension-menuitem-image-2x, inherit);
-  }
 }
 
 toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
@@ -1607,6 +1522,12 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   /* This makes the dialog top-aligned by default (the dialog box will move via
    * margin-top above) */
   bottom: auto;
+  /* When showModal() is called on a <dialog>, the <dialog> itself will be
+   * focused when there's no content, hence the focus ring. However, this
+   * focus ring is not needed because we always setup the content of the dialog
+   * after its opened and manually focus an element within it.
+   */
+  outline: none;
 }
 
 #window-modal-dialog.spotlight {

@@ -46,7 +46,7 @@ class WMFCDMProxy : public CDMProxy {
                    const nsAString& aSessionId) override;
 
   void SetServerCertificate(PromiseId aPromiseId,
-                            nsTArray<uint8_t>& aCert) override {}
+                            nsTArray<uint8_t>& aCert) override;
 
   void UpdateSession(const nsAString& aSessionId, PromiseId aPromiseId,
                      nsTArray<uint8_t>& aResponse) override;
@@ -110,6 +110,8 @@ class WMFCDMProxy : public CDMProxy {
 
   WMFCDMProxy* AsWMFCDMProxy() override { return this; }
 
+  bool IsHardwareDecryptionSupported() const override;
+
   // Can only be called after initialization succeeded.
   uint64_t GetCDMProxyId() const;
 
@@ -125,7 +127,8 @@ class WMFCDMProxy : public CDMProxy {
   void RejectPromiseWithStateError(PromiseId aId, const nsCString& aReason);
 
   CopyableTArray<MFCDMMediaCapability> GenerateMFCDMMediaCapabilities(
-      const dom::Sequence<dom::MediaKeySystemMediaCapability>& aCapabilities);
+      const dom::Sequence<dom::MediaKeySystemMediaCapability>& aCapabilities,
+      const Maybe<nsString>& forcedRobustness = Nothing());
 
   RefPtr<WMFCDMImpl> mCDM;
 

@@ -49,6 +49,8 @@ categories:
         - tools/moztreedocs
     testing_doc:
         - testing/automated-testing
+        - testing/treeherder-try
+        - testing/sheriffed-intermittents
         - testing/tests-for-new-config
         - testing/intermittent
         - testing/testing-policy
@@ -114,5 +116,6 @@ redirects:
 
 fatal warnings:
     - "WARNING: '([^']*)' reference target not found:((?!.rst).)*$"
+    - "WARNING: Include file '([^']*)' not found or reading it failed"
 
-max_num_warnings: 861
+max_num_warnings: 759

@@ -14,6 +14,8 @@
 #include "Units.h"
 #include "mozilla/dom/FontFaceSet.h"
 #include "mozilla/dom/ElementBinding.h"
+#include "mozilla/dom/LargestContentfulPaint.h"
+#include "mozilla/dom/PerformanceMainThread.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
@@ -42,6 +44,7 @@
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_toolkit.h"
+#include "mozilla/Try.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TouchEvents.h"
@@ -588,6 +591,7 @@ class MOZ_STACK_CLASS AutoPointerEventTargetUpdater final {
 };
 
 bool PresShell::sDisableNonTestMouseEvents = false;
+int16_t PresShell::sMouseButtons = MouseButtonsFlag::eNoButtons;
 
 LazyLogModule PresShell::gLog("PresShell");
 
@@ -897,9 +901,6 @@ void PresShell::Init(nsPresContext* aPresContext, nsViewManager* aViewManager) {
   // being eagerly registered as a style flush observer. This shouldn't be
   // needed otherwise.
   EnsureStyleFlush();
-
-  // Add the preference style sheet.
-  UpdatePreferenceStyles();
 
   const bool accessibleCaretEnabled =
       AccessibleCaretEnabled(mDocument->GetDocShell());
@@ -1269,11 +1270,6 @@ void PresShell::Destroy() {
     frameSelection->DisconnectFromPresShell();
   }
 
-  // release our pref style sheet, if we have one still
-  //
-  // TODO(emilio): Should we move the preference sheet tracking to the Document?
-  RemovePreferenceStyles();
-
   mIsDestroying = true;
 
   // We can't release all the event content in
@@ -1420,53 +1416,6 @@ void PresShell::SetAuthorStyleDisabled(bool aStyleDisabled) {
 
 bool PresShell::GetAuthorStyleDisabled() const {
   return StyleSet()->GetAuthorStyleDisabled();
-}
-
-void PresShell::UpdatePreferenceStyles() {
-  if (!mDocument) {
-    return;
-  }
-
-  // If the document doesn't have a window there's no need to notify
-  // its presshell about changes to preferences since the document is
-  // in a state where it doesn't matter any more (see
-  // nsDocumentViewer::Close()).
-  if (!mDocument->GetWindow()) {
-    return;
-  }
-
-  // Documents in chrome shells do not have any preference style rules applied.
-  if (mDocument->IsInChromeDocShell()) {
-    return;
-  }
-
-  PreferenceSheet::EnsureInitialized();
-  auto* cache = GlobalStyleSheetCache::Singleton();
-
-  RefPtr<StyleSheet> newPrefSheet =
-      PreferenceSheet::ShouldUseChromePrefs(*mDocument)
-          ? cache->ChromePreferenceSheet()
-          : cache->ContentPreferenceSheet();
-
-  if (mPrefStyleSheet == newPrefSheet) {
-    return;
-  }
-
-  RemovePreferenceStyles();
-
-  // NOTE(emilio): This sheet is added as an agent sheet, because we don't want
-  // it to be modifiable from devtools and similar, see bugs 1239336 and
-  // 1436782. I think it conceptually should be a user sheet, and could be
-  // without too much trouble I'd think.
-  StyleSet()->AppendStyleSheet(*newPrefSheet);
-  mPrefStyleSheet = newPrefSheet;
-}
-
-void PresShell::RemovePreferenceStyles() {
-  if (mPrefStyleSheet) {
-    StyleSet()->RemoveStyleSheet(*mPrefStyleSheet);
-    mPrefStyleSheet = nullptr;
-  }
 }
 
 void PresShell::AddUserSheet(StyleSheet* aSheet) {
@@ -1871,8 +1820,7 @@ nsresult PresShell::Initialize() {
       mPaintingSuppressed = false;
     } else {
       // Initialize the timer.
-      mPaintSuppressionTimer->SetTarget(
-          mDocument->EventTargetFor(TaskCategory::Other));
+      mPaintSuppressionTimer->SetTarget(GetMainThreadSerialEventTarget());
       InitPaintSuppressionTimer();
       if (mHasTriedFastUnsuppress) {
         // Someone tried to unsuppress painting before Initialize was called so
@@ -3590,23 +3538,49 @@ nsresult PresShell::ScrollContentIntoView(nsIContent* aContent,
     mContentToScrollTo = nullptr;
   }
 
-  // If the target frame is an ancestor of a `content-visibility: auto`
+  // If the target frame has an ancestor of a `content-visibility: auto`
   // element ensure that it is laid out, so that the boundary rectangle is
   // correct.
+  // Additionally, ensure that all ancestor elements with 'content-visibility:
+  // auto' are set to 'visible'. so that they are laid out as visible before
+  // scrolling, improving the accuracy of the scroll position, especially when
+  // the scroll target is within the overflow area. And here invoking
+  // 'SetTemporarilyVisibleForScrolledIntoViewDescendant' would make the
+  // intersection observer knows that it should generate entries for these
+  // c-v:auto ancestors, so that the content relevancy could be checked again
+  // after scrolling. https://drafts.csswg.org/css-contain-2/#cv-notes
+  bool reflowedForHiddenContent = false;
   if (mContentToScrollTo) {
     if (nsIFrame* frame = mContentToScrollTo->GetPrimaryFrame()) {
-      if (frame->IsHiddenByContentVisibilityOnAnyAncestor(
-              nsIFrame::IncludeContentVisibility::Auto)) {
-        frame->PresShell()->EnsureReflowIfFrameHasHiddenContent(frame);
+      bool hasContentVisibilityAutoAncestor = false;
+      auto* ancestor = frame->GetClosestContentVisibilityAncestor(
+          nsIFrame::IncludeContentVisibility::Auto);
+      while (ancestor) {
+        if (auto* element = Element::FromNodeOrNull(ancestor->GetContent())) {
+          hasContentVisibilityAutoAncestor = true;
+          element->SetTemporarilyVisibleForScrolledIntoViewDescendant(true);
+          element->SetVisibleForContentVisibility(true);
+        }
+        ancestor = ancestor->GetClosestContentVisibilityAncestor(
+            nsIFrame::IncludeContentVisibility::Auto);
+      }
+      if (hasContentVisibilityAutoAncestor) {
+        UpdateHiddenContentInForcedLayout(frame);
+        // TODO: There might be the other already scheduled relevancy updates,
+        // other than caused be scrollIntoView.
+        UpdateContentRelevancyImmediately(ContentRelevancyReason::Visible);
+        reflowedForHiddenContent = ReflowForHiddenContentIfNeeded();
       }
     }
   }
 
-  // Flush layout and attempt to scroll in the process.
-  if (PresShell* presShell = composedDoc->GetPresShell()) {
-    presShell->SetNeedLayoutFlush();
+  if (!reflowedForHiddenContent) {
+    // Flush layout and attempt to scroll in the process.
+    if (PresShell* presShell = composedDoc->GetPresShell()) {
+      presShell->SetNeedLayoutFlush();
+    }
+    composedDoc->FlushPendingNotifications(FlushType::InterruptibleLayout);
   }
-  composedDoc->FlushPendingNotifications(FlushType::InterruptibleLayout);
 
   // If mContentToScrollTo is non-null, that means we interrupted the reflow
   // (or suppressed it altogether because we're suppressing interruptible
@@ -4294,9 +4268,6 @@ void PresShell::DoFlushPendingNotifications(mozilla::ChangesToFlush aFlush) {
     mDocument->FlushPendingNotifications(FlushType::ContentAndNotify);
 
     mDocument->UpdateSVGUseElementShadowTrees();
-
-    // Ensure our preference sheets are up-to-date.
-    UpdatePreferenceStyles();
 
     // Process pending restyles, since any flush of the presshell wants
     // up-to-date style data.
@@ -5413,6 +5384,11 @@ bool PresShell::IsTransparentContainerElement() const {
     return true;
   }
 
+  if (mDocument->IsInitialDocument() &&
+      mDocument->IsLikelyContentInaccessibleTopLevelAboutBlank()) {
+    return true;
+  }
+
   nsIDocShell* docShell = pc->GetDocShell();
   if (!docShell) {
     return false;
@@ -5849,6 +5825,7 @@ void PresShell::ProcessSynthMouseMoveEvent(bool aFromScroll) {
                          WidgetMouseEvent::eSynthesized);
   event.mRefPoint =
       LayoutDeviceIntPoint::FromAppUnitsToNearest(refpoint, viewAPD);
+  event.mButtons = PresShell::sMouseButtons;
   // XXX set event.mModifiers ?
   // XXX mnakano I think that we should get the latest information from widget.
 
@@ -6247,7 +6224,7 @@ void PresShell::ScheduleApproximateFrameVisibilityUpdateNow() {
   RefPtr<nsRunnableMethod<PresShell>> event =
       NewRunnableMethod("PresShell::UpdateApproximateFrameVisibility", this,
                         &PresShell::UpdateApproximateFrameVisibility);
-  nsresult rv = mDocument->Dispatch(TaskCategory::Other, do_AddRef(event));
+  nsresult rv = mDocument->Dispatch(do_AddRef(event));
 
   if (NS_SUCCEEDED(rv)) {
     mUpdateApproximateFrameVisibilityEvent = std::move(event);
@@ -7380,6 +7357,32 @@ bool PresShell::EventHandler::DispatchPrecedingPointerEvent(
   return !!aEventTargetData->mPresShell;
 }
 
+/**
+ * Event retargetting may retarget a mouse event and change the reference point.
+ * If event retargetting changes the reference point of a event that accessible
+ * caret will not handle, restore the original reference point.
+ */
+class AutoEventTargetPointResetter {
+ public:
+  explicit AutoEventTargetPointResetter(WidgetGUIEvent* aGUIEvent)
+      : mGUIEvent(aGUIEvent),
+        mRefPoint(aGUIEvent->mRefPoint),
+        mHandledByAccessibleCaret(false) {}
+
+  void SetHandledByAccessibleCaret() { mHandledByAccessibleCaret = true; }
+
+  ~AutoEventTargetPointResetter() {
+    if (!mHandledByAccessibleCaret) {
+      mGUIEvent->mRefPoint = mRefPoint;
+    }
+  }
+
+ private:
+  WidgetGUIEvent* mGUIEvent;
+  LayoutDeviceIntPoint mRefPoint;
+  bool mHandledByAccessibleCaret;
+};
+
 bool PresShell::EventHandler::MaybeHandleEventWithAccessibleCaret(
     nsIFrame* aFrameForPresShell, WidgetGUIEvent* aGUIEvent,
     nsEventStatus* aEventStatus) {
@@ -7405,6 +7408,7 @@ bool PresShell::EventHandler::MaybeHandleEventWithAccessibleCaret(
     return false;
   }
 
+  AutoEventTargetPointResetter autoEventTargetPointResetter(aGUIEvent);
   // First, try the event hub at the event point to handle a long press to
   // select a word in an unfocused window.
   do {
@@ -7432,6 +7436,7 @@ bool PresShell::EventHandler::MaybeHandleEventWithAccessibleCaret(
     // If the event is consumed, cancel APZC panning by setting
     // mMultipleActionsPrevented.
     aGUIEvent->mFlags.mMultipleActionsPrevented = true;
+    autoEventTargetPointResetter.SetHandledByAccessibleCaret();
     return true;
   } while (false);
 
@@ -7461,6 +7466,7 @@ bool PresShell::EventHandler::MaybeHandleEventWithAccessibleCaret(
   // If the event is consumed, cancel APZC panning by setting
   // mMultipleActionsPrevented.
   aGUIEvent->mFlags.mMultipleActionsPrevented = true;
+  autoEventTargetPointResetter.SetHandledByAccessibleCaret();
   return true;
 }
 
@@ -8698,6 +8704,9 @@ nsresult PresShell::EventHandler::DispatchEventToDOM(
           eventTarget, presContext, browserParent, aEvent->AsCompositionEvent(),
           aEventStatus, eventCBPtr);
     } else {
+      if (aEvent->mClass == eMouseEventClass) {
+        PresShell::sMouseButtons = aEvent->AsMouseEvent()->mButtons;
+      }
       RefPtr<nsPresContext> presContext = GetPresContext();
       EventDispatcher::Dispatch(eventTarget, presContext, aEvent, nullptr,
                                 aEventStatus, eventCBPtr);
@@ -9459,19 +9468,7 @@ void PresShell::DidDoReflow(bool aInterruptible) {
   }
 
   if (!mPresContext->HasPendingInterrupt()) {
-    // The ResizeObserver object may exist in the outer documents (e.g. observe
-    // an element in the in-process iframe) or any other documents which can
-    // access |mDocument|, so we have to schedule the resize observers for all
-    // possible documents via browsing context tree.
-    if (RefPtr<BrowsingContext> bc = mDocument->GetBrowsingContext()) {
-      bc->Top()->PreOrderWalk([](BrowsingContext* aCur) {
-        // Use extant document because we only want to schedule the observer to
-        // its refresh driver and so don't need to ensure the content viewer.
-        if (const Document* doc = aCur->GetExtantDocument()) {
-          doc->ScheduleResizeObserversNotification();
-        }
-      });
-    }
+    mPresContext->RefreshDriver()->EnsureResizeObserverUpdateHappens();
   }
 
   if (StaticPrefs::layout_reflow_synthMouseMove()) {
@@ -9511,7 +9508,7 @@ bool PresShell::ScheduleReflowOffTimer() {
     nsresult rv = NS_NewTimerWithFuncCallback(
         getter_AddRefs(mReflowContinueTimer), sReflowContinueCallback, this, 30,
         nsITimer::TYPE_ONE_SHOT, "sReflowContinueCallback",
-        mDocument->EventTargetFor(TaskCategory::Other));
+        GetMainThreadSerialEventTarget());
     return NS_SUCCEEDED(rv);
   }
   return true;
@@ -9540,15 +9537,6 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
   // they will schedule paint again. We could probaby skip this, and just
   // schedule a similar paint when a frame is deleted.
   target->SchedulePaint(nsIFrame::PAINT_DEFAULT, false);
-
-  nsDocShell* docShell =
-      static_cast<nsDocShell*>(GetPresContext()->GetDocShell());
-  bool isTimelineRecording = TimelineConsumers::HasConsumer(docShell);
-
-  if (isTimelineRecording) {
-    TimelineConsumers::AddMarkerForDocShell(docShell, "Reflow",
-                                            MarkerTracingType::START);
-  }
 
   Maybe<uint64_t> innerWindowID;
   if (auto* window = mDocument->GetInnerWindow()) {
@@ -9748,11 +9736,6 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
                        eLog_reflow, nullptr);
     }
     tp->Accumulate();
-  }
-
-  if (isTimelineRecording) {
-    TimelineConsumers::AddMarkerForDocShell(docShell, "Reflow",
-                                            MarkerTracingType::END);
   }
 
   return !interrupted;
@@ -10042,8 +10025,7 @@ void PresShell::DelayedInputEvent::Dispatch() {
   widget->DispatchEvent(mEvent, status);
 }
 
-PresShell::DelayedMouseEvent::DelayedMouseEvent(WidgetMouseEvent* aEvent)
-    : DelayedInputEvent() {
+PresShell::DelayedMouseEvent::DelayedMouseEvent(WidgetMouseEvent* aEvent) {
   MOZ_DIAGNOSTIC_ASSERT(aEvent->IsTrusted());
   WidgetMouseEvent* mouseEvent =
       new WidgetMouseEvent(true, aEvent->mMessage, aEvent->mWidget,
@@ -10052,8 +10034,7 @@ PresShell::DelayedMouseEvent::DelayedMouseEvent(WidgetMouseEvent* aEvent)
   mEvent = mouseEvent;
 }
 
-PresShell::DelayedKeyEvent::DelayedKeyEvent(WidgetKeyboardEvent* aEvent)
-    : DelayedInputEvent() {
+PresShell::DelayedKeyEvent::DelayedKeyEvent(WidgetKeyboardEvent* aEvent) {
   MOZ_DIAGNOSTIC_ASSERT(aEvent->IsTrusted());
   WidgetKeyboardEvent* keyEvent =
       new WidgetKeyboardEvent(true, aEvent->mMessage, aEvent->mWidget);
@@ -11894,6 +11875,13 @@ void PresShell::EndPaint() {
       }
       return CallState::Continue;
     });
+
+    if (nsPresContext* presContext = GetPresContext()) {
+      if (PerformanceMainThread* perf =
+              presContext->GetPerformanceMainThread()) {
+        perf->FinalizeLCPEntriesForText();
+      }
+    }
   }
 }
 
@@ -11905,18 +11893,21 @@ bool PresShell::GetZoomableByAPZ() const {
   return mZoomConstraintsClient && mZoomConstraintsClient->GetAllowZoom();
 }
 
-void PresShell::EnsureReflowIfFrameHasHiddenContent(nsIFrame* aFrame) {
+bool PresShell::ReflowForHiddenContentIfNeeded() {
+  if (mHiddenContentInForcedLayout.IsEmpty()) {
+    return false;
+  }
+  mDocument->FlushPendingNotifications(FlushType::Layout);
+  mHiddenContentInForcedLayout.Clear();
+  return true;
+}
+
+void PresShell::UpdateHiddenContentInForcedLayout(nsIFrame* aFrame) {
   if (!aFrame || !aFrame->IsSubtreeDirty() ||
       !StaticPrefs::layout_css_content_visibility_enabled()) {
     return;
   }
 
-  // Flushing notifications below might trigger more layouts, which might,
-  // in turn, trigger layout of other hidden content. We keep a local set
-  // of hidden content we are laying out to handle recursive calls.
-  nsTHashSet<nsIContent*> hiddenContentInForcedLayout;
-
-  MOZ_ASSERT(mHiddenContentInForcedLayout.IsEmpty());
   nsIFrame* topmostFrameWithContentHidden = nullptr;
   for (nsIFrame* cur = aFrame->GetInFlowParent(); cur;
        cur = cur->GetInFlowParent()) {
@@ -11934,9 +11925,13 @@ void PresShell::EnsureReflowIfFrameHasHiddenContent(nsIFrame* aFrame) {
   MOZ_ASSERT(topmostFrameWithContentHidden);
   FrameNeedsReflow(topmostFrameWithContentHidden, IntrinsicDirty::None,
                    NS_FRAME_IS_DIRTY);
-  mDocument->FlushPendingNotifications(FlushType::Layout);
+}
 
-  mHiddenContentInForcedLayout.Clear();
+void PresShell::EnsureReflowIfFrameHasHiddenContent(nsIFrame* aFrame) {
+  MOZ_ASSERT(mHiddenContentInForcedLayout.IsEmpty());
+
+  UpdateHiddenContentInForcedLayout(aFrame);
+  ReflowForHiddenContentIfNeeded();
 }
 
 bool PresShell::IsForcingLayoutForHiddenContent(const nsIFrame* aFrame) const {
@@ -11966,4 +11961,16 @@ void PresShell::ScheduleContentRelevancyUpdate(ContentRelevancyReason aReason) {
   if (nsPresContext* presContext = GetPresContext()) {
     presContext->RefreshDriver()->EnsureContentRelevancyUpdateHappens();
   }
+}
+
+void PresShell::UpdateContentRelevancyImmediately(
+    ContentRelevancyReason aReason) {
+  if (MOZ_UNLIKELY(mIsDestroying)) {
+    return;
+  }
+
+  mContentVisibilityRelevancyToUpdate += aReason;
+
+  SetNeedLayoutFlush();
+  UpdateRelevancyOfContentVisibilityAutoFrames();
 }

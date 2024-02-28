@@ -11,7 +11,6 @@ from mach.decorators import Command
 from mach_commands_base import WebPlatformTestsRunner, create_parser_wpt
 from mozbuild.base import MachCommandConditions as conditions
 from mozbuild.base import MozbuildObject
-from six import iteritems
 
 here = os.path.abspath(os.path.dirname(__file__))
 INTEROP_REQUIREMENTS_PATH = os.path.join(here, "interop_requirements.txt")
@@ -124,9 +123,23 @@ class WebPlatformTestsRunnerSetup(MozbuildObject):
             kwargs["certutil_binary"] = self.get_binary_path("certutil")
 
         if kwargs["webdriver_binary"] is None:
-            kwargs["webdriver_binary"] = self.get_binary_path(
-                "geckodriver", validate_exists=False
-            )
+            try_paths = [self.get_binary_path("geckodriver", validate_exists=False)]
+            ext = ".exe" if sys.platform in ["win32", "msys", "cygwin"] else ""
+            for build_type in ["release", "debug"]:
+                try_paths.append(
+                    os.path.join(
+                        self.topsrcdir, "target", build_type, f"geckodriver{ext}"
+                    )
+                )
+            found_paths = []
+            for path in try_paths:
+                if os.path.exists(path):
+                    found_paths.append(path)
+
+            if found_paths:
+                # Pick the most recently modified version
+                found_paths.sort(key=os.path.getmtime)
+                kwargs["webdriver_binary"] = found_paths[-1]
 
         if kwargs["install_fonts"] is None:
             kwargs["install_fonts"] = True
@@ -159,13 +172,16 @@ class WebPlatformTestsRunnerSetup(MozbuildObject):
 
         kwargs = self.kwargs_common(kwargs)
 
-        # Add additional kwargs consumed by the run frontend. Currently we don't
-        # have a way to set these through mach
-        kwargs["channel"] = None
-        kwargs["prompt"] = True
-        kwargs["install_browser"] = False
-        kwargs["install_webdriver"] = None
-        kwargs["affected"] = None
+        # Our existing kwargs corresponds to the wptrunner command line arguments.
+        # `wpt run` extends this with some additional arguments that are consumed by
+        # the frontend. Copy over the default values of these extra arguments so they
+        # are present when we call into that frontend.
+        run_parser = run.create_parser()
+        run_kwargs = run_parser.parse_args([kwargs["product"], kwargs["test_list"]])
+
+        for key, value in vars(run_kwargs).items():
+            if key not in kwargs:
+                kwargs[key] = value
 
         # Install the deps
         # We do this explicitly to avoid calling pip with options that aren't
@@ -187,19 +203,19 @@ class WebPlatformTestsRunnerSetup(MozbuildObject):
             self.virtualenv_manager.virtualenv_root, skip_virtualenv_setup=True
         )
         try:
-            kwargs = run.setup_wptrunner(venv, **kwargs)
+            browser_cls, kwargs = run.setup_wptrunner(venv, **kwargs)
         except run.WptrunError as e:
             print(e, file=sys.stderr)
             sys.exit(1)
 
         # This is kind of a hack; override the metadata paths so we don't use
         # gecko metadata for non-gecko products
-        for key, value in list(iteritems(kwargs["test_paths"])):
-            meta_suffix = key.strip("/")
+        for url_base, test_root in kwargs["test_paths"].items():
+            meta_suffix = url_base.strip("/")
             meta_dir = os.path.join(
-                self._here, "products", kwargs["product"], meta_suffix
+                self._here, "products", kwargs["product"].name, meta_suffix
             )
-            value["metadata_path"] = meta_dir
+            test_root.metadata_path = meta_dir
             if not os.path.exists(meta_dir):
                 os.makedirs(meta_dir)
         return kwargs
@@ -258,9 +274,9 @@ class WebPlatformTestsServeRunner(MozbuildObject):
         def get_route_builder(*args, **kwargs):
             route_builder = serve.get_route_builder(*args, **kwargs)
 
-            for url_base, paths in iteritems(test_paths):
+            for url_base, paths in test_paths.items():
                 if url_base != "/":
-                    route_builder.add_mount_point(url_base, paths["tests_path"])
+                    route_builder.add_mount_point(url_base, paths.tests_path)
 
             return route_builder
 
@@ -346,7 +362,7 @@ class WebPlatformTestsTestPathsRunner(MozbuildObject):
             wptcommandline.config.read(config_path)
         )
         results = {}
-        for url_base, paths in iteritems(test_paths):
+        for url_base, paths in test_paths.items():
             if "manifest_path" not in paths:
                 paths["manifest_path"] = os.path.join(
                     paths["metadata_path"], "MANIFEST.json"

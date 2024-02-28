@@ -154,7 +154,7 @@ class DOMIntersectionObserver final : public nsISupports,
 
   enum class IsContentVisibilityObserver : bool { No, Yes };
   static IntersectionOutput Intersect(
-      const IntersectionInput&, Element&,
+      const IntersectionInput&, const Element&,
       IsContentVisibilityObserver = IsContentVisibilityObserver::No);
   // Intersects with a given rect, already relative to the root frame.
   static IntersectionOutput Intersect(const IntersectionInput&, const nsRect&);
@@ -164,11 +164,12 @@ class DOMIntersectionObserver final : public nsISupports,
 
   static already_AddRefed<DOMIntersectionObserver> CreateLazyLoadObserver(
       Document&);
-  static already_AddRefed<DOMIntersectionObserver>
-  CreateLazyLoadObserverViewport(Document&);
 
   static already_AddRefed<DOMIntersectionObserver>
   CreateContentVisibilityObserver(Document&);
+
+  static Maybe<nsRect> EdgeInclusiveIntersection(const nsRect& aRect,
+                                                 const nsRect& aOtherRect);
 
  protected:
   void Connect();
@@ -185,7 +186,7 @@ class DOMIntersectionObserver final : public nsISupports,
   Variant<RefPtr<dom::IntersectionCallback>, NativeCallback> mCallback;
   RefPtr<nsINode> mRoot;
   StyleRect<LengthPercentage> mRootMargin;
-  nsTArray<double> mThresholds;
+  AutoTArray<double, 1> mThresholds;
 
   // These hold raw pointers which are explicitly cleared by UnlinkTarget().
   //
@@ -195,7 +196,7 @@ class DOMIntersectionObserver final : public nsISupports,
   nsTHashSet<Element*> mObservationTargetSet;
 
   nsTArray<RefPtr<DOMIntersectionObserverEntry>> mQueuedEntries;
-  bool mConnected;
+  bool mConnected = false;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(DOMIntersectionObserver,

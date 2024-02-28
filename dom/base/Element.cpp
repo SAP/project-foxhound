@@ -66,6 +66,7 @@
 #include "mozilla/StaticPrefs_full_screen_api.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/Try.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/AnimatableBinding.h"
@@ -1111,6 +1112,30 @@ already_AddRefed<DOMRectList> Element::GetClientRects() {
       frame, nsLayoutUtils::GetContainingBlockForClientRect(frame), &builder,
       nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
   return rectList.forget();
+}
+
+// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attribute
+static constexpr nsAttrValue::EnumTable kLoadingTable[] = {
+    {"eager", Element::Loading::Eager},
+    {"lazy", Element::Loading::Lazy},
+    {nullptr, 0}};
+
+void Element::GetLoading(nsAString& aValue) const {
+  GetEnumAttr(nsGkAtoms::loading, kLoadingTable[0].tag, aValue);
+}
+
+bool Element::ParseLoadingAttribute(const nsAString& aValue,
+                                    nsAttrValue& aResult) {
+  return aResult.ParseEnumValue(aValue, kLoadingTable,
+                                /* aCaseSensitive = */ false, kLoadingTable);
+}
+
+Element::Loading Element::LoadingState() const {
+  const nsAttrValue* val = mAttrs.GetAttr(nsGkAtoms::loading);
+  if (!val) {
+    return Loading::Eager;
+  }
+  return static_cast<Loading>(val->GetEnumValue());
 }
 
 //----------------------------------------------------------------------
@@ -4460,6 +4485,12 @@ void Element::SetCustomElementData(UniquePtr<CustomElementData> aData) {
   }
 #endif
   slots->mCustomElementData = std::move(aData);
+}
+
+nsTArray<RefPtr<nsAtom>>& Element::EnsureCustomStates() {
+  MOZ_ASSERT(IsHTMLElement());
+  nsExtendedDOMSlots* slots = ExtendedDOMSlots();
+  return slots->mCustomStates;
 }
 
 CustomElementDefinition* Element::GetCustomElementDefinition() const {

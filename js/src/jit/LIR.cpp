@@ -26,8 +26,7 @@ const char* const js::jit::LIROpNames[] = {
 };
 
 LIRGraph::LIRGraph(MIRGraph* mir)
-    : blocks_(),
-      constantPool_(mir->alloc()),
+    : constantPool_(mir->alloc()),
       constantPoolMap_(mir->alloc()),
       safepoints_(mir->alloc()),
       nonCallSafepoints_(mir->alloc()),
@@ -72,7 +71,7 @@ void LIRGraph::dump() {
 #endif
 
 LBlock::LBlock(MBasicBlock* from)
-    : block_(from), phis_(), entryMoveGroup_(nullptr), exitMoveGroup_(nullptr) {
+    : block_(from), entryMoveGroup_(nullptr), exitMoveGroup_(nullptr) {
   from->assignLir(this);
 }
 
@@ -457,12 +456,12 @@ UniqueChars LAllocation::toString() const {
             break;
           case MIRType::String:
             // If a JSContext is a available, output the actual string
-            if (JSContext* maybeCx = TlsContext.get()) {
-              Sprinter spr(maybeCx);
+            if (JSContext* cx = TlsContext.get()) {
+              Sprinter spr(cx);
               if (!spr.init()) {
                 oomUnsafe.crash("LAllocation::toString()");
               }
-              spr.putString(c->toString());
+              spr.putString(cx, c->toString());
               buf = spr.release();
             } else {
               buf = JS_smprintf("string");

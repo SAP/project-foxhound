@@ -172,7 +172,7 @@ void QuotaUsageRequestChild::HandleResponse(
   MOZ_ASSERT(mRequest);
 
   RefPtr<OriginUsageResult> result =
-      new OriginUsageResult(aResponse.usage(), aResponse.fileUsage());
+      new OriginUsageResult(aResponse.usageInfo());
 
   RefPtr<nsVariant> variant = new nsVariant();
   variant->SetAsInterface(NS_GET_IID(nsIQuotaOriginUsageResult), result);
@@ -362,9 +362,7 @@ mozilla::ipc::IPCResult QuotaRequestChild::Recv__delete__(
       break;
 
     case RequestResponse::TInitTemporaryStorageResponse:
-    case RequestResponse::TClearOriginResponse:
     case RequestResponse::TResetOriginResponse:
-    case RequestResponse::TClearDataResponse:
     case RequestResponse::TPersistResponse:
       HandleResponse();
       break;

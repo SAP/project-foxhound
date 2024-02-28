@@ -20,6 +20,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/DisplayPortUtils.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/CSSAnimation.h"
 #include "mozilla/dom/CSSTransition.h"
 #include "mozilla/dom/ContentVisibilityAutoStateChangeEvent.h"
@@ -39,12 +40,15 @@
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_print.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/SVGMaskFrame.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGTextFrame.h"
 #include "mozilla/SVGIntegrationUtils.h"
 #include "mozilla/SVGUtils.h"
+#include "mozilla/TextControlElement.h"
 #include "mozilla/ToString.h"
+#include "mozilla/Try.h"
 #include "mozilla/ViewportUtils.h"
 
 #include "nsCOMPtr.h"
@@ -718,7 +722,7 @@ void nsIFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
         "root frame should always be a container");
   }
 
-  if (PresShell()->AssumeAllFramesVisible() && TrackingVisibility()) {
+  if (TrackingVisibility() && PresShell()->AssumeAllFramesVisible()) {
     IncApproximateVisibleCount();
   }
 
@@ -735,6 +739,12 @@ void nsIFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   // prev-in-flow, and the animation code cares only primary frames.
   if (!IsPlaceholderFrame() && !aPrevInFlow) {
     UpdateVisibleDescendantsState();
+  }
+
+  if (!aPrevInFlow && HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
+    // We aren't going to get a reflow, so nothing else will call
+    // InvalidateRenderingObservers, we have to do it here.
+    SVGObserverUtils::InvalidateRenderingObservers(this);
   }
 }
 
@@ -957,6 +967,11 @@ static void AddAndRemoveImageAssociations(
 void nsIFrame::AddDisplayItem(nsDisplayItem* aItem) {
   MOZ_DIAGNOSTIC_ASSERT(!mDisplayItems.Contains(aItem));
   mDisplayItems.AppendElement(aItem);
+#ifdef ACCESSIBILITY
+  if (nsAccessibilityService* accService = GetAccService()) {
+    accService->NotifyOfPossibleBoundsChange(PresShell(), mContent);
+  }
+#endif
 }
 
 bool nsIFrame::RemoveDisplayItem(nsDisplayItem* aItem) {
@@ -1183,38 +1198,15 @@ void nsIFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
     // https://drafts.csswg.org/css-scroll-anchoring/#suppression-triggers
     bool needAnchorSuppression = false;
 
-    // If we detect a change on margin, padding or border, we store the old
-    // values on the frame itself between now and reflow, so if someone
-    // calls GetUsed(Margin|Border|Padding)() before the next reflow, we
-    // can give an accurate answer.
-    // We don't want to set the property if one already exists.
-    nsMargin oldValue(0, 0, 0, 0);
-    nsMargin newValue(0, 0, 0, 0);
     const nsStyleMargin* oldMargin = aOldComputedStyle->StyleMargin();
-    if (oldMargin->GetMargin(oldValue)) {
-      if (!StyleMargin()->GetMargin(newValue) || oldValue != newValue) {
-        if (!HasProperty(UsedMarginProperty())) {
-          AddProperty(UsedMarginProperty(), new nsMargin(oldValue));
-        }
-        needAnchorSuppression = true;
-      }
+    if (oldMargin->mMargin != StyleMargin()->mMargin) {
+      needAnchorSuppression = true;
     }
 
     const nsStylePadding* oldPadding = aOldComputedStyle->StylePadding();
-    if (oldPadding->GetPadding(oldValue)) {
-      if (!StylePadding()->GetPadding(newValue) || oldValue != newValue) {
-        if (!HasProperty(UsedPaddingProperty())) {
-          AddProperty(UsedPaddingProperty(), new nsMargin(oldValue));
-        }
-        needAnchorSuppression = true;
-      }
-    }
-
-    const nsStyleBorder* oldBorder = aOldComputedStyle->StyleBorder();
-    oldValue = oldBorder->GetComputedBorder();
-    newValue = StyleBorder()->GetComputedBorder();
-    if (oldValue != newValue && !HasProperty(UsedBorderProperty())) {
-      AddProperty(UsedBorderProperty(), new nsMargin(oldValue));
+    if (oldPadding->mPadding != StylePadding()->mPadding) {
+      SetHasPaddingChange(true);
+      needAnchorSuppression = true;
     }
 
     const nsStyleDisplay* oldDisp = aOldComputedStyle->StyleDisplay();
@@ -1539,66 +1531,56 @@ void nsIFrame::CreateView() {
 
 /* virtual */
 nsMargin nsIFrame::GetUsedMargin() const {
-  nsMargin margin(0, 0, 0, 0);
+  nsMargin margin;
   if (((mState & NS_FRAME_FIRST_REFLOW) && !(mState & NS_FRAME_IN_REFLOW)) ||
-      IsInSVGTextSubtree())
+      IsInSVGTextSubtree()) {
     return margin;
+  }
 
-  nsMargin* m = GetProperty(UsedMarginProperty());
-  if (m) {
+  if (nsMargin* m = GetProperty(UsedMarginProperty())) {
     margin = *m;
-  } else {
-    if (!StyleMargin()->GetMargin(margin)) {
-      // If we get here, our caller probably shouldn't be calling us...
-      NS_ERROR(
-          "Returning bogus 0-sized margin, because this margin "
-          "depends on layout & isn't cached!");
-    }
+  } else if (!StyleMargin()->GetMargin(margin)) {
+    // If we get here, our caller probably shouldn't be calling us...
+    NS_ERROR(
+        "Returning bogus 0-sized margin, because this margin "
+        "depends on layout & isn't cached!");
   }
   return margin;
 }
 
 /* virtual */
 nsMargin nsIFrame::GetUsedBorder() const {
-  nsMargin border(0, 0, 0, 0);
   if (((mState & NS_FRAME_FIRST_REFLOW) && !(mState & NS_FRAME_IN_REFLOW)) ||
-      IsInSVGTextSubtree())
-    return border;
-
-  // Theme methods don't use const-ness.
-  nsIFrame* mutable_this = const_cast<nsIFrame*>(this);
+      IsInSVGTextSubtree()) {
+    return {};
+  }
 
   const nsStyleDisplay* disp = StyleDisplay();
-  if (mutable_this->IsThemed(disp)) {
+  if (IsThemed(disp)) {
+    // Theme methods don't use const-ness.
+    auto* mutable_this = const_cast<nsIFrame*>(this);
     nsPresContext* pc = PresContext();
     LayoutDeviceIntMargin widgetBorder = pc->Theme()->GetWidgetBorder(
         pc->DeviceContext(), mutable_this, disp->EffectiveAppearance());
-    border =
-        LayoutDevicePixel::ToAppUnits(widgetBorder, pc->AppUnitsPerDevPixel());
-    return border;
+    return LayoutDevicePixel::ToAppUnits(widgetBorder,
+                                         pc->AppUnitsPerDevPixel());
   }
 
-  nsMargin* b = GetProperty(UsedBorderProperty());
-  if (b) {
-    border = *b;
-  } else {
-    border = StyleBorder()->GetComputedBorder();
-  }
-  return border;
+  return StyleBorder()->GetComputedBorder();
 }
 
 /* virtual */
 nsMargin nsIFrame::GetUsedPadding() const {
-  nsMargin padding(0, 0, 0, 0);
+  nsMargin padding;
   if (((mState & NS_FRAME_FIRST_REFLOW) && !(mState & NS_FRAME_IN_REFLOW)) ||
-      IsInSVGTextSubtree())
+      IsInSVGTextSubtree()) {
     return padding;
-
-  // Theme methods don't use const-ness.
-  nsIFrame* mutable_this = const_cast<nsIFrame*>(this);
+  }
 
   const nsStyleDisplay* disp = StyleDisplay();
-  if (mutable_this->IsThemed(disp)) {
+  if (IsThemed(disp)) {
+    // Theme methods don't use const-ness.
+    nsIFrame* mutable_this = const_cast<nsIFrame*>(this);
     nsPresContext* pc = PresContext();
     LayoutDeviceIntMargin widgetPadding;
     if (pc->Theme()->GetWidgetPadding(pc->DeviceContext(), mutable_this,
@@ -1609,16 +1591,13 @@ nsMargin nsIFrame::GetUsedPadding() const {
     }
   }
 
-  nsMargin* p = GetProperty(UsedPaddingProperty());
-  if (p) {
+  if (nsMargin* p = GetProperty(UsedPaddingProperty())) {
     padding = *p;
-  } else {
-    if (!StylePadding()->GetPadding(padding)) {
-      // If we get here, our caller probably shouldn't be calling us...
-      NS_ERROR(
-          "Returning bogus 0-sized padding, because this padding "
-          "depends on layout & isn't cached!");
-    }
+  } else if (!StylePadding()->GetPadding(padding)) {
+    // If we get here, our caller probably shouldn't be calling us...
+    NS_ERROR(
+        "Returning bogus 0-sized padding, because this padding "
+        "depends on layout & isn't cached!");
   }
   return padding;
 }
@@ -2138,12 +2117,17 @@ nsIFrame::CaretBlockAxisMetrics nsIFrame::GetCaretBlockAxisMetrics(
 const nsAtom* nsIFrame::ComputePageValue() const {
   const nsAtom* value = nsGkAtoms::_empty;
   const nsIFrame* frame = this;
+  // Find what CSS page name value this frame's subtree has, if any.
+  // Starting with this frame, check if a page name other than auto is present,
+  // and record it if so. Then, if the current frame is a container frame, find
+  // the first non-placeholder child and repeat.
+  // This will find the most deeply nested first in-flow child of this frame's
+  // subtree, and return its page name (with auto resolved if applicable, and
+  // subtrees with no page-names returning the empty atom rather than null).
   do {
-    // If this has a non-auto start value, track that instead.
-    if (const nsAtom* const startValue = frame->GetStartPageValue()) {
-      value = startValue;
+    if (const nsAtom* maybePageName = frame->GetStylePageName()) {
+      value = maybePageName;
     }
-    MOZ_ASSERT(value, "Should not have a NULL page value.");
     // Get the next frame to read from.
     const nsIFrame* firstNonPlaceholderFrame = nullptr;
     // If this is a container frame, inspect its in-flow children.
@@ -2964,12 +2948,10 @@ static void WrapSeparatorTransform(nsDisplayListBuilder* aBuilder,
 // that will be built for |aMaskedFrame|. If we're not able to compute
 // one, return an empty Maybe.
 // The returned clip rect, if there is one, is relative to |aMaskedFrame|.
-static Maybe<nsRect> ComputeClipForMaskItem(nsDisplayListBuilder* aBuilder,
-                                            nsIFrame* aMaskedFrame) {
+static Maybe<nsRect> ComputeClipForMaskItem(
+    nsDisplayListBuilder* aBuilder, nsIFrame* aMaskedFrame,
+    const SVGUtils::MaskUsage& aMaskUsage) {
   const nsStyleSVGReset* svgReset = aMaskedFrame->StyleSVGReset();
-
-  SVGUtils::MaskUsage maskUsage;
-  SVGUtils::DetermineMaskUsage(aMaskedFrame, false, maskUsage);
 
   nsPoint offsetToUserSpace =
       nsLayoutUtils::ComputeOffsetToUserSpace(aBuilder, aMaskedFrame);
@@ -2983,14 +2965,14 @@ static Maybe<nsRect> ComputeClipForMaskItem(nsDisplayListBuilder* aBuilder,
   aBuilder->FindReferenceFrameFor(aMaskedFrame, &toReferenceFrame);
 
   Maybe<gfxRect> combinedClip;
-  if (maskUsage.shouldApplyBasicShapeOrPath) {
+  if (aMaskUsage.ShouldApplyBasicShapeOrPath()) {
     Maybe<Rect> result =
         CSSClipPathInstance::GetBoundingRectForBasicShapeOrPathClip(
             aMaskedFrame, svgReset->mClipPath);
     if (result) {
       combinedClip = Some(ThebesRect(*result));
     }
-  } else if (maskUsage.shouldApplyClipPath) {
+  } else if (aMaskUsage.ShouldApplyClipPath()) {
     gfxRect result = SVGUtils::GetBBox(
         aMaskedFrame,
         SVGUtils::eBBoxIncludeClipped | SVGUtils::eBBoxIncludeFill |
@@ -3310,7 +3292,8 @@ void nsIFrame::BuildDisplayListForStackingContext(
   }
 
   bool usingFilter = effects->HasFilters() && !style.IsRootElementStyle();
-  bool usingMask = SVGIntegrationUtils::UsingMaskOrClipPathForFrame(this);
+  SVGUtils::MaskUsage maskUsage = SVGUtils::DetermineMaskUsage(this, false);
+  bool usingMask = maskUsage.UsingMaskOrClipPath();
   bool usingSVGEffects = usingFilter || usingMask;
 
   nsRect visibleRectOutsideSVGEffects = visibleRect;
@@ -3444,7 +3427,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
     // Filters are a containing block for fixed and absolute descendants,
     // so the masked content cannot move with an ancestor ASR.
     if (usingMask && !usingFilter) {
-      clipForMask = ComputeClipForMaskItem(aBuilder, this);
+      clipForMask = ComputeClipForMaskItem(aBuilder, this, maskUsage);
       if (clipForMask) {
         aBuilder->IntersectDirtyRect(*clipForMask);
         aBuilder->IntersectVisibleRect(*clipForMask);
@@ -4419,13 +4402,16 @@ nsresult nsIFrame::HandleEvent(nsPresContext* aPresContext,
     return NS_OK;
   }
 
+  // When secondary buttion is down, we need to move selection to make users
+  // possible to paste something at click point quickly.
   // When middle button is down, we need to just move selection and focus at
   // the clicked point.  Note that even if middle click paste is not enabled,
   // Chrome moves selection at middle mouse button down.  So, we should follow
   // the behavior for the compatibility.
   if (aEvent->mMessage == eMouseDown) {
     WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
-    if (mouseEvent && mouseEvent->mButton == MouseButton::eMiddle) {
+    if (mouseEvent && (mouseEvent->mButton == MouseButton::eSecondary ||
+                       mouseEvent->mButton == MouseButton::eMiddle)) {
       if (*aEventStatus == nsEventStatus_eConsumeNoDefault) {
         return NS_OK;
       }
@@ -4638,8 +4624,6 @@ nsresult nsIFrame::MoveCaretToEventPoint(nsPresContext* aPresContext,
   MOZ_ASSERT(aPresContext);
   MOZ_ASSERT(aMouseEvent);
   MOZ_ASSERT(aMouseEvent->mMessage == eMouseDown);
-  MOZ_ASSERT(aMouseEvent->mButton == MouseButton::ePrimary ||
-             aMouseEvent->mButton == MouseButton::eMiddle);
   MOZ_ASSERT(aEventStatus);
   MOZ_ASSERT(nsEventStatus_eConsumeNoDefault != *aEventStatus);
 
@@ -4748,6 +4732,18 @@ nsresult nsIFrame::MoveCaretToEventPoint(nsPresContext* aPresContext,
 
   if (!offsets.content) {
     return NS_ERROR_FAILURE;
+  }
+
+  if (aMouseEvent->mButton == MouseButton::eSecondary &&
+      !MovingCaretToEventPointAllowedIfSecondaryButtonEvent(
+          *frameselection, *aMouseEvent, *offsets.content,
+          // When we collapse selection in nsFrameSelection::TakeFocus,
+          // we always collapse selection to the start offset.  Therefore,
+          // we can ignore the end offset here.  E.g., when an <img> is clicked,
+          // set the primary offset to after it, but the the secondary offset
+          // may be before it, see OffsetsForSingleFrame for the detail.
+          offsets.StartOffset())) {
+    return NS_OK;
   }
 
   if (aMouseEvent->mMessage == eMouseDown &&
@@ -4879,6 +4875,61 @@ nsresult nsIFrame::MoveCaretToEventPoint(nsPresContext* aPresContext,
   }
 
   return NS_OK;
+}
+
+bool nsIFrame::MovingCaretToEventPointAllowedIfSecondaryButtonEvent(
+    const nsFrameSelection& aFrameSelection,
+    WidgetMouseEvent& aSecondaryButtonEvent,
+    const nsIContent& aContentAtEventPoint, int32_t aOffsetAtEventPoint) const {
+  MOZ_ASSERT(aSecondaryButtonEvent.mButton == MouseButton::eSecondary);
+
+  if (NS_WARN_IF(aOffsetAtEventPoint < 0)) {
+    return false;
+  }
+
+  Selection* selection = aFrameSelection.GetSelection(SelectionType::eNormal);
+  if (selection && !selection->IsCollapsed()) {
+    // If right click in a selection range, we should not collapse selection.
+    if (nsContentUtils::IsPointInSelection(
+            *selection, aContentAtEventPoint,
+            static_cast<uint32_t>(aOffsetAtEventPoint))) {
+      return false;
+    }
+
+    if (StaticPrefs::
+            ui_mouse_right_click_collapse_selection_stop_if_non_collapsed_selection()) {
+      // If currently selection is limited in an editing host, we should not
+      // collapse selection if the clicked point is in the ancestor limiter.
+      // Otherwise, this mouse click moves focus from the editing host to
+      // different one or blur the editing host.  In this case, we need to
+      // update selection because keeping current selection in the editing
+      // host looks like it's not blurred.
+      // FIXME: If the active editing host is the document element, editor
+      // does not set ancestor limiter properly.  Fix it in the editor side.
+      if (nsIContent* ancestorLimiter = selection->GetAncestorLimiter()) {
+        MOZ_ASSERT(ancestorLimiter->IsEditable());
+        return !aContentAtEventPoint.IsInclusiveDescendantOf(ancestorLimiter);
+      }
+      // If currently selection is not limited in an editing host, we should
+      // collapse selection only when this click moves focus to an editing
+      // host because we need to update selection in this case.
+      if (!aContentAtEventPoint.IsEditable()) {
+        return false;
+      }
+    }
+  }
+
+  return !StaticPrefs::
+             ui_mouse_right_click_collapse_selection_stop_if_non_editable_node() ||
+         // The user does not want to collapse selection into non-editable
+         // content by a right button click.
+         aContentAtEventPoint.IsEditable() ||
+         // Treat clicking in a text control as always clicked on editable
+         // content because we want a hack only for clicking in normal text
+         // nodes which is outside any editing hosts.
+         aContentAtEventPoint.IsTextControlElement() ||
+         TextControlElement::FromNodeOrNull(
+             aContentAtEventPoint.GetClosestNativeAnonymousSubtreeRoot());
 }
 
 nsresult nsIFrame::SelectByTypeAtPoint(nsPresContext* aPresContext,
@@ -6898,10 +6949,10 @@ bool nsIFrame::IsHiddenByContentVisibilityOfInFlowParentForLayout() const {
            Style()->IsAnonBox());
 }
 
-bool nsIFrame::IsHiddenByContentVisibilityOnAnyAncestor(
+nsIFrame* nsIFrame::GetClosestContentVisibilityAncestor(
     const EnumSet<IncludeContentVisibility>& aInclude) const {
   if (!StaticPrefs::layout_css_content_visibility_enabled()) {
-    return false;
+    return nullptr;
   }
 
   auto* parent = GetInFlowParent();
@@ -6909,7 +6960,7 @@ bool nsIFrame::IsHiddenByContentVisibilityOnAnyAncestor(
                           parent->HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES);
   for (nsIFrame* cur = parent; cur; cur = cur->GetInFlowParent()) {
     if (!isAnonymousBlock && cur->HidesContent(aInclude)) {
-      return true;
+      return cur;
     }
 
     // Anonymous boxes are not hidden by the content-visibility of their first
@@ -6918,7 +6969,12 @@ bool nsIFrame::IsHiddenByContentVisibilityOnAnyAncestor(
     isAnonymousBlock = false;
   }
 
-  return false;
+  return nullptr;
+}
+
+bool nsIFrame::IsHiddenByContentVisibilityOnAnyAncestor(
+    const EnumSet<IncludeContentVisibility>& aInclude) const {
+  return !!GetClosestContentVisibilityAncestor(aInclude);
 }
 
 bool nsIFrame::HasSelectionInSubtree() {
@@ -7036,7 +7092,7 @@ void nsIFrame::UpdateIsRelevantContent(
   // "This event is dispatched by posting a task at the time when the state
   // change occurs."
   RefPtr<AsyncEventDispatcher> asyncDispatcher =
-      new AsyncEventDispatcher(element, event.get());
+      new AsyncEventDispatcher(element, event.forget());
   DebugOnly<nsresult> rv = asyncDispatcher->PostDOMEvent();
   NS_ASSERTION(NS_SUCCEEDED(rv), "AsyncEventDispatcher failed to dispatch");
 }
@@ -8238,6 +8294,23 @@ void nsIFrame::ListGeneric(nsACString& aTo, const char* aPrefix,
     aTo += ToString(pseudoType).c_str();
   }
   aTo += "]";
+
+  auto contentVisibility = StyleDisplay()->ContentVisibility(*this);
+  if (contentVisibility != StyleContentVisibility::Visible) {
+    aTo += nsPrintfCString(" [content-visibility=");
+    if (contentVisibility == StyleContentVisibility::Auto) {
+      aTo += "auto, "_ns;
+    } else if (contentVisibility == StyleContentVisibility::Hidden) {
+      aTo += "hiden, "_ns;
+    }
+
+    if (HidesContent()) {
+      aTo += "HidesContent=hidden"_ns;
+    } else {
+      aTo += "HidesContent=visibile"_ns;
+    }
+    aTo += "]";
+  }
 
   if (IsFrameModified()) {
     aTo += nsPrintfCString(" modified");
@@ -11102,11 +11175,12 @@ CompositorHitTestInfo nsIFrame::GetCompositorHitTestInfo(
 
   // Anything that didn't match the above conditions is visible to hit-testing.
   result = CompositorHitTestFlags::eVisibleToHitTest;
-  if (SVGIntegrationUtils::UsingMaskOrClipPathForFrame(this)) {
+  SVGUtils::MaskUsage maskUsage = SVGUtils::DetermineMaskUsage(this, false);
+  if (maskUsage.UsingMaskOrClipPath()) {
     // If WebRender is enabled, simple clip-paths can be converted into WR
     // clips that WR knows how to hit-test against, so we don't need to mark
     // it as an irregular area.
-    if (!SVGIntegrationUtils::UsingSimpleClipPathForFrame(this)) {
+    if (!maskUsage.IsSimpleClipShape()) {
       result += CompositorHitTestFlags::eIrregularArea;
     }
   }

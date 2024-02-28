@@ -265,6 +265,10 @@ DrawTargetWebgl::SharedContext::~SharedContext() {
   if (mWebgl) {
     mWebgl->ActiveTexture(LOCAL_GL_TEXTURE0);
   }
+  if (mWGRPathBuilder) {
+    WGR::wgr_builder_release(mWGRPathBuilder);
+    mWGRPathBuilder = nullptr;
+  }
   ClearAllTextures();
   UnlinkSurfaceTextures();
   UnlinkGlyphCaches();
@@ -475,6 +479,8 @@ bool DrawTargetWebgl::SharedContext::Initialize() {
     return false;
   }
 
+  mWGRPathBuilder = WGR::wgr_new_builder();
+
   return true;
 }
 
@@ -490,7 +496,6 @@ void DrawTargetWebgl::SharedContext::SetBlendState(
   // alpha that is blended separately from AA coverage. This would require two
   // stage blending which can incur a substantial performance penalty, so to
   // work around this currently we just disable AA for those ops.
-  mDirtyAA = true;
 
   // Map the composition op to a WebGL blend mode, if possible.
   bool enabled = true;
@@ -556,8 +561,6 @@ bool DrawTargetWebgl::SharedContext::SetTarget(DrawTargetWebgl* aDT) {
       mWebgl->BindFramebuffer(LOCAL_GL_FRAMEBUFFER, aDT->mFramebuffer);
       mViewportSize = aDT->GetSize();
       mWebgl->Viewport(0, 0, mViewportSize.width, mViewportSize.height);
-      // Force the viewport to be reset.
-      mDirtyViewport = true;
     }
   }
   return true;
@@ -570,8 +573,6 @@ void DrawTargetWebgl::SharedContext::SetClipRect(const Rect& aClipRect) {
     mClipAARect = aClipRect;
     // Store the integer-aligned bounds.
     mClipRect = RoundedOut(aClipRect);
-    // Notify the shader uniform it needs to update.
-    mDirtyClip = true;
   }
 }
 
@@ -2018,6 +2019,19 @@ static inline Maybe<IntRect> IsAlignedRect(bool aTransformed,
   return Nothing();
 }
 
+template <class T, size_t N>
+void DrawTargetWebgl::SharedContext::MaybeUniformData(
+    GLenum aFuncElemType, const WebGLUniformLocationJS* const aLoc,
+    const Array<T, N>& aData, Maybe<Array<T, N>>& aCached) {
+  if (aCached.isNothing() || !(*aCached == aData)) {
+    aCached = Some(aData);
+    Span<const uint8_t> bytes = AsBytes(Span(aData));
+    // We currently always pass false for transpose. If in the future we need
+    // support for transpose then caching needs to take that in to account.
+    mWebgl->UniformData(aFuncElemType, aLoc, false, bytes);
+  }
+}
+
 // Common rectangle and pattern drawing function shared by many DrawTarget
 // commands. If aMaskColor is specified, the provided surface pattern will be
 // treated as a mask. If aHandle is specified, then the surface pattern's
@@ -2145,47 +2159,38 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
       if (mLastProgram != mSolidProgram) {
         mWebgl->UseProgram(mSolidProgram);
         mLastProgram = mSolidProgram;
-        // Ensure uniform state is current.
-        mDirtyViewport = true;
-        mDirtyAA = true;
-        mDirtyClip = true;
       }
-      if (mDirtyViewport) {
-        float viewportData[2] = {float(mViewportSize.width),
-                                 float(mViewportSize.height)};
-        mWebgl->UniformData(
-            LOCAL_GL_FLOAT_VEC2, mSolidProgramViewport, false,
-            {(const uint8_t*)viewportData, sizeof(viewportData)});
-        mDirtyViewport = false;
-      }
-      if (mDirtyAA || aVertexRange) {
-        // Generated paths provide their own AA as vertex alpha.
-        float aaData = aVertexRange ? 0.0f : 1.0f;
-        mWebgl->UniformData(LOCAL_GL_FLOAT, mSolidProgramAA, false,
-                            {(const uint8_t*)&aaData, sizeof(aaData)});
-        mDirtyAA = aaData == 0.0f;
-      }
-      if (mDirtyClip) {
-        // Offset the clip AA bounds by 0.5 to ensure AA falls to 0 at pixel
-        // boundary.
-        float clipData[4] = {mClipAARect.x - 0.5f, mClipAARect.y - 0.5f,
-                             mClipAARect.XMost() + 0.5f,
-                             mClipAARect.YMost() + 0.5f};
-        mWebgl->UniformData(LOCAL_GL_FLOAT_VEC4, mSolidProgramClipBounds, false,
-                            {(const uint8_t*)clipData, sizeof(clipData)});
-        mDirtyClip = false;
-      }
-      float colorData[4] = {color.b, color.g, color.r, color.a};
+      Array<float, 2> viewportData = {float(mViewportSize.width),
+                                      float(mViewportSize.height)};
+      MaybeUniformData(LOCAL_GL_FLOAT_VEC2, mSolidProgramViewport, viewportData,
+                       mSolidProgramUniformState.mViewport);
+
+      // Generated paths provide their own AA as vertex alpha.
+      Array<float, 1> aaData = {aVertexRange ? 0.0f : 1.0f};
+      MaybeUniformData(LOCAL_GL_FLOAT, mSolidProgramAA, aaData,
+                       mSolidProgramUniformState.mAA);
+
+      // Offset the clip AA bounds by 0.5 to ensure AA falls to 0 at pixel
+      // boundary.
+      Array<float, 4> clipData = {mClipAARect.x - 0.5f, mClipAARect.y - 0.5f,
+                                  mClipAARect.XMost() + 0.5f,
+                                  mClipAARect.YMost() + 0.5f};
+      MaybeUniformData(LOCAL_GL_FLOAT_VEC4, mSolidProgramClipBounds, clipData,
+                       mSolidProgramUniformState.mClipBounds);
+
+      Array<float, 4> colorData = {color.b, color.g, color.r, color.a};
       Matrix xform(aRect.width, 0.0f, 0.0f, aRect.height, aRect.x, aRect.y);
       if (aTransformed) {
         xform *= currentTransform;
       }
-      float xformData[6] = {xform._11, xform._12, xform._21,
-                            xform._22, xform._31, xform._32};
-      mWebgl->UniformData(LOCAL_GL_FLOAT_VEC2, mSolidProgramTransform, false,
-                          {(const uint8_t*)xformData, sizeof(xformData)});
-      mWebgl->UniformData(LOCAL_GL_FLOAT_VEC4, mSolidProgramColor, false,
-                          {(const uint8_t*)colorData, sizeof(colorData)});
+      Array<float, 6> xformData = {xform._11, xform._12, xform._21,
+                                   xform._22, xform._31, xform._32};
+      MaybeUniformData(LOCAL_GL_FLOAT_VEC2, mSolidProgramTransform, xformData,
+                       mSolidProgramUniformState.mTransform);
+
+      MaybeUniformData(LOCAL_GL_FLOAT_VEC4, mSolidProgramColor, colorData,
+                       mSolidProgramUniformState.mColor);
+
       // Finally draw the colored rectangle.
       if (aVertexRange) {
         // If there's a vertex range, then we need to draw triangles within from
@@ -2309,41 +2314,30 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
       if (mLastProgram != mImageProgram) {
         mWebgl->UseProgram(mImageProgram);
         mLastProgram = mImageProgram;
-        // Ensure uniform state is current.
-        mDirtyViewport = true;
-        mDirtyAA = true;
-        mDirtyClip = true;
       }
-      if (mDirtyViewport) {
-        float viewportData[2] = {float(mViewportSize.width),
-                                 float(mViewportSize.height)};
-        mWebgl->UniformData(
-            LOCAL_GL_FLOAT_VEC2, mImageProgramViewport, false,
-            {(const uint8_t*)viewportData, sizeof(viewportData)});
-        mDirtyViewport = false;
-      }
-      if (mDirtyAA || aVertexRange) {
-        // AA is not supported for OP_SOURCE. Generated paths provide their own
-        // AA as vertex alpha.
 
-        float aaData =
-            mLastCompositionOp == CompositionOp::OP_SOURCE || aVertexRange
-                ? 0.0f
-                : 1.0f;
-        mWebgl->UniformData(LOCAL_GL_FLOAT, mImageProgramAA, false,
-                            {(const uint8_t*)&aaData, sizeof(aaData)});
-        mDirtyAA = aaData == 0.0f;
-      }
-      if (mDirtyClip) {
-        // Offset the clip AA bounds by 0.5 to ensure AA falls to 0 at pixel
-        // boundary.
-        float clipData[4] = {mClipAARect.x - 0.5f, mClipAARect.y - 0.5f,
-                             mClipAARect.XMost() + 0.5f,
-                             mClipAARect.YMost() + 0.5f};
-        mWebgl->UniformData(LOCAL_GL_FLOAT_VEC4, mImageProgramClipBounds, false,
-                            {(const uint8_t*)clipData, sizeof(clipData)});
-        mDirtyClip = false;
-      }
+      Array<float, 2> viewportData = {float(mViewportSize.width),
+                                      float(mViewportSize.height)};
+      MaybeUniformData(LOCAL_GL_FLOAT_VEC2, mImageProgramViewport, viewportData,
+                       mImageProgramUniformState.mViewport);
+
+      // AA is not supported for OP_SOURCE. Generated paths provide their own
+      // AA as vertex alpha.
+      Array<float, 1> aaData = {
+          mLastCompositionOp == CompositionOp::OP_SOURCE || aVertexRange
+              ? 0.0f
+              : 1.0f};
+      MaybeUniformData(LOCAL_GL_FLOAT, mImageProgramAA, aaData,
+                       mImageProgramUniformState.mAA);
+
+      // Offset the clip AA bounds by 0.5 to ensure AA falls to 0 at pixel
+      // boundary.
+      Array<float, 4> clipData = {mClipAARect.x - 0.5f, mClipAARect.y - 0.5f,
+                                  mClipAARect.XMost() + 0.5f,
+                                  mClipAARect.YMost() + 0.5f};
+      MaybeUniformData(LOCAL_GL_FLOAT_VEC4, mImageProgramClipBounds, clipData,
+                       mImageProgramUniformState.mClipBounds);
+
       DeviceColor color =
           mLastCompositionOp == CompositionOp::OP_CLEAR
               ? DeviceColor(1, 1, 1, 1)
@@ -2352,20 +2346,22 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
                         ? DeviceColor::Mask(1.0f, aMaskColor->a)
                         : aMaskColor.valueOr(DeviceColor(1, 1, 1, 1)),
                     aOptions.mAlpha);
-      float colorData[4] = {color.b, color.g, color.r, color.a};
-      float swizzleData = format == SurfaceFormat::A8 ? 1.0f : 0.0f;
+      Array<float, 4> colorData = {color.b, color.g, color.r, color.a};
+      Array<float, 1> swizzleData = {format == SurfaceFormat::A8 ? 1.0f : 0.0f};
       Matrix xform(aRect.width, 0.0f, 0.0f, aRect.height, aRect.x, aRect.y);
       if (aTransformed) {
         xform *= currentTransform;
       }
-      float xformData[6] = {xform._11, xform._12, xform._21,
-                            xform._22, xform._31, xform._32};
-      mWebgl->UniformData(LOCAL_GL_FLOAT_VEC2, mImageProgramTransform, false,
-                          {(const uint8_t*)xformData, sizeof(xformData)});
-      mWebgl->UniformData(LOCAL_GL_FLOAT_VEC4, mImageProgramColor, false,
-                          {(const uint8_t*)colorData, sizeof(colorData)});
-      mWebgl->UniformData(LOCAL_GL_FLOAT, mImageProgramSwizzle, false,
-                          {(const uint8_t*)&swizzleData, sizeof(swizzleData)});
+      Array<float, 6> xformData = {xform._11, xform._12, xform._21,
+                                   xform._22, xform._31, xform._32};
+      MaybeUniformData(LOCAL_GL_FLOAT_VEC2, mImageProgramTransform, xformData,
+                       mImageProgramUniformState.mTransform);
+
+      MaybeUniformData(LOCAL_GL_FLOAT_VEC4, mImageProgramColor, colorData,
+                       mImageProgramUniformState.mColor);
+
+      MaybeUniformData(LOCAL_GL_FLOAT, mImageProgramSwizzle, swizzleData,
+                       mImageProgramUniformState.mSwizzle);
 
       // Start binding the WebGL state for the texture.
       BackingTexture* backing = nullptr;
@@ -2415,20 +2411,20 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
                          1.0f / backingSizeF.height,
                          float(bounds.x - offset.x) / backingSizeF.width,
                          float(bounds.y - offset.y) / backingSizeF.height);
-      float uvData[6] = {uvMatrix._11, uvMatrix._12, uvMatrix._21,
-                         uvMatrix._22, uvMatrix._31, uvMatrix._32};
-      mWebgl->UniformData(LOCAL_GL_FLOAT_VEC2, mImageProgramTexMatrix, false,
-                          {(const uint8_t*)uvData, sizeof(uvData)});
+      Array<float, 6> uvData = {uvMatrix._11, uvMatrix._12, uvMatrix._21,
+                                uvMatrix._22, uvMatrix._31, uvMatrix._32};
+      MaybeUniformData(LOCAL_GL_FLOAT_VEC2, mImageProgramTexMatrix, uvData,
+                       mImageProgramUniformState.mTexMatrix);
 
       // Clamp sampling to within the bounds of the backing texture subrect.
-      float texBounds[4] = {
+      Array<float, 4> texBounds = {
           (bounds.x + 0.5f) / backingSizeF.width,
           (bounds.y + 0.5f) / backingSizeF.height,
           (bounds.XMost() - 0.5f) / backingSizeF.width,
           (bounds.YMost() - 0.5f) / backingSizeF.height,
       };
-      mWebgl->UniformData(LOCAL_GL_FLOAT_VEC4, mImageProgramTexBounds, false,
-                          {(const uint8_t*)texBounds, sizeof(texBounds)});
+      MaybeUniformData(LOCAL_GL_FLOAT_VEC4, mImageProgramTexBounds, texBounds,
+                       mImageProgramUniformState.mTexBounds);
 
       // Ensure we use nearest filtering when no antialiasing is requested.
       if (UseNearestFilter(surfacePattern)) {
@@ -2772,14 +2768,15 @@ bool QuantizedPath::operator==(const QuantizedPath& aOther) const {
 // Generate a quantized path from the Skia path using WGR. The supplied
 // transform will be applied to the path. The path is stored relative to its
 // bounds origin to support translation later.
-static Maybe<QuantizedPath> GenerateQuantizedPath(const SkPath& aPath,
-                                                  const Rect& aBounds,
-                                                  const Matrix& aTransform) {
-  WGR::PathBuilder* pb = WGR::wgr_new_builder();
-  if (!pb) {
+static Maybe<QuantizedPath> GenerateQuantizedPath(
+    WGR::PathBuilder* aPathBuilder, const SkPath& aPath, const Rect& aBounds,
+    const Matrix& aTransform) {
+  if (!aPathBuilder) {
     return Nothing();
   }
-  WGR::wgr_builder_set_fill_mode(pb,
+
+  WGR::wgr_builder_reset(aPathBuilder);
+  WGR::wgr_builder_set_fill_mode(aPathBuilder,
                                  aPath.getFillType() == SkPathFillType::kWinding
                                      ? WGR::FillMode::Winding
                                      : WGR::FillMode::EvenOdd);
@@ -2796,12 +2793,12 @@ static Maybe<QuantizedPath> GenerateQuantizedPath(const SkPath& aPath,
     switch (currentVerb) {
       case SkPath::kMove_Verb: {
         Point p0 = transform.TransformPoint(SkPointToPoint(params[0]));
-        WGR::wgr_builder_move_to(pb, p0.x, p0.y);
+        WGR::wgr_builder_move_to(aPathBuilder, p0.x, p0.y);
         break;
       }
       case SkPath::kLine_Verb: {
         Point p1 = transform.TransformPoint(SkPointToPoint(params[1]));
-        WGR::wgr_builder_line_to(pb, p1.x, p1.y);
+        WGR::wgr_builder_line_to(aPathBuilder, p1.x, p1.y);
         break;
       }
       case SkPath::kCubic_Verb: {
@@ -2810,14 +2807,15 @@ static Maybe<QuantizedPath> GenerateQuantizedPath(const SkPath& aPath,
         Point p3 = transform.TransformPoint(SkPointToPoint(params[3]));
         // printf_stderr("cubic (%f, %f), (%f, %f), (%f, %f)\n", p1.x, p1.y,
         // p2.x, p2.y, p3.x, p3.y);
-        WGR::wgr_builder_curve_to(pb, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+        WGR::wgr_builder_curve_to(aPathBuilder, p1.x, p1.y, p2.x, p2.y, p3.x,
+                                  p3.y);
         break;
       }
       case SkPath::kQuad_Verb: {
         Point p1 = transform.TransformPoint(SkPointToPoint(params[1]));
         Point p2 = transform.TransformPoint(SkPointToPoint(params[2]));
         // printf_stderr("quad (%f, %f), (%f, %f)\n", p1.x, p1.y, p2.x, p2.y);
-        WGR::wgr_builder_quad_to(pb, p1.x, p1.y, p2.x, p2.y);
+        WGR::wgr_builder_quad_to(aPathBuilder, p1.x, p1.y, p2.x, p2.y);
         break;
       }
       case SkPath::kConic_Verb: {
@@ -2832,24 +2830,22 @@ static Maybe<QuantizedPath> GenerateQuantizedPath(const SkPath& aPath,
           Point q2 = quads[2 * i + 2];
           // printf_stderr("conic quad (%f, %f), (%f, %f)\n", q1.x, q1.y, q2.x,
           // q2.y);
-          WGR::wgr_builder_quad_to(pb, q1.x, q1.y, q2.x, q2.y);
+          WGR::wgr_builder_quad_to(aPathBuilder, q1.x, q1.y, q2.x, q2.y);
         }
         break;
       }
       case SkPath::kClose_Verb:
         // printf_stderr("close\n");
-        WGR::wgr_builder_close(pb);
+        WGR::wgr_builder_close(aPathBuilder);
         break;
       default:
         MOZ_ASSERT(false);
         // Unexpected verb found in path!
-        WGR::wgr_builder_release(pb);
         return Nothing();
     }
   }
 
-  WGR::Path p = WGR::wgr_builder_get_path(pb);
-  WGR::wgr_builder_release(pb);
+  WGR::Path p = WGR::wgr_builder_get_path(aPathBuilder);
   if (!p.num_points || !p.num_types) {
     WGR::wgr_path_release(p);
     return Nothing();
@@ -3109,22 +3105,23 @@ already_AddRefed<TextureHandle> DrawTargetWebgl::SharedContext::DrawStrokeMask(
     mWebgl->UseProgram(mSolidProgram);
     mLastProgram = mSolidProgram;
   }
-  float viewportData[2] = {float(texBounds.width), float(texBounds.height)};
-  mWebgl->UniformData(LOCAL_GL_FLOAT_VEC2, mSolidProgramViewport, false,
-                      {(const uint8_t*)viewportData, sizeof(viewportData)});
-  float aaData = 0.0f;
-  mWebgl->UniformData(LOCAL_GL_FLOAT, mSolidProgramAA, false,
-                      {(const uint8_t*)&aaData, sizeof(aaData)});
-  float clipData[4] = {-0.5f, -0.5f, float(texBounds.width) + 0.5f,
-                       float(texBounds.height) + 0.5f};
-  mWebgl->UniformData(LOCAL_GL_FLOAT_VEC4, mSolidProgramClipBounds, false,
-                      {(const uint8_t*)clipData, sizeof(clipData)});
-  float colorData[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-  mWebgl->UniformData(LOCAL_GL_FLOAT_VEC4, mSolidProgramColor, false,
-                      {(const uint8_t*)colorData, sizeof(colorData)});
-  float xformData[6] = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
-  mWebgl->UniformData(LOCAL_GL_FLOAT_VEC2, mSolidProgramTransform, false,
-                      {(const uint8_t*)xformData, sizeof(xformData)});
+  Array<float, 2> viewportData = {float(texBounds.width),
+                                  float(texBounds.height)};
+  MaybeUniformData(LOCAL_GL_FLOAT_VEC2, mSolidProgramViewport, viewportData,
+                   mSolidProgramUniformState.mViewport);
+  Array<float, 1> aaData = {0.0f};
+  MaybeUniformData(LOCAL_GL_FLOAT, mSolidProgramAA, aaData,
+                   mSolidProgramUniformState.mAA);
+  Array<float, 4> clipData = {-0.5f, -0.5f, float(texBounds.width) + 0.5f,
+                              float(texBounds.height) + 0.5f};
+  MaybeUniformData(LOCAL_GL_FLOAT_VEC4, mSolidProgramClipBounds, clipData,
+                   mSolidProgramUniformState.mClipBounds);
+  Array<float, 4> colorData = {1.0f, 1.0f, 1.0f, 1.0f};
+  MaybeUniformData(LOCAL_GL_FLOAT_VEC4, mSolidProgramColor, colorData,
+                   mSolidProgramUniformState.mColor);
+  Array<float, 6> xformData = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+  MaybeUniformData(LOCAL_GL_FLOAT_VEC2, mSolidProgramTransform, xformData,
+                   mSolidProgramUniformState.mTransform);
 
   // Ensure the current clip mask is ignored.
   RefPtr<WebGLTextureJS> prevClipMask = mLastClipMask;
@@ -3137,9 +3134,6 @@ already_AddRefed<TextureHandle> DrawTargetWebgl::SharedContext::DrawStrokeMask(
   // Restore the previous framebuffer state.
   mWebgl->BindFramebuffer(LOCAL_GL_FRAMEBUFFER, mCurrentTarget->mFramebuffer);
   mWebgl->Viewport(0, 0, mViewportSize.width, mViewportSize.height);
-  mDirtyViewport = true;
-  mDirtyAA = true;
-  mDirtyClip = true;
   if (prevClipMask) {
     SetClipMask(prevClipMask);
   }
@@ -3203,7 +3197,7 @@ bool DrawTargetWebgl::SharedContext::DrawPathAccel(
     // Use a quantized, relative (to its bounds origin) version of the path as
     // a cache key to help limit cache bloat.
     Maybe<QuantizedPath> qp = GenerateQuantizedPath(
-        pathSkia->GetPath(), quantBounds, currentTransform);
+        mWGRPathBuilder, pathSkia->GetPath(), quantBounds, currentTransform);
     if (!qp) {
       return false;
     }
@@ -3305,7 +3299,7 @@ bool DrawTargetWebgl::SharedContext::DrawPathAccel(
           //     int(fillPath.countVerbs()),
           //     int(fillPath.countPoints()));
           if (Maybe<QuantizedPath> qp = GenerateQuantizedPath(
-                  fillPath, quantBounds, currentTransform)) {
+                  mWGRPathBuilder, fillPath, quantBounds, currentTransform)) {
             wgrVB = GeneratePathVertexBuffer(
                 *qp, IntRect(-intBounds.TopLeft(), mViewportSize),
                 mRasterizationTruncates, outputBuffer, outputBufferCapacity);

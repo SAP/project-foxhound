@@ -12,6 +12,7 @@
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
 #include "mozilla/Attributes.h"  // for override
 #include "mozilla/RefPtr.h"      // for RefPtr, already_AddRefed, etc
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/gfx/Point.h"  // for IntSize, IntPoint
@@ -76,6 +77,7 @@ class RemoteTextureHostWrapper;
 class TextureParent;
 class WebRenderTextureHost;
 class WrappingTextureSourceYCbCrBasic;
+class TextureHostWrapperD3D11;
 
 /**
  * A view on a TextureHost where the texture is internally represented as tiles
@@ -417,7 +419,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
    */
   static already_AddRefed<TextureHost> Create(
       const SurfaceDescriptor& aDesc, ReadLockDescriptor&& aReadLock,
-      ISurfaceAllocator* aDeallocator, LayersBackend aBackend,
+      HostIPCAllocator* aDeallocator, LayersBackend aBackend,
       TextureFlags aFlags, wr::MaybeExternalImageId& aExternalImageId);
 
   /**
@@ -527,8 +529,8 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   static PTextureParent* CreateIPDLActor(
       HostIPCAllocator* aAllocator, const SurfaceDescriptor& aSharedData,
       ReadLockDescriptor&& aDescriptor, LayersBackend aLayersBackend,
-      TextureFlags aFlags, uint64_t aSerial,
-      const wr::MaybeExternalImageId& aExternalImageId);
+      TextureFlags aFlags, const dom::ContentParentId& aContentId,
+      uint64_t aSerial, const wr::MaybeExternalImageId& aExternalImageId);
   static bool DestroyIPDLActor(PTextureParent* actor);
 
   /**
@@ -544,6 +546,8 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   static TextureHost* AsTextureHost(PTextureParent* actor);
 
   static uint64_t GetTextureSerial(PTextureParent* actor);
+
+  static dom::ContentParentId GetTextureContentId(PTextureParent* actor);
 
   /**
    * Return a pointer to the IPDLActor.
@@ -607,6 +611,10 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
     return nullptr;
   }
   virtual RemoteTextureHostWrapper* AsRemoteTextureHostWrapper() {
+    return nullptr;
+  }
+
+  virtual TextureHostWrapperD3D11* AsTextureHostWrapperD3D11() {
     return nullptr;
   }
 
@@ -755,6 +763,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   friend class TextureSourceProvider;
   friend class GPUVideoTextureHost;
   friend class WebRenderTextureHost;
+  friend class TextureHostWrapperD3D11;
 };
 
 /**
@@ -799,6 +808,8 @@ class BufferTextureHost : public TextureHost {
 
   gfx::ColorRange GetColorRange() const override;
 
+  gfx::ChromaSubsampling GetChromaSubsampling() const;
+
   gfx::IntSize GetSize() const override { return mSize; }
 
   already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override;
@@ -826,6 +837,12 @@ class BufferTextureHost : public TextureHost {
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys,
                         PushDisplayItemFlagSet aFlags) override;
+
+  uint8_t* GetYChannel();
+  uint8_t* GetCbChannel();
+  uint8_t* GetCrChannel();
+  int32_t GetYStride() const;
+  int32_t GetCbCrStride() const;
 
  protected:
   bool UseExternalTextures() const { return mUseExternalTextures; }

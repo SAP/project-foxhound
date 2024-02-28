@@ -18,9 +18,7 @@ GPU_IMPL_JS_WRAP(CommandBuffer)
 CommandBuffer::CommandBuffer(Device* const aParent, RawId aId,
                              nsTArray<WeakPtr<CanvasContext>>&& aTargetContexts)
     : ChildOf(aParent), mId(aId), mTargetContexts(std::move(aTargetContexts)) {
-  if (!aId) {
-    mValid = false;
-  }
+  MOZ_RELEASE_ASSERT(aId);
 }
 
 CommandBuffer::~CommandBuffer() { Cleanup(); }
@@ -30,7 +28,7 @@ void CommandBuffer::Cleanup() {
     mValid = false;
     auto bridge = mParent->GetBridge();
     if (bridge && bridge->IsOpen()) {
-      bridge->SendCommandBufferDestroy(mId);
+      bridge->SendCommandBufferDrop(mId);
     }
   }
 }

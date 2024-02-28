@@ -964,6 +964,48 @@ pub unsafe extern "C" fn wgpu_client_create_bind_group_layout(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn wgpu_client_render_pipeline_get_bind_group_layout(
+    client: &Client,
+    pipeline_id: id::RenderPipelineId,
+    index: u32,
+    bb: &mut ByteBuf,
+) -> id::BindGroupLayoutId {
+    let backend = pipeline_id.backend();
+    let bgl_id = client
+        .identities
+        .lock()
+        .select(backend)
+        .bind_group_layouts
+        .alloc(backend);
+
+    let action = DeviceAction::RenderPipelineGetBindGroupLayout(pipeline_id, index, bgl_id);
+    *bb = make_byte_buf(&action);
+
+    bgl_id
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wgpu_client_compute_pipeline_get_bind_group_layout(
+    client: &Client,
+    pipeline_id: id::ComputePipelineId,
+    index: u32,
+    bb: &mut ByteBuf,
+) -> id::BindGroupLayoutId {
+    let backend = pipeline_id.backend();
+    let bgl_id = client
+        .identities
+        .lock()
+        .select(backend)
+        .bind_group_layouts
+        .alloc(backend);
+
+    let action = DeviceAction::ComputePipelineGetBindGroupLayout(pipeline_id, index, bgl_id);
+    *bb = make_byte_buf(&action);
+
+    bgl_id
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn wgpu_client_create_pipeline_layout(
     client: &Client,
     device_id: id::DeviceId,
@@ -1252,7 +1294,7 @@ pub unsafe extern "C" fn wgpu_queue_write_texture(
 /// Returns the block size or zero if the format has multiple aspects (for example depth+stencil).
 #[no_mangle]
 pub extern "C" fn wgpu_texture_format_block_size_single_aspect(format: wgt::TextureFormat) -> u32 {
-    format.block_size(None).unwrap_or(0)
+    format.block_copy_size(None).unwrap_or(0)
 }
 
 #[no_mangle]

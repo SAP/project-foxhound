@@ -537,7 +537,6 @@ export class FormAutoComplete {
       return;
     }
 
-    this.log(`autoCompleteSearch(${aUntrimmedSearchString})`);
     const searchString = aUntrimmedSearchString.trim().toLowerCase();
     const prevResult = aPreviousResult?.wrappedJSObject;
     if (prevResult?.canSearchIncrementally(searchString)) {
@@ -569,7 +568,7 @@ export class FormAutoComplete {
             ...externalEntries.map(
               entry =>
                 new GenericAutocompleteItem(
-                  entry.icon,
+                  entry.image,
                   entry.title,
                   entry.subtitle,
                   entry.fillMessageName,

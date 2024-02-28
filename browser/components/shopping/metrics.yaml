@@ -22,7 +22,7 @@ shopping.settings:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1845822
     data_sensitivity:
       - interaction
-    expires: 122 
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -42,7 +42,7 @@ shopping.settings:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1845822
     data_sensitivity:
       - interaction
-    expires: 122 
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -63,13 +63,33 @@ shopping.settings:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1845822
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
     send_in_pings:
       - metrics
     telemetry_mirror: SHOPPING_HAS_ONBOARDED
+
+  disabled_ads:
+    type: boolean
+    lifetime: application
+    description: |
+      Indicates if the user has manually disabled ads. Set during shopping
+      component init and updated when changed in browser.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858540
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858540
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - metrics
+    telemetry_mirror: SHOPPING_DISABLED_ADS
 
 shopping:
   surface_displayed:
@@ -82,7 +102,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1848870#c2
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -106,7 +126,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1848870
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     send_in_pings:
       - events
     notification_emails:
@@ -124,7 +144,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1849382
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -148,7 +168,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1849382
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -171,7 +191,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -195,7 +215,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -217,7 +237,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1849241
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
     send_in_pings:
@@ -239,7 +259,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -256,7 +276,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -273,7 +293,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -291,7 +311,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -308,7 +328,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -332,7 +352,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892#c6
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -351,7 +371,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -369,7 +389,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1851820#c2
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -387,7 +407,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1848870
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -404,7 +424,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -421,7 +441,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1851675#c4
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -439,7 +459,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1854223
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -458,7 +478,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1848160
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -477,7 +497,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1853785
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -494,7 +514,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1854376
     data_sensitivity:
       - interaction
-    expires: 122
+    expires: 134
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -504,4 +524,101 @@ shopping:
       configuration:
         description: >
           Message id for the version of the feature callout shown.
+        type: string
+
+  surface_ads_clicked:
+    type: event
+    description: |
+      An ad shown in the sidebar was clicked.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1855812
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1855812
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_ads_impression:
+    type: event
+    description: |
+      An ad was shown and visible in the sidebar for 1.5 seconds.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1855810
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1855810
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_no_ads_available:
+    type: event
+    description: |
+      On a supported product page, the review checker showed analysis, and
+      review checker ads were enabled, but when we tried to fetch an ad from
+      the ad server, no ad was available.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1855811
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1855811
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  ads_exposure:
+    type: event
+    description: |
+      On a supported product page, the review checker showed analysis, and
+      the ads exposure pref was enabled, or review checker ads were enabled,
+      and when we tried to fetch an ad from the ad server, an ad was available.
+      Does not indicate whether the ad was actually shown.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858470
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858470
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_ads_setting_toggled:
+    type: event
+    description: |
+      The user clicked the settings toggle to enable or disable ads in the
+      sidebar settings component.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858540
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858540
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      action:
+        description: >
+          Whether the toggle was used to enable or disable ads. Possible values
+          are `enabled` and `disabled`.
         type: string

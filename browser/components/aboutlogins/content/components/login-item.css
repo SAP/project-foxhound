@@ -108,11 +108,11 @@ input[type="url"]:read-only {
   flex-grow: 1;
 }
 
-input[type = "url"]:focus:not(:-moz-ui-invalid):invalid ~ .tooltip-container {
+input[type = "url"]:focus:not(:user-invalid):invalid ~ .tooltip-container {
   display: block;
 }
 
-input[type = "url"]:focus:-moz-ui-invalid:not(:placeholder-shown) ~ .tooltip-container {
+input[type = "url"]:focus:user-invalid:not(:placeholder-shown) ~ .tooltip-container {
   display: block;
 }
 
@@ -201,8 +201,7 @@ input[type = "url"]:focus:-moz-ui-invalid:not(:placeholder-shown) ~ .tooltip-con
 }
 
 .detail-grid,
-.detail-row,
-.form-actions-row {
+.detail-row {
   margin-bottom: 40px;
 }
 
@@ -363,4 +362,14 @@ login-command-button {
   color: currentColor;
   text-decoration: underline;
   font-weight: var(--font-weight-bold);
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: row;
+}
+
+.action-buttons .form-actions-row {
+  margin-block: 5px 0;
+  margin-inline: 0 5px;
 }

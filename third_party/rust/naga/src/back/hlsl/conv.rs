@@ -13,21 +13,23 @@ impl crate::ScalarKind {
             Self::Bool => unreachable!(),
         }
     }
+}
 
+impl crate::Scalar {
     /// Helper function that returns scalar related strings
     ///
     /// <https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-scalar>
-    pub(super) const fn to_hlsl_str(self, width: crate::Bytes) -> Result<&'static str, Error> {
-        match self {
-            Self::Sint => Ok("int"),
-            Self::Uint => Ok("uint"),
-            Self::Float => match width {
+    pub(super) const fn to_hlsl_str(self) -> Result<&'static str, Error> {
+        match self.kind {
+            crate::ScalarKind::Sint => Ok("int"),
+            crate::ScalarKind::Uint => Ok("uint"),
+            crate::ScalarKind::Float => match self.width {
                 2 => Ok("half"),
                 4 => Ok("float"),
                 8 => Ok("double"),
-                _ => Err(Error::UnsupportedScalar(self, width)),
+                _ => Err(Error::UnsupportedScalar(self)),
             },
-            Self::Bool => Ok("bool"),
+            crate::ScalarKind::Bool => Ok("bool"),
         }
     }
 }
@@ -71,10 +73,10 @@ impl crate::TypeInner {
         names: &'a crate::FastHashMap<crate::proc::NameKey, String>,
     ) -> Result<Cow<'a, str>, Error> {
         Ok(match gctx.types[base].inner {
-            crate::TypeInner::Scalar { kind, width } => Cow::Borrowed(kind.to_hlsl_str(width)?),
-            crate::TypeInner::Vector { size, kind, width } => Cow::Owned(format!(
+            crate::TypeInner::Scalar(scalar) => Cow::Borrowed(scalar.to_hlsl_str()?),
+            crate::TypeInner::Vector { size, scalar } => Cow::Owned(format!(
                 "{}{}",
-                kind.to_hlsl_str(width)?,
+                scalar.to_hlsl_str()?,
                 crate::back::vector_size_str(size)
             )),
             crate::TypeInner::Matrix {
@@ -83,7 +85,7 @@ impl crate::TypeInner {
                 width,
             } => Cow::Owned(format!(
                 "{}{}x{}",
-                crate::ScalarKind::Float.to_hlsl_str(width)?,
+                crate::Scalar::float(width).to_hlsl_str()?,
                 crate::back::vector_size_str(columns),
                 crate::back::vector_size_str(rows),
             )),
@@ -122,14 +124,17 @@ impl crate::StorageFormat {
             Self::Rg11b10Float => "float3",
 
             Self::Rgba16Float | Self::R32Float | Self::Rg32Float | Self::Rgba32Float => "float4",
-            Self::Rgba8Unorm | Self::Rgba16Unorm | Self::Rgb10a2Unorm => "unorm float4",
+            Self::Rgba8Unorm | Self::Bgra8Unorm | Self::Rgba16Unorm | Self::Rgb10a2Unorm => {
+                "unorm float4"
+            }
             Self::Rgba8Snorm | Self::Rgba16Snorm => "snorm float4",
 
             Self::Rgba8Uint
             | Self::Rgba16Uint
             | Self::R32Uint
             | Self::Rg32Uint
-            | Self::Rgba32Uint => "uint4",
+            | Self::Rgba32Uint
+            | Self::Rgb10a2Uint => "uint4",
             Self::Rgba8Sint
             | Self::Rgba16Sint
             | Self::R32Sint

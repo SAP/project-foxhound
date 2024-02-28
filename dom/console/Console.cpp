@@ -46,8 +46,6 @@
 #include "nsDocShell.h"
 #include "nsProxyRelease.h"
 #include "nsReadableUtils.h"
-#include "mozilla/ConsoleTimelineMarker.h"
-#include "mozilla/TimestampTimelineMarker.h"
 
 #include "nsIConsoleAPIStorage.h"
 #include "nsIException.h"  // for nsIStackFrame
@@ -330,8 +328,14 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
 
     ConsoleCommon::ClearException ce(aCx);
 
+    // This is the same policy as when writing from the other side, in
+    // WriteData.
+    JS::CloneDataPolicy cloneDataPolicy;
+    cloneDataPolicy.allowIntraClusterClonableSharedObjects();
+    cloneDataPolicy.allowSharedMemoryObjects();
+
     JS::Rooted<JS::Value> argumentsValue(aCx);
-    if (!Read(aCx, &argumentsValue)) {
+    if (!Read(aCx, &argumentsValue, cloneDataPolicy)) {
       return;
     }
 
@@ -2613,48 +2617,6 @@ bool Console::MonotonicTimer(JSContext* aCx, MethodName aMethodName,
     }
 
     *aTimeStamp = performance->Now();
-
-    nsDocShell* docShell = static_cast<nsDocShell*>(win->GetDocShell());
-    bool isTimelineRecording = TimelineConsumers::HasConsumer(docShell);
-
-    // The 'timeStamp' recordings do not need an argument; use empty string
-    // if no arguments passed in.
-    if (isTimelineRecording && aMethodName == MethodTimeStamp) {
-      JS::Rooted<JS::Value> value(
-          aCx, aData.Length() == 0 ? JS_GetEmptyStringValue(aCx) : aData[0]);
-      JS::Rooted<JSString*> jsString(aCx, JS::ToString(aCx, value));
-      if (!jsString) {
-        return false;
-      }
-
-      nsAutoJSString key;
-      if (!key.init(aCx, jsString)) {
-        return false;
-      }
-
-      TimelineConsumers::AddMarkerForDocShell(
-          docShell, MakeUnique<TimestampTimelineMarker>(key));
-    }
-    // For `console.time(foo)` and `console.timeEnd(foo)`.
-    else if (isTimelineRecording && aData.Length() == 1) {
-      JS::Rooted<JS::Value> value(aCx, aData[0]);
-      JS::Rooted<JSString*> jsString(aCx, JS::ToString(aCx, value));
-      if (!jsString) {
-        return false;
-      }
-
-      nsAutoJSString key;
-      if (!key.init(aCx, jsString)) {
-        return false;
-      }
-
-      TimelineConsumers::AddMarkerForDocShell(
-          docShell,
-          MakeUnique<ConsoleTimelineMarker>(key, aMethodName == MethodTime
-                                                     ? MarkerTracingType::START
-                                                     : MarkerTracingType::END));
-    }
-
     return true;
   }
 

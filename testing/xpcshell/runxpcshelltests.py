@@ -8,6 +8,7 @@ import copy
 import json
 import os
 import pipes
+import platform
 import random
 import re
 import shutil
@@ -1023,6 +1024,8 @@ class XPCShellTests(object):
         self.nodeProc = {}
         self.http3Server = None
         self.conditioned_profile_dir = None
+        self.outthread = {}
+        self.errthread = {}
 
     def getTestManifest(self, manifest):
         if isinstance(manifest, TestManifest):
@@ -1385,6 +1388,17 @@ class XPCShellTests(object):
 
         self.log.info("Found node at %s" % (nodeBin,))
 
+        def read_streams(name, proc, pipe):
+            while True:
+                line = pipe.readline()
+                output = "stdout" if pipe == proc.stdout else "stderr"
+                if line:
+                    self.log.info("node %s [%s] %s" % (name, output, line))
+
+                # Check if process is dead
+                if proc.poll() is not None:
+                    break
+
         def startServer(name, serverJs):
             if not os.path.exists(serverJs):
                 error = "%s not found at %s" % (name, serverJs)
@@ -1405,6 +1419,7 @@ class XPCShellTests(object):
                         env=self.env,
                         cwd=os.getcwd(),
                         universal_newlines=True,
+                        start_new_session=True,
                     )
                 self.nodeProc[name] = process
 
@@ -1418,6 +1433,12 @@ class XPCShellTests(object):
                     if searchObj:
                         self.env["MOZHTTP2_PORT"] = searchObj.group(1)
                         self.env["MOZNODE_EXEC_PORT"] = searchObj.group(2)
+                t1 = Thread(target=read_streams, args=(name, process, process.stdout))
+                t1.start()
+                t2 = Thread(target=read_streams, args=(name, process, process.stderr))
+                t2.start()
+                self.outthread[name] = t1
+                self.errthread[name] = t2
             except OSError as e:
                 # This occurs if the subprocess couldn't be started
                 self.log.error("Could not run %s server: %s" % (name, str(e)))
@@ -1434,19 +1455,19 @@ class XPCShellTests(object):
             self.log.info("Node %s server shutting down ..." % name)
             if proc.poll() is not None:
                 self.log.info("Node server %s already dead %s" % (name, proc.poll()))
+            elif sys.platform != "win32":
+                # Kill process and all its spawned children.
+                os.killpg(proc.pid, signal.SIGTERM)
             else:
                 proc.terminate()
 
-            def dumpOutput(fd, label):
-                firstTime = True
-                for msg in fd:
-                    if firstTime:
-                        firstTime = False
-                        self.log.info("Process %s" % label)
-                    self.log.info(msg)
+            if self.outthread[name] is not None:
+                self.outthread[name].join()
+                del self.outthread[name]
+            if self.errthread[name] is not None:
+                self.errthread[name].join()
+                del self.errthread[name]
 
-            dumpOutput(proc.stdout, "stdout")
-            dumpOutput(proc.stderr, "stderr")
         self.nodeProc = {}
 
     def startHttp3Server(self):
@@ -1543,6 +1564,8 @@ class XPCShellTests(object):
         self.mozInfo["msix"] = options.get(
             "app_binary"
         ) is not None and "WindowsApps" in options.get("app_binary", "")
+
+        self.mozInfo["is_ubuntu"] = "Ubuntu" in platform.version()
 
         mozinfo.update(self.mozInfo)
 

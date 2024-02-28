@@ -530,8 +530,7 @@ MediaSource::MediaSource(nsPIDOMWindowInner* aWindow)
     : DOMEventTargetHelper(aWindow),
       mDecoder(nullptr),
       mPrincipal(nullptr),
-      mAbstractMainThread(
-          GetOwnerGlobal()->AbstractMainThreadFor(TaskCategory::Other)),
+      mAbstractMainThread(AbstractThread::MainThread()),
       mReadyState(MediaSourceReadyState::Closed) {
   MOZ_ASSERT(NS_IsMainThread());
   mSourceBuffers = new SourceBufferList(this);
@@ -694,7 +693,7 @@ NS_IMPL_ADDREF_INHERITED(MediaSource, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(MediaSource, DOMEventTargetHelper)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaSource)
-  NS_INTERFACE_MAP_ENTRY(mozilla::dom::MediaSource)
+  NS_INTERFACE_MAP_ENTRY_CONCRETE(mozilla::dom::MediaSource)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 #undef MSE_DEBUG

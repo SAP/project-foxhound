@@ -360,7 +360,7 @@ typedef struct VP8_COMP {
   /* GF interval chosen when we coded the last GF */
   int current_gf_interval;
 
-  /* Total bits overspent becasue of GF boost (cumulative) */
+  /* Total bits overspent because of GF boost (cumulative) */
   int gf_overspend_bits;
 
   /* Used in the few frames following a GF to recover the extra bits
@@ -526,6 +526,7 @@ typedef struct VP8_COMP {
 #if CONFIG_MULTITHREAD
   /* multithread data */
   vpx_atomic_int *mt_current_mb_col;
+  int mt_current_mb_col_size;
   int mt_sync_range;
   vpx_atomic_int b_multi_threaded;
   int encoding_thread_count;
@@ -713,9 +714,9 @@ void vp8_initialize_enc(void);
 
 void vp8_alloc_compressor_data(VP8_COMP *cpi);
 int vp8_reverse_trans(int x);
-void vp8_reset_temporal_layer_change(VP8_COMP *cpi, VP8_CONFIG *oxcf,
+void vp8_reset_temporal_layer_change(VP8_COMP *cpi, const VP8_CONFIG *oxcf,
                                      const int prev_num_layers);
-void vp8_init_temporal_layer_context(VP8_COMP *cpi, VP8_CONFIG *oxcf,
+void vp8_init_temporal_layer_context(VP8_COMP *cpi, const VP8_CONFIG *oxcf,
                                      const int layer,
                                      double prev_layer_framerate);
 void vp8_update_layer_contexts(VP8_COMP *cpi);

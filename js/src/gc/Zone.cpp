@@ -167,7 +167,6 @@ JS::Zone::Zone(JSRuntime* rt, Kind kind)
       allocNurseryStrings_(true),
       allocNurseryBigInts_(true),
       pretenuring(this),
-      compartments_(),
       crossZoneStringWrappers_(this),
       gcEphemeronEdges_(SystemAllocPolicy(), rt->randomHashCodeScrambler()),
       gcNurseryEphemeronEdges_(SystemAllocPolicy(),
@@ -401,20 +400,23 @@ void Zone::forceDiscardJitCode(JS::GCContext* gcx,
     return;
   }
 
-  if (options.discardJitScripts && options.discardBaselineCode) {
+  if (options.discardJitScripts) {
     lastDiscardedCodeTime_ = mozilla::TimeStamp::Now();
   }
 
-  if (options.discardBaselineCode || options.discardJitScripts) {
+  // Copy Baseline IC stubs that are active on the stack to a new LifoAlloc.
+  // After freeing stub memory, these chunks are then transferred to the
+  // zone-wide allocator.
+  jit::ICStubSpace newStubSpace;
+
 #ifdef DEBUG
-    // Assert no JitScripts are marked as active.
-    jitZone()->forEachJitScript(
-        [](jit::JitScript* jitScript) { MOZ_ASSERT(!jitScript->active()); });
+  // Assert no JitScripts are marked as active.
+  jitZone()->forEachJitScript(
+      [](jit::JitScript* jitScript) { MOZ_ASSERT(!jitScript->active()); });
 #endif
 
-    // Mark JitScripts on the stack as active.
-    jit::MarkActiveJitScripts(this);
-  }
+  // Mark JitScripts on the stack as active and copy active Baseline stubs.
+  jit::MarkActiveJitScriptsAndCopyStubs(this, newStubSpace);
 
   // Invalidate all Ion code in this zone.
   jit::InvalidateAll(gcx, this);
@@ -425,10 +427,8 @@ void Zone::forceDiscardJitCode(JS::GCContext* gcx,
         jit::FinishInvalidation(gcx, script);
 
         // Discard baseline script if it's not marked as active.
-        if (options.discardBaselineCode) {
-          if (jitScript->hasBaselineScript() && !jitScript->active()) {
-            jit::FinishDiscardBaselineScript(gcx, script);
-          }
+        if (jitScript->hasBaselineScript() && !jitScript->active()) {
+          jit::FinishDiscardBaselineScript(gcx, script);
         }
 
 #ifdef JS_CACHEIR_SPEW
@@ -456,11 +456,9 @@ void Zone::forceDiscardJitCode(JS::GCContext* gcx,
           }
         }
 
-        // If we did not release the JitScript, we need to purge optimized IC
-        // stubs because the optimizedStubSpace will be purged below.
-        if (options.discardBaselineCode) {
-          jitScript->purgeOptimizedStubs(script);
-        }
+        // If we did not release the JitScript, we need to purge IC stubs
+        // because the ICStubSpace will be purged below.
+        jitScript->purgeStubs(script);
 
         if (options.resetNurseryAllocSites ||
             options.resetPretenuredAllocSites) {
@@ -485,22 +483,21 @@ void Zone::forceDiscardJitCode(JS::GCContext* gcx,
   }
 
   /*
-   * When scripts contains pointers to nursery things, the store buffer
+   * When scripts contain pointers to nursery things, the store buffer
    * can contain entries that point into the optimized stub space. Since
    * this method can be called outside the context of a GC, this situation
    * could result in us trying to mark invalid store buffer entries.
    *
    * Defer freeing any allocated blocks until after the next minor GC.
    */
-  if (options.discardBaselineCode) {
-    jitZone()->optimizedStubSpace()->freeAllAfterMinorGC(this);
-    jitZone()->purgeIonCacheIRStubInfo();
-  }
+  jitZone()->stubSpace()->freeAllAfterMinorGC(this);
+  jitZone()->stubSpace()->transferFrom(newStubSpace);
+  jitZone()->purgeIonCacheIRStubInfo();
 
   // Generate a profile marker
   if (gcx->runtime()->geckoProfiler().enabled()) {
     char discardingJitScript = options.discardJitScripts ? 'Y' : 'N';
-    char discardingBaseline = options.discardBaselineCode ? 'Y' : 'N';
+    char discardingBaseline = 'Y';
     char discardingIon = 'Y';
 
     char discardingRegExp = 'Y';
@@ -576,7 +573,9 @@ void JS::Zone::checkUniqueIdTableAfterMovingGC() {
 
 js::jit::JitZone* Zone::createJitZone(JSContext* cx) {
   MOZ_ASSERT(!jitZone_);
+#ifndef ENABLE_PORTABLE_BASELINE_INTERP
   MOZ_ASSERT(cx->runtime()->hasJitRuntime());
+#endif
 
   auto jitZone = cx->make_unique<jit::JitZone>(allocNurseryStrings());
   if (!jitZone) {
@@ -637,14 +636,13 @@ void Zone::purgeAtomCache() {
 
 void Zone::addSizeOfIncludingThis(
     mozilla::MallocSizeOf mallocSizeOf, JS::CodeSizes* code, size_t* regexpZone,
-    size_t* jitZone, size_t* baselineStubsOptimized, size_t* uniqueIdMap,
+    size_t* jitZone, size_t* cacheIRStubs, size_t* uniqueIdMap,
     size_t* initialPropMapTable, size_t* shapeTables, size_t* atomsMarkBitmaps,
     size_t* compartmentObjects, size_t* crossCompartmentWrappersTables,
     size_t* compartmentsPrivateData, size_t* scriptCountsMapArg) {
   *regexpZone += regExps().sizeOfIncludingThis(mallocSizeOf);
   if (jitZone_) {
-    jitZone_->addSizeOfIncludingThis(mallocSizeOf, code, jitZone,
-                                     baselineStubsOptimized);
+    jitZone_->addSizeOfIncludingThis(mallocSizeOf, code, jitZone, cacheIRStubs);
   }
   *uniqueIdMap += uniqueIds().shallowSizeOfExcludingThis(mallocSizeOf);
   shapeZone().addSizeOfExcludingThis(mallocSizeOf, initialPropMapTable,

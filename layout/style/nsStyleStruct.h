@@ -140,6 +140,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
 
   // math-depth support (used for MathML scriptlevel)
   int8_t mMathDepth;
+  mozilla::StyleLineHeight mLineHeight;
   // MathML  mathvariant support
   mozilla::StyleMathVariant mMathVariant;
   // math-style support (used for MathML displaystyle)
@@ -871,8 +872,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleText {
   mozilla::StyleNonNegativeLengthOrNumber mTabSize;
   mozilla::LengthPercentage mWordSpacing;
   mozilla::StyleLetterSpacing mLetterSpacing;
-  mozilla::StyleLineHeight mLineHeight;
-  mozilla::LengthPercentage mTextIndent;
+  mozilla::StyleTextIndent mTextIndent;
 
   mozilla::LengthPercentageOrAuto mTextUnderlineOffset;
   mozilla::StyleTextDecorationSkipInk mTextDecorationSkipInk;
@@ -888,6 +888,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleText {
 
   mozilla::StyleTextSecurity mWebkitTextSecurity =
       mozilla::StyleTextSecurity::None;
+
+  mozilla::StyleTextWrap mTextWrap = mozilla::StyleTextWrap::Auto;
 
   char16_t TextSecurityMaskChar() const {
     switch (mWebkitTextSecurity) {
@@ -1330,6 +1332,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
 
   // The threshold used for extracting a shape from shape-outside: <image>.
   float mShapeImageThreshold = 0.0f;
+
+  mozilla::StyleZoom mZoom = mozilla::StyleZoom::ONE;
 
   // The margin around a shape-outside: <image>.
   mozilla::NonNegativeLengthPercentage mShapeMargin;

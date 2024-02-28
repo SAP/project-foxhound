@@ -1935,6 +1935,12 @@ bool ClientWebGLContext::IsEnabled(GLenum cap) const {
   return ret;
 }
 
+template <typename T, typename S>
+static JS::Value Create(JSContext* cx, nsWrapperCache* creator, const S& src,
+                        ErrorResult& rv) {
+  return JS::ObjectOrNullValue(T::Create(cx, creator, src, rv));
+}
+
 void ClientWebGLContext::GetInternalformatParameter(
     JSContext* cx, GLenum target, GLenum internalformat, GLenum pname,
     JS::MutableHandle<JS::Value> retval, ErrorResult& rv) {
@@ -1961,13 +1967,8 @@ void ClientWebGLContext::GetInternalformatParameter(
   if (!maybe) {
     return;
   }
-  // zero-length array indicates out-of-memory
-  JSObject* obj =
-      dom::Int32Array::Create(cx, this, maybe->size(), maybe->data());
-  if (!obj) {
-    rv = NS_ERROR_OUT_OF_MEMORY;
-  }
-  retval.setObjectOrNull(obj);
+
+  retval.set(Create<dom::Int32Array>(cx, this, *maybe, rv));
 }
 
 static JS::Value StringValue(JSContext* cx, const std::string& str,
@@ -1989,23 +1990,6 @@ bool ToJSValueOrNull(JSContext* const cx, const RefPtr<T>& ptr,
     return true;
   }
   return dom::ToJSValue(cx, ptr, retval);
-}
-
-template <typename T, typename U, typename S>
-static JS::Value CreateAs(JSContext* cx, nsWrapperCache* creator, const S& src,
-                          ErrorResult& rv) {
-  const auto obj =
-      T::Create(cx, creator, src.size(), reinterpret_cast<U>(src.data()));
-  if (!obj) {
-    rv = NS_ERROR_OUT_OF_MEMORY;
-  }
-  return JS::ObjectOrNullValue(obj);
-}
-
-template <typename T, typename S>
-static JS::Value Create(JSContext* cx, nsWrapperCache* creator, const S& src,
-                        ErrorResult& rv) {
-  return CreateAs<T, decltype(&src[0]), S>(cx, creator, src, rv);
 }
 
 Maybe<double> ClientWebGLContext::GetNumber(const GLenum pname) {
@@ -2178,9 +2162,9 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
 
     // 2 ints
     case LOCAL_GL_MAX_VIEWPORT_DIMS: {
-      const auto dims =
-          std::array<uint32_t, 2>{limits.maxViewportDim, limits.maxViewportDim};
-      retval.set(CreateAs<dom::Int32Array, const int32_t*>(cx, this, dims, rv));
+      auto maxViewportDim = BitwiseCast<int32_t>(limits.maxViewportDim);
+      const auto dims = std::array<int32_t, 2>{maxViewportDim, maxViewportDim};
+      retval.set(Create<dom::Int32Array>(cx, this, dims, rv));
       return;
     }
 
@@ -2807,7 +2791,9 @@ void ClientWebGLContext::GetUniform(JSContext* const cx,
     case LOCAL_GL_FLOAT_MAT4x2:
     case LOCAL_GL_FLOAT_MAT4x3: {
       const auto ptr = reinterpret_cast<const float*>(res.data);
-      JSObject* obj = dom::Float32Array::Create(cx, this, elemCount, ptr);
+      IgnoredErrorResult error;
+      JSObject* obj =
+          dom::Float32Array::Create(cx, this, Span(ptr, elemCount), error);
       MOZ_ASSERT(obj);
       retval.set(JS::ObjectOrNullValue(obj));
       return;
@@ -2817,7 +2803,9 @@ void ClientWebGLContext::GetUniform(JSContext* const cx,
     case LOCAL_GL_INT_VEC3:
     case LOCAL_GL_INT_VEC4: {
       const auto ptr = reinterpret_cast<const int32_t*>(res.data);
-      JSObject* obj = dom::Int32Array::Create(cx, this, elemCount, ptr);
+      IgnoredErrorResult error;
+      JSObject* obj =
+          dom::Int32Array::Create(cx, this, Span(ptr, elemCount), error);
       MOZ_ASSERT(obj);
       retval.set(JS::ObjectOrNullValue(obj));
       return;
@@ -2827,7 +2815,9 @@ void ClientWebGLContext::GetUniform(JSContext* const cx,
     case LOCAL_GL_UNSIGNED_INT_VEC3:
     case LOCAL_GL_UNSIGNED_INT_VEC4: {
       const auto ptr = reinterpret_cast<const uint32_t*>(res.data);
-      JSObject* obj = dom::Uint32Array::Create(cx, this, elemCount, ptr);
+      IgnoredErrorResult error;
+      JSObject* obj =
+          dom::Uint32Array::Create(cx, this, Span(ptr, elemCount), error);
       MOZ_ASSERT(obj);
       retval.set(JS::ObjectOrNullValue(obj));
       return;
@@ -4752,33 +4742,31 @@ void ClientWebGLContext::GetVertexAttrib(JSContext* cx, GLuint index,
 
   switch (pname) {
     case LOCAL_GL_CURRENT_VERTEX_ATTRIB: {
-      JS::Rooted<JSObject*> obj(cx);
-
       const auto& attrib = genericAttribs[index];
       switch (attrib.type) {
-        case webgl::AttribBaseType::Float:
-          obj = dom::Float32Array::Create(
-              cx, this, 4, reinterpret_cast<const float*>(attrib.data.data()));
+        case webgl::AttribBaseType::Float: {
+          const auto ptr = reinterpret_cast<const float*>(attrib.data.data());
+          retval.setObjectOrNull(
+              dom::Float32Array::Create(cx, this, Span(ptr, 4), rv));
           break;
-        case webgl::AttribBaseType::Int:
-          obj = dom::Int32Array::Create(
-              cx, this, 4,
-              reinterpret_cast<const int32_t*>(attrib.data.data()));
+        }
+        case webgl::AttribBaseType::Int: {
+          const auto ptr = reinterpret_cast<const int32_t*>(attrib.data.data());
+          retval.setObjectOrNull(
+              dom::Int32Array::Create(cx, this, Span(ptr, 4), rv));
           break;
-        case webgl::AttribBaseType::Uint:
-          obj = dom::Uint32Array::Create(
-              cx, this, 4,
-              reinterpret_cast<const uint32_t*>(attrib.data.data()));
+        }
+        case webgl::AttribBaseType::Uint: {
+          const auto ptr =
+              reinterpret_cast<const uint32_t*>(attrib.data.data());
+          retval.setObjectOrNull(
+              dom::Uint32Array::Create(cx, this, Span(ptr, 4), rv));
           break;
+        }
         case webgl::AttribBaseType::Boolean:
           MOZ_CRASH("impossible");
       }
 
-      if (!obj) {
-        rv.Throw(NS_ERROR_OUT_OF_MEMORY);
-        return;
-      }
-      retval.set(JS::ObjectValue(*obj));
       return;
     }
 
@@ -5857,7 +5845,10 @@ void ClientWebGLContext::ProvokingVertex(const GLenum rawMode) const {
   if (IsContextLost()) return;
 
   const auto mode = webgl::AsEnumCase<webgl::ProvokingVertex>(rawMode);
-  if (!mode) return;
+  if (!mode) {
+    EnqueueError_ArgEnum("mode", rawMode);
+    return;
+  }
 
   Run<RPROC(ProvokingVertex)>(*mode);
 
@@ -6112,13 +6103,7 @@ void ClientWebGLContext::GetActiveUniformBlockParameter(
 
       case LOCAL_GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES: {
         const auto& indices = block.activeUniformIndices;
-        JS::Rooted<JSObject*> obj(
-            cx,
-            dom::Uint32Array::Create(cx, this, indices.size(), indices.data()));
-        if (!obj) {
-          rv = NS_ERROR_OUT_OF_MEMORY;
-        }
-        return JS::ObjectOrNullValue(obj);
+        return Create<dom::Uint32Array>(cx, this, indices, rv);
       }
 
       case LOCAL_GL_UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER:

@@ -287,7 +287,20 @@ JSString* ToTemporalTimeZoneIdentifier(JSContext* cx,
                                        JS::Handle<TimeZoneValue> timeZone);
 
 /**
- * GetPlainDateTimeFor ( timeZone, instant, calendar )
+ * TimeZoneEquals ( one, two )
+ */
+bool TimeZoneEquals(JSContext* cx, JS::Handle<JSString*> one,
+                    JS::Handle<JSString*> two, bool* equals);
+
+/**
+ * TimeZoneEquals ( one, two )
+ */
+bool TimeZoneEquals(JSContext* cx, JS::Handle<TimeZoneValue> one,
+                    JS::Handle<TimeZoneValue> two, bool* equals);
+
+/**
+ * GetPlainDateTimeFor ( timeZone, instant, calendar [ ,
+ * precalculatedOffsetNanoseconds ] )
  */
 PlainDateTimeObject* GetPlainDateTimeFor(JSContext* cx,
                                          JS::Handle<TimeZoneValue> timeZone,
@@ -295,14 +308,23 @@ PlainDateTimeObject* GetPlainDateTimeFor(JSContext* cx,
                                          JS::Handle<CalendarValue> calendar);
 
 /**
- * GetPlainDateTimeFor ( timeZone, instant, calendar )
+ * GetPlainDateTimeFor ( timeZone, instant, calendar [ ,
+ * precalculatedOffsetNanoseconds ] )
  */
-bool GetPlainDateTimeFor(JSContext* cx, JS::Handle<TimeZoneValue> timeZone,
-                         JS::Handle<InstantObject*> instant,
-                         PlainDateTime* result);
+PlainDateTimeObject* GetPlainDateTimeFor(JSContext* cx, const Instant& instant,
+                                         JS::Handle<CalendarValue> calendar,
+                                         int64_t offsetNanoseconds);
 
 /**
- * GetPlainDateTimeFor ( timeZone, instant, calendar )
+ * GetPlainDateTimeFor ( timeZone, instant, calendar [ ,
+ * precalculatedOffsetNanoseconds ] )
+ */
+PlainDateTime GetPlainDateTimeFor(const Instant& instant,
+                                  int64_t offsetNanoseconds);
+
+/**
+ * GetPlainDateTimeFor ( timeZone, instant, calendar [ ,
+ * precalculatedOffsetNanoseconds ] )
  */
 bool GetPlainDateTimeFor(JSContext* cx, JS::Handle<TimeZoneValue> timeZone,
                          const Instant& instant, PlainDateTime* result);
@@ -313,6 +335,17 @@ bool GetPlainDateTimeFor(JSContext* cx, JS::Handle<TimeZoneValue> timeZone,
 bool GetInstantFor(JSContext* cx, JS::Handle<TimeZoneValue> timeZone,
                    JS::Handle<Wrapped<PlainDateTimeObject*>> dateTime,
                    TemporalDisambiguation disambiguation, Instant* result);
+
+/**
+ * FormatUTCOffsetNanoseconds ( offsetNanoseconds )
+ */
+JSString* FormatUTCOffsetNanoseconds(JSContext* cx, int64_t offsetNanoseconds);
+
+/**
+ * GetOffsetStringFor ( timeZone, instant )
+ */
+JSString* GetOffsetStringFor(JSContext* cx, JS::Handle<TimeZoneValue> timeZone,
+                             const Instant& instant);
 
 /**
  * GetOffsetStringFor ( timeZone, instant )
@@ -347,11 +380,12 @@ bool GetPossibleInstantsFor(JSContext* cx, JS::Handle<TimeZoneValue> timeZone,
  * DisambiguatePossibleInstants ( possibleInstants, timeZone, dateTime,
  * disambiguation )
  */
-Wrapped<InstantObject*> DisambiguatePossibleInstants(
+bool DisambiguatePossibleInstants(
     JSContext* cx, JS::Handle<InstantVector> possibleInstants,
     JS::Handle<TimeZoneValue> timeZone,
     JS::Handle<Wrapped<PlainDateTimeObject*>> dateTimeObj,
-    TemporalDisambiguation disambiguation);
+    TemporalDisambiguation disambiguation,
+    JS::MutableHandle<Wrapped<InstantObject*>> result);
 
 // Helper for MutableWrappedPtrOperations.
 bool WrapTimeZoneValueObject(JSContext* cx,

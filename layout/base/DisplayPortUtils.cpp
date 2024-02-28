@@ -402,6 +402,9 @@ static bool GetDisplayPortImpl(nsIContent* aContent, nsRect* aResult,
   } else if (isDisplayportSuppressed ||
              nsLayoutUtils::ShouldDisableApzForElement(aContent) ||
              aContent->GetProperty(nsGkAtoms::MinimalDisplayPort)) {
+    // Note: the above conditions should be in sync with the conditions in
+    // WillUseEmptyDisplayPortMargins.
+
     // Make a copy of the margins data but set the margins to empty.
     // Do not create a new DisplayPortMargins object with
     // DisplayPortMargins::Empty(), because that will record the visual
@@ -776,21 +779,21 @@ bool DisplayPortUtils::CalculateAndSetDisplayPortMargins(
 bool DisplayPortUtils::MaybeCreateDisplayPort(
     nsDisplayListBuilder* aBuilder, nsIFrame* aScrollFrame,
     nsIScrollableFrame* aScrollFrameAsScrollable, RepaintMode aRepaintMode) {
+  MOZ_ASSERT(aBuilder->IsPaintingToWindow());
+
   nsIContent* content = aScrollFrame->GetContent();
   if (!content) {
     return false;
   }
 
-  bool haveDisplayPort = HasNonMinimalNonZeroDisplayPort(content);
-
   // We perform an optimization where we ensure that at least one
   // async-scrollable frame (i.e. one that WantsAsyncScroll()) has a
   // displayport. If that's not the case yet, and we are async-scrollable, we
   // will get a displayport.
-  if (aBuilder->IsPaintingToWindow() &&
+  if (!aBuilder->HaveScrollableDisplayPort() &&
       nsLayoutUtils::AsyncPanZoomEnabled(aScrollFrame) &&
-      !aBuilder->HaveScrollableDisplayPort() &&
       aScrollFrameAsScrollable->WantAsyncScroll()) {
+    bool haveDisplayPort = HasNonMinimalNonZeroDisplayPort(content);
     // If we don't already have a displayport, calculate and set one.
     if (!haveDisplayPort) {
       // We only use the viewId for logging purposes, but create it
@@ -954,6 +957,20 @@ Maybe<nsRect> DisplayPortUtils::GetRootDisplayportBase(PresShell* aPresShell) {
   }
 
   return Some(baseRect);
+}
+
+bool DisplayPortUtils::WillUseEmptyDisplayPortMargins(nsIContent* aContent) {
+  MOZ_ASSERT(HasDisplayPort(aContent));
+  nsIFrame* frame = aContent->GetPrimaryFrame();
+  if (!frame) {
+    return false;
+  }
+
+  // Note these conditions should be in sync with the conditions where we use
+  // empty margins to calculate display port in GetDisplayPortImpl
+  return aContent->GetProperty(nsGkAtoms::MinimalDisplayPort) ||
+         frame->PresShell()->IsDisplayportSuppressed() ||
+         nsLayoutUtils::ShouldDisableApzForElement(aContent);
 }
 
 }  // namespace mozilla

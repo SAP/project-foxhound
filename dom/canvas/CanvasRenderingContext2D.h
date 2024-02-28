@@ -27,6 +27,7 @@
 #include "gfxUtils.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsColor.h"
+#include "nsRFPService.h"
 #include "nsIFrame.h"
 
 class gfxFontGroup;
@@ -531,6 +532,8 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   enum class Style : uint8_t { STROKE = 0, FILL, MAX };
 
   void LineTo(const mozilla::gfx::Point& aPoint) {
+    mFeatureUsage |= CanvasFeatureUsage::LineTo;
+
     if (!aPoint.IsFinite()) {
       return;
     }
@@ -567,9 +570,12 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   /**
    * Update CurrentState().filter with the filter description for
    * CurrentState().filterChain.
-   * Flushes the PresShell, so the world can change if you call this function.
+   * Flushes the PresShell if aFlushIsNeeded is true, so the world can change
+   * if you call this function.
    */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void UpdateFilter();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void UpdateFilter(bool aFlushIfNeeded);
+
+  CanvasFeatureUsage FeatureUsage() const { return mFeatureUsage; }
 
  protected:
   /**
@@ -915,7 +921,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   const gfx::FilterDescription& EnsureUpdatedFilter() {
     bool isWriteOnly = mCanvasElement && mCanvasElement->IsWriteOnly();
     if (CurrentState().filterSourceGraphicTainted != isWriteOnly) {
-      UpdateFilter();
+      UpdateFilter(/* aFlushIfNeeded = */ true);
       EnsureTarget();
     }
     MOZ_ASSERT(CurrentState().filterSourceGraphicTainted == isWriteOnly);
@@ -1127,6 +1133,10 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
   bool mWriteOnly;
   bool mClipsNeedConverting = false;
+
+  uint8_t mFillTextCalls = 0;
+  // Flags used by the fingerprinting detection heuristic
+  CanvasFeatureUsage mFeatureUsage = CanvasFeatureUsage::None;
 
   virtual void AddZoneWaitingForGC();
   virtual void AddAssociatedMemory();

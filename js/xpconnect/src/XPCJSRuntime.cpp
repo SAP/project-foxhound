@@ -174,7 +174,7 @@ class AsyncFreeSnowWhite : public Runnable {
 
   nsresult Dispatch() {
     nsCOMPtr<nsIRunnable> self(this);
-    return NS_DispatchToCurrentThreadQueue(self.forget(), 500,
+    return NS_DispatchToCurrentThreadQueue(self.forget(), 1000,
                                            EventQueuePriority::Idle);
   }
 
@@ -1459,9 +1459,8 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
 
   ZRREPORT_BYTES(pathPrefix + "jit-zone"_ns, zStats.jitZone, "The JIT zone.");
 
-  ZRREPORT_BYTES(pathPrefix + "baseline/optimized-stubs"_ns,
-                 zStats.baselineStubsOptimized,
-                 "The Baseline JIT's optimized IC stubs (excluding code).");
+  ZRREPORT_BYTES(pathPrefix + "cacheir-stubs"_ns, zStats.cacheIRStubs,
+                 "The JIT's IC stubs (excluding code).");
 
   ZRREPORT_BYTES(pathPrefix + "script-counts-map"_ns, zStats.scriptCountsMap,
                  "Profiling-related information for scripts.");
@@ -1804,9 +1803,8 @@ static void ReportRealmStats(const JS::RealmStats& realmStats,
                  realmStats.baselineData,
                  "The Baseline JIT's compilation data (BaselineScripts).");
 
-  ZRREPORT_BYTES(realmJSPathPrefix + "baseline/fallback-stubs"_ns,
-                 realmStats.baselineStubsFallback,
-                 "The Baseline JIT's fallback IC stubs (excluding code).");
+  ZRREPORT_BYTES(realmJSPathPrefix + "alloc-sites"_ns, realmStats.allocSites,
+                 "GC allocation site data associated with IC stubs.");
 
   ZRREPORT_BYTES(realmJSPathPrefix + "ion-data"_ns, realmStats.ionData,
                  "The IonMonkey JIT's compilation data (IonScripts).");
@@ -2589,6 +2587,9 @@ static void SetUseCounterCallback(JSObject* obj, JSUseCounter counter) {
     case JSUseCounter::WASM:
       SetUseCounter(obj, eUseCounter_custom_JS_wasm);
       break;
+    case JSUseCounter::LATE_WEEKDAY:
+      SetUseCounter(obj, eUseCounter_custom_JS_late_weekday);
+      break;
     default:
       MOZ_ASSERT_UNREACHABLE("Unexpected JSUseCounter id");
   }
@@ -2783,9 +2784,7 @@ XPCJSRuntime::XPCJSRuntime(JSContext* aCx)
       mIID2NativeInterfaceMap(mozilla::MakeUnique<IID2NativeInterfaceMap>()),
       mClassInfo2NativeSetMap(mozilla::MakeUnique<ClassInfo2NativeSetMap>()),
       mNativeSetMap(mozilla::MakeUnique<NativeSetMap>()),
-      mWrappedNativeScopes(),
       mGCIsRunning(false),
-      mNativesToReleaseArray(),
       mDoingFinalization(false),
       mAsyncSnowWhiteFreer(new AsyncFreeSnowWhite()) {
   MOZ_COUNT_CTOR_INHERITED(XPCJSRuntime, CycleCollectedJSRuntime);

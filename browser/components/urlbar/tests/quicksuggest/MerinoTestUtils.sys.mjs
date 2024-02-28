@@ -296,14 +296,21 @@ class _MerinoTestUtils {
     }
 
     // Check the latency stopwatch.
-    this.Assert.equal(
-      TelemetryStopwatch.running(
-        HISTOGRAM_LATENCY,
-        client._test_latencyStopwatchInstance
-      ),
-      latencyStopwatchRunning,
-      "Latency stopwatch running as expected"
-    );
+    if (!client) {
+      this.Assert.ok(
+        !latencyStopwatchRunning,
+        "Client is null, latency stopwatch should not be expected to be running"
+      );
+    } else {
+      this.Assert.equal(
+        TelemetryStopwatch.running(
+          HISTOGRAM_LATENCY,
+          client._test_latencyStopwatchInstance
+        ),
+        latencyStopwatchRunning,
+        "Latency stopwatch running as expected"
+      );
+    }
 
     // Clear histograms.
     for (let histogramArray of Object.values(histograms)) {
@@ -512,12 +519,12 @@ class MockMerinoServer {
             provider: "adm",
             full_keyword: "full_keyword",
             title: "title",
-            url: "url",
+            url: "http://example.com/amp",
             icon: null,
-            impression_url: "impression_url",
-            click_url: "click_url",
+            impression_url: "http://example.com/amp-impression",
+            click_url: "http://example.com/amp-click",
             block_id: 1,
-            advertiser: "advertiser",
+            advertiser: "amp",
             is_sponsored: true,
             score: 1,
           },

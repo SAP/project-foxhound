@@ -58,7 +58,7 @@
 #include "frontend/TDZCheckCache.h"                // TDZCheckCache
 #include "frontend/TryEmitter.h"                   // TryEmitter
 #include "frontend/WhileEmitter.h"                 // WhileEmitter
-#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberZeroOrigin, JS::ColumnNumberOffset
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin, JS::ColumnNumberOffset
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/friend/StackLimits.h"    // AutoCheckRecursionLimit
 #include "util/StringBuffer.h"        // StringBuffer
@@ -139,7 +139,8 @@ BytecodeEmitter::BytecodeEmitter(BytecodeEmitter* parent, FrontendContext* fc,
     : sc(sc),
       fc(fc),
       parent(parent),
-      bytecodeSection_(fc, sc->extent().lineno, sc->extent().column),
+      bytecodeSection_(fc, sc->extent().lineno,
+                       JS::LimitedColumnNumberOneOrigin(sc->extent().column)),
       perScriptData_(fc, compilationState),
       errorReporter_(errorReporter),
       compilationState(compilationState),
@@ -605,13 +606,13 @@ bool BytecodeEmitter::updateSourceCoordNotes(uint32_t offset) {
     return false;
   }
 
-  JS::LimitedColumnNumberZeroOrigin columnIndex =
+  JS::LimitedColumnNumberOneOrigin columnIndex =
       errorReporter().columnAt(offset);
 
   // Assert colspan is always representable.
-  static_assert((0 - ptrdiff_t(JS::LimitedColumnNumberZeroOrigin::Limit)) >=
+  static_assert((0 - ptrdiff_t(JS::LimitedColumnNumberOneOrigin::Limit)) >=
                 SrcNote::ColSpan::MinColSpan);
-  static_assert((ptrdiff_t(JS::LimitedColumnNumberZeroOrigin::Limit) - 0) <=
+  static_assert((ptrdiff_t(JS::LimitedColumnNumberOneOrigin::Limit) - 0) <=
                 SrcNote::ColSpan::MaxColSpan);
 
   JS::ColumnNumberOffset colspan = columnIndex - bytecodeSection().lastColumn();
@@ -619,7 +620,7 @@ bool BytecodeEmitter::updateSourceCoordNotes(uint32_t offset) {
   if (colspan != JS::ColumnNumberOffset::zero()) {
     if (lastLineOnlySrcNoteIndex != LastSrcNoteIsNotLineOnly) {
       MOZ_ASSERT(bytecodeSection().lastColumn() ==
-                 JS::LimitedColumnNumberZeroOrigin::zero());
+                 JS::LimitedColumnNumberOneOrigin());
 
       const SrcNotesVector& notes = bytecodeSection().notes();
       SrcNoteType type = notes[lastLineOnlySrcNoteIndex].type();
@@ -1989,8 +1990,8 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitSwitch(SwitchStatement* switchStmt) {
     }
 
     // A switch statement may contain hoisted functions inside its
-    // cases. The PNX_FUNCDEFS flag is propagated from the STATEMENTLIST
-    // bodies of the cases to the case list.
+    // cases. The hasTopLevelFunctionDeclarations flag is propagated from the
+    // StatementList bodies of the cases to the case list.
     if (cases->hasTopLevelFunctionDeclarations()) {
       for (ParseNode* item : cases->contents()) {
         CaseClause* caseClause = &item->as<CaseClause>();
@@ -3167,6 +3168,16 @@ bool BytecodeEmitter::emitDestructuringOpsArray(ListNode* pattern,
   //   let a, b, c, d;
   //   let iter, next, lref, result, done, value; // stack values
   //
+  //   // NOTE: the fast path for this example is not applicable, because of
+  //   // the spread and the assignment |c=y|, but it is documented here for a
+  //   // simpler example, |let [a,b] = x;|
+  //   //
+  //   // if (IsOptimizableArray(x)) {
+  //   //   a = x[0];
+  //   //   b = x[1];
+  //   //   goto end: // (skip everything below)
+  //   // }
+  //
   //   iter = x[Symbol.iterator]();
   //   next = iter.next;
   //
@@ -3243,6 +3254,36 @@ bool BytecodeEmitter::emitDestructuringOpsArray(ListNode* pattern,
   //   // === emitted after loop ===
   //   if (!done)
   //      IteratorClose(iter);
+  //
+  //   end:
+
+  bool isEligibleForArrayOptimizations = true;
+  for (ParseNode* member : pattern->contents()) {
+    switch (member->getKind()) {
+      case ParseNodeKind::Elision:
+        break;
+      case ParseNodeKind::Name: {
+        auto name = member->as<NameNode>().name();
+        NameLocation loc = lookupName(name);
+        if (loc.kind() != NameLocation::Kind::ArgumentSlot &&
+            loc.kind() != NameLocation::Kind::FrameSlot &&
+            loc.kind() != NameLocation::Kind::EnvironmentCoordinate) {
+          isEligibleForArrayOptimizations = false;
+        }
+        break;
+      }
+      default:
+        // Unfortunately we can't handle any recursive destructuring,
+        // because we can't guarantee that the recursed-into parts
+        // won't run code which invalidates our constraints. We also
+        // cannot handle ParseNodeKind::AssignExpr for similar reasons.
+        isEligibleForArrayOptimizations = false;
+        break;
+    }
+    if (!isEligibleForArrayOptimizations) {
+      break;
+    }
+  }
 
   // Use an iterator to destructure the RHS, instead of index lookup. We
   // must leave the *original* value on the stack.
@@ -3250,6 +3291,126 @@ bool BytecodeEmitter::emitDestructuringOpsArray(ListNode* pattern,
     //              [stack] ... OBJ OBJ
     return false;
   }
+
+  Maybe<InternalIfEmitter> ifArrayOptimizable;
+
+  if (isEligibleForArrayOptimizations) {
+    ifArrayOptimizable.emplace(
+        this, BranchEmitterBase::LexicalKind::MayContainLexicalAccessInBranch);
+
+    if (!emit1(JSOp::Dup)) {
+      //            [stack] OBJ OBJ
+      return false;
+    }
+
+    if (!emit1(JSOp::OptimizeGetIterator)) {
+      //            [stack] OBJ OBJ IS_OPTIMIZABLE
+      return false;
+    }
+
+    if (!ifArrayOptimizable->emitThenElse()) {
+      //            [stack] OBJ OBJ
+      return false;
+    }
+
+    if (!emitAtomOp(JSOp::GetProp,
+                    TaggedParserAtomIndex::WellKnown::length())) {
+      //            [stack] OBJ LENGTH
+      return false;
+    }
+
+    if (!emit1(JSOp::Swap)) {
+      //            [stack] LENGTH OBJ
+      return false;
+    }
+
+    uint32_t idx = 0;
+    for (ParseNode* member : pattern->contents()) {
+      if (member->isKind(ParseNodeKind::Elision)) {
+        idx += 1;
+        continue;
+      }
+
+      if (!emit1(JSOp::Dup)) {
+        //          [stack] LENGTH OBJ OBJ
+        return false;
+      }
+
+      if (!emitNumberOp(idx)) {
+        //          [stack] LENGTH OBJ OBJ IDX
+        return false;
+      }
+
+      if (!emit1(JSOp::Dup)) {
+        //          [stack] LENGTH OBJ OBJ IDX IDX
+        return false;
+      }
+
+      if (!emitDupAt(4)) {
+        //          [stack] LENGTH OBJ OBJ IDX IDX LENGTH
+        return false;
+      }
+
+      if (!emit1(JSOp::Lt)) {
+        //          [stack] LENGTH OBJ OBJ IDX IS_IN_DENSE_BOUNDS
+        return false;
+      }
+
+      InternalIfEmitter isInDenseBounds(this);
+      if (!isInDenseBounds.emitThenElse()) {
+        //          [stack] LENGTH OBJ OBJ IDX
+        return false;
+      }
+
+      if (!emit1(JSOp::GetElem)) {
+        //          [stack] LENGTH OBJ VALUE
+        return false;
+      }
+
+      if (!isInDenseBounds.emitElse()) {
+        //          [stack] LENGTH OBJ OBJ IDX
+        return false;
+      }
+
+      if (!emitPopN(2)) {
+        //          [stack] LENGTH OBJ
+        return false;
+      }
+
+      if (!emit1(JSOp::Undefined)) {
+        //          [stack] LENGTH OBJ UNDEFINED
+        return false;
+      }
+
+      if (!isInDenseBounds.emitEnd()) {
+        //          [stack] LENGTH OBJ VALUE|UNDEFINED
+        return false;
+      }
+
+      if (!emitSetOrInitializeDestructuring(member, flav)) {
+        //          [stack] LENGTH OBJ
+        return false;
+      }
+
+      idx += 1;
+    }
+
+    if (!emit1(JSOp::Swap)) {
+      //            [stack] OBJ LENGTH
+      return false;
+    }
+
+    if (!emit1(JSOp::Pop)) {
+      //            [stack] OBJ
+      return false;
+    }
+
+    if (!ifArrayOptimizable->emitElse()) {
+      //            [stack] OBJ OBJ
+      return false;
+    }
+  }
+
   if (!emitIterator(SelfHostedIter::Deny)) {
     //              [stack] ... OBJ NEXT ITER
     return false;
@@ -3267,8 +3428,19 @@ bool BytecodeEmitter::emitDestructuringOpsArray(ListNode* pattern,
       return false;
     }
 
-    return emitIteratorCloseInInnermostScope();
-    //              [stack] ... OBJ
+    if (!emitIteratorCloseInInnermostScope()) {
+      //            [stack] ... OBJ
+      return false;
+    }
+
+    if (ifArrayOptimizable.isSome()) {
+      if (!ifArrayOptimizable->emitEnd()) {
+        //          [stack] OBJ
+        return false;
+      }
+    }
+
+    return true;
   }
 
   // Push an initial FALSE value for DONE.
@@ -3571,6 +3743,13 @@ bool BytecodeEmitter::emitDestructuringOpsArray(ListNode* pattern,
   }
   if (!ifDone.emitEnd()) {
     return false;
+  }
+
+  if (ifArrayOptimizable.isSome()) {
+    if (!ifArrayOptimizable->emitEnd()) {
+      //            [stack] OBJ
+      return false;
+    }
   }
 
   return true;
@@ -4047,8 +4226,9 @@ bool BytecodeEmitter::emitAssignmentRhs(
 
 // The RHS value to assign is already on the stack, i.e., the next enumeration
 // value in a for-in or for-of loop. Offset is the location in the stack of the
-// already-emitted rhs. If we emitted a BIND[G]NAME, then the scope is on the
-// top of the stack and we need to dig one deeper to get the right RHS value.
+// already-emitted rhs. If we emitted a JSOp::BindName or JSOp::BindGName, then
+// the scope is on the top of the stack and we need to dig one deeper to get
+// the right RHS value.
 bool BytecodeEmitter::emitAssignmentRhs(uint8_t offset) {
   if (offset != 1) {
     return emitPickN(offset - 1);
@@ -5013,8 +5193,8 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitLexicalScope(
   }
 
   if (body->isKind(ParseNodeKind::ForStmt)) {
-    // for loops need to emit {FRESHEN,RECREATE}LEXICALENV if there are
-    // lexical declarations in the head. Signal this by passing a
+    // for loops need to emit JSOp::FreshenLexicalEnv/JSOp::RecreateLexicalEnv
+    // if there are lexical declarations in the head. Signal this by passing a
     // non-nullptr lexical scope.
     if (!emitFor(&body->as<ForNode>(), &lse.emitterScope())) {
       return false;
@@ -6915,7 +7095,7 @@ bool BytecodeEmitter::emitExpressionStatement(UnaryNode* exprStmt) {
    * expression statement as the script's result, despite the fact
    * that it appears useless to the compiler.
    *
-   * API users may also set the JSOPTION_NO_SCRIPT_RVAL option when
+   * API users may also set the ReadOnlyCompileOptions::noScriptRval option when
    * calling JS_Compile* to suppress JSOp::SetRval.
    */
   bool wantval = false;
@@ -7846,9 +8026,9 @@ bool BytecodeEmitter::emitOptionalCalleeAndThis(ParseNode* callee,
   return true;
 }
 
-bool BytecodeEmitter::emitCalleeAndThis(ParseNode* callee, CallNode* call,
+bool BytecodeEmitter::emitCalleeAndThis(ParseNode* callee, CallNode* maybeCall,
                                         CallOrNewEmitter& cone) {
-  MOZ_ASSERT(call->callee() == callee);
+  MOZ_ASSERT_IF(maybeCall, maybeCall->callee() == callee);
 
   switch (callee->getKind()) {
     case ParseNodeKind::Name: {
@@ -7938,7 +8118,8 @@ bool BytecodeEmitter::emitCalleeAndThis(ParseNode* callee, CallNode* call,
       }
       break;
     case ParseNodeKind::SuperBase:
-      MOZ_ASSERT(call->isKind(ParseNodeKind::SuperCallExpr));
+      MOZ_ASSERT(maybeCall);
+      MOZ_ASSERT(maybeCall->isKind(ParseNodeKind::SuperCallExpr));
       MOZ_ASSERT(callee->isKind(ParseNodeKind::SuperBase));
       if (!cone.emitSuperCallee()) {
         //          [stack] CALLEE IsConstructing
@@ -7946,8 +8127,9 @@ bool BytecodeEmitter::emitCalleeAndThis(ParseNode* callee, CallNode* call,
       }
       break;
     case ParseNodeKind::OptionalChain: {
-      return emitCalleeAndThisForOptionalChain(&callee->as<UnaryNode>(), call,
-                                               cone);
+      MOZ_ASSERT(maybeCall);
+      return emitCalleeAndThisForOptionalChain(&callee->as<UnaryNode>(),
+                                               maybeCall, cone);
     }
     default:
       if (!cone.prepareForOtherCallee()) {
@@ -10736,9 +10918,9 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitObject(ListNode* objNode) {
   // Note: this method uses the ObjLiteralWriter and emits ObjLiteralStencil
   // objects into the GCThingList, which will evaluate them into real GC objects
   // or shapes during JSScript::fullyInitFromEmitter. Eventually we want
-  // OBJLITERAL to be a real opcode, but for now, performance constraints limit
-  // us to evaluating object literals at the end of parse, when we're allowed to
-  // allocate GC things.
+  // JSOp::Object to be a real opcode, but for now, performance constraints
+  // limit us to evaluating object literals at the end of parse, when we're
+  // allowed to allocate GC things.
   //
   // There are four cases here, in descending order of preference:
   //
@@ -11397,7 +11579,7 @@ bool BytecodeEmitter::emitLexicalInitialization(TaggedParserAtomIndex name) {
 
   // The caller has pushed the RHS to the top of the stack. Assert that the
   // binding can be initialized without a binding object on the stack, and that
-  // no BIND[G]NAME ops were emitted.
+  // no JSOp::BindName or JSOp::BindGName ops were emitted.
   MOZ_ASSERT(noe.loc().isLexical() || noe.loc().isSynthetic() ||
              noe.loc().isPrivateMethod());
   MOZ_ASSERT(!noe.emittedBindOp());
@@ -11702,6 +11884,10 @@ bool BytecodeEmitter::emitClass(
   }
 
 #if ENABLE_DECORATORS
+  if (!ce.prepareForDecorators()) {
+    //            [stack] CTOR
+    return false;
+  }
   if (classNode->decorators() != nullptr) {
     DecoratorEmitter de(this);
     NameNode* className =
@@ -12465,7 +12651,7 @@ bool BytecodeEmitter::newSrcNote2(SrcNoteType type, ptrdiff_t offset,
 }
 
 bool BytecodeEmitter::convertLastNewLineToNewLineColumn(
-    JS::LimitedColumnNumberZeroOrigin column) {
+    JS::LimitedColumnNumberOneOrigin column) {
   SrcNotesVector& notes = bytecodeSection().notes();
   MOZ_ASSERT(lastLineOnlySrcNoteIndex == notes.length() - 1);
   SrcNote* sn = &notes[lastLineOnlySrcNoteIndex];
@@ -12481,7 +12667,7 @@ bool BytecodeEmitter::convertLastNewLineToNewLineColumn(
 }
 
 bool BytecodeEmitter::convertLastSetLineToSetLineColumn(
-    JS::LimitedColumnNumberZeroOrigin column) {
+    JS::LimitedColumnNumberOneOrigin column) {
   SrcNotesVector& notes = bytecodeSection().notes();
   // The Line operand is either 1 byte or 4 bytes.
   MOZ_ASSERT(lastLineOnlySrcNoteIndex == notes.length() - 1 - 1 ||

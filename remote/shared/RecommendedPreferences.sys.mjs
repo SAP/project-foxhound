@@ -125,7 +125,6 @@ const COMMON_PREFERENCES = new Map([
   ["browser.safebrowsing.blockedURIs.enabled", false],
   ["browser.safebrowsing.downloads.enabled", false],
   ["browser.safebrowsing.malware.enabled", false],
-  ["browser.safebrowsing.passwords.enabled", false],
   ["browser.safebrowsing.phishing.enabled", false],
 
   // Disable updates to search engines.
@@ -329,8 +328,8 @@ const COMMON_PREFERENCES = new Map([
   // Do not download intermediate certificates
   ["security.remote_settings.intermediates.enabled", false],
 
-  // Ensure blocklist updates do not hit the network
-  ["services.settings.server", "http://%(server)s/dummy/blocklist/"],
+  // Ensure remote settings do not hit the network
+  ["services.settings.server", "data:,#remote-settings-dummy/v1"],
 
   // Do not automatically fill sign-in forms with known usernames and
   // passwords

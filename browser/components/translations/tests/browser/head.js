@@ -586,7 +586,8 @@ async function clickDismissErrorButton() {
  * @param {object} config
  * @param {Function} config.downloadHandler
  *  - The function handle expected downloads, resolveDownloads() or rejectDownloads()
- *    Leave as null to test more granularly, such as testing opening the loading view.
+ *    Leave as null to test more granularly, such as testing opening the loading view,
+ *    or allowing for the automatic downloading of files.
  * @param {boolean} config.pivotTranslation
  *  - True if the expected translation is a pivot translation, otherwise false.
  *    Affects the number of expected downloads.
@@ -601,11 +602,12 @@ async function clickTranslateButton({
   await waitForTranslationsPopupEvent("popuphidden", () => {
     click(translateButton, "Click the translate button");
   });
-  await assertTranslationsButton(
-    { button: true, circleArrows: true, locale: false, icon: true },
-    "The icon presents the loading indicator."
-  );
+
   if (downloadHandler) {
+    await assertTranslationsButton(
+      { button: true, circleArrows: true, locale: false, icon: true },
+      "The icon presents the loading indicator."
+    );
     await downloadHandler(pivotTranslation ? 2 : 1);
   }
 }
@@ -917,10 +919,12 @@ async function addTab(url) {
  * Switches to a given tab.
  *
  * @param {object} tab - The tab to switch to
+ * @param {string} name
  */
-async function switchTab(tab) {
-  info("Switching tabs");
-  await BrowserTestUtils.switchTab(gBrowser, tab);
+async function switchTab(tab, name) {
+  info("Switching tabs to " + name);
+  gBrowser.selectedTab = tab;
+  await new Promise(resolve => setTimeout(resolve, 0));
 }
 
 /**
@@ -1088,17 +1092,3 @@ async function waitForViewShown(callback) {
   await promise;
   await new Promise(resolve => setTimeout(resolve, 0));
 }
-
-const FRENCH_PAGE_URL = TRANSLATIONS_TESTER_FR;
-const ENGLISH_PAGE_URL = TRANSLATIONS_TESTER_EN;
-const SPANISH_PAGE_URL = TRANSLATIONS_TESTER_ES;
-const SPANISH_PAGE_URL_2 = TRANSLATIONS_TESTER_ES_2;
-const SPANISH_PAGE_URL_DOT_ORG = TRANSLATIONS_TESTER_ES_DOT_ORG;
-const LANGUAGE_PAIRS = [
-  { fromLang: "es", toLang: "en" },
-  { fromLang: "en", toLang: "es" },
-  { fromLang: "fr", toLang: "en" },
-  { fromLang: "en", toLang: "fr" },
-  { fromLang: "en", toLang: "uk" },
-  { fromLang: "uk", toLang: "en" },
-];

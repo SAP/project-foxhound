@@ -9,9 +9,14 @@
 use crate::applicable_declarations::CascadePriority;
 use crate::media_queries::Device;
 use crate::properties::{CSSWideKeyword, CustomDeclaration, CustomDeclarationValue};
-use crate::properties_and_values::value::ComputedValue as ComputedRegisteredValue;
-use crate::stylist::Stylist;
+use crate::properties_and_values::{
+    registry::PropertyRegistration,
+    value::{AllowComputationallyDependent, SpecifiedValue as SpecifiedRegisteredValue},
+};
 use crate::selector_map::{PrecomputedHashMap, PrecomputedHashSet, PrecomputedHasher};
+use crate::stylesheets::UrlExtraData;
+use crate::stylist::Stylist;
+use crate::values::computed;
 use crate::Atom;
 use cssparser::{
     CowRcStr, Delimiter, Parser, ParserInput, SourcePosition, Token, TokenSerializationType,
@@ -34,7 +39,7 @@ use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 #[derive(Debug, MallocSizeOf)]
 pub struct CssEnvironment;
 
-type EnvironmentEvaluator = fn(device: &Device) -> VariableValue;
+type EnvironmentEvaluator = fn(device: &Device, url_data: &UrlExtraData) -> VariableValue;
 
 struct EnvironmentVariable {
     name: Atom,
@@ -50,23 +55,23 @@ macro_rules! make_variable {
     }};
 }
 
-fn get_safearea_inset_top(device: &Device) -> VariableValue {
-    VariableValue::pixels(device.safe_area_insets().top)
+fn get_safearea_inset_top(device: &Device, url_data: &UrlExtraData) -> VariableValue {
+    VariableValue::pixels(device.safe_area_insets().top, url_data)
 }
 
-fn get_safearea_inset_bottom(device: &Device) -> VariableValue {
-    VariableValue::pixels(device.safe_area_insets().bottom)
+fn get_safearea_inset_bottom(device: &Device, url_data: &UrlExtraData) -> VariableValue {
+    VariableValue::pixels(device.safe_area_insets().bottom, url_data)
 }
 
-fn get_safearea_inset_left(device: &Device) -> VariableValue {
-    VariableValue::pixels(device.safe_area_insets().left)
+fn get_safearea_inset_left(device: &Device, url_data: &UrlExtraData) -> VariableValue {
+    VariableValue::pixels(device.safe_area_insets().left, url_data)
 }
 
-fn get_safearea_inset_right(device: &Device) -> VariableValue {
-    VariableValue::pixels(device.safe_area_insets().right)
+fn get_safearea_inset_right(device: &Device, url_data: &UrlExtraData) -> VariableValue {
+    VariableValue::pixels(device.safe_area_insets().right, url_data)
 }
 
-fn get_content_preferred_color_scheme(device: &Device) -> VariableValue {
+fn get_content_preferred_color_scheme(device: &Device, url_data: &UrlExtraData) -> VariableValue {
     use crate::gecko::media_features::PrefersColorScheme;
     let prefers_color_scheme = unsafe {
         crate::gecko_bindings::bindings::Gecko_MediaFeatures_PrefersColorScheme(
@@ -74,14 +79,17 @@ fn get_content_preferred_color_scheme(device: &Device) -> VariableValue {
             /* use_content = */ true,
         )
     };
-    VariableValue::ident(match prefers_color_scheme {
-        PrefersColorScheme::Light => "light",
-        PrefersColorScheme::Dark => "dark",
-    })
+    VariableValue::ident(
+        match prefers_color_scheme {
+            PrefersColorScheme::Light => "light",
+            PrefersColorScheme::Dark => "dark",
+        },
+        url_data,
+    )
 }
 
-fn get_scrollbar_inline_size(device: &Device) -> VariableValue {
-    VariableValue::pixels(device.scrollbar_inline_size().px())
+fn get_scrollbar_inline_size(device: &Device, url_data: &UrlExtraData) -> VariableValue {
+    VariableValue::pixels(device.scrollbar_inline_size().px(), url_data)
 }
 
 static ENVIRONMENT_VARIABLES: [EnvironmentVariable; 4] = [
@@ -103,8 +111,8 @@ macro_rules! lnf_int {
 
 macro_rules! lnf_int_variable {
     ($atom:expr, $id:ident, $ctor:ident) => {{
-        fn __eval(_: &Device) -> VariableValue {
-            VariableValue::$ctor(lnf_int!($id))
+        fn __eval(_: &Device, url_data: &UrlExtraData) -> VariableValue {
+            VariableValue::$ctor(lnf_int!($id), url_data)
         }
         make_variable!($atom, __eval)
     }};
@@ -140,17 +148,17 @@ static CHROME_ENVIRONMENT_VARIABLES: [EnvironmentVariable; 6] = [
 
 impl CssEnvironment {
     #[inline]
-    fn get(&self, name: &Atom, device: &Device) -> Option<VariableValue> {
+    fn get(&self, name: &Atom, device: &Device, url_data: &UrlExtraData) -> Option<VariableValue> {
         if let Some(var) = ENVIRONMENT_VARIABLES.iter().find(|var| var.name == *name) {
-            return Some((var.evaluator)(device));
+            return Some((var.evaluator)(device, url_data));
         }
-        if !device.chrome_rules_enabled_for_document() {
+        if !url_data.chrome_rules_enabled() {
             return None;
         }
         let var = CHROME_ENVIRONMENT_VARIABLES
             .iter()
             .find(|var| var.name == *name)?;
-        Some((var.evaluator)(device))
+        Some((var.evaluator)(device, url_data))
     }
 }
 
@@ -174,15 +182,25 @@ pub fn parse_name(s: &str) -> Result<&str, ()> {
 ///
 /// We preserve the original CSS for serialization, and also the variable
 /// references to other custom property names.
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, ToShmem)]
 pub struct VariableValue {
     css: String,
+
+    /// The url data of the stylesheet where this value came from.
+    pub url_data: UrlExtraData,
 
     first_token_type: TokenSerializationType,
     last_token_type: TokenSerializationType,
 
     /// var() or env() references.
     references: VarOrEnvReferences,
+}
+
+// For all purposes, we want values to be considered equal if their css text is equal.
+impl PartialEq for VariableValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.css == other.css
+    }
 }
 
 impl ToCss for SpecifiedValue {
@@ -207,6 +225,141 @@ impl ToCss for SpecifiedValue {
 pub type CustomPropertiesMap =
     IndexMap<Name, Arc<VariableValue>, BuildHasherDefault<PrecomputedHasher>>;
 
+// IndexMap equality doesn't consider ordering, which we have to account for.
+// Also, for the same reason, IndexMap equality comparisons are slower than needed.
+//
+// See https://github.com/bluss/indexmap/issues/153
+fn maps_equal(l: Option<&CustomPropertiesMap>, r: Option<&CustomPropertiesMap>) -> bool {
+    let (l, r) = match (l, r) {
+        (Some(l), Some(r)) => (l, r),
+        (None, None) => return true,
+        _ => return false,
+    };
+    if std::ptr::eq(l, r) {
+        return true;
+    }
+    if l.len() != r.len() {
+        return false;
+    }
+    l.iter()
+        .zip(r.iter())
+        .all(|((k1, v1), (k2, v2))| k1 == k2 && v1 == v2)
+}
+
+/// A pair of separate CustomPropertiesMaps, split between custom properties
+/// that have the inherit flag set and those with the flag unset.
+#[repr(C)]
+#[derive(Clone, Debug, Default)]
+pub struct ComputedCustomProperties {
+    /// Map for custom properties with inherit flag set, including non-registered
+    /// ones. Defined as ref-counted for cheap copy of inherited values.
+    pub inherited: Option<Arc<CustomPropertiesMap>>,
+    /// Map for custom properties with inherit flag unset. Defined as ref-counted
+    /// for cheap copy of initial values.
+    pub non_inherited: Option<Arc<CustomPropertiesMap>>,
+}
+
+impl PartialEq for ComputedCustomProperties {
+    fn eq(&self, other: &Self) -> bool {
+        self.inherited_equal(other) && self.non_inherited_equal(other)
+    }
+}
+
+impl ComputedCustomProperties {
+    /// Return whether the inherited and non_inherited maps are none.
+    pub fn is_empty(&self) -> bool {
+        self.inherited.is_none() && self.non_inherited.is_none()
+    }
+
+    /// Return the name and value of the property at specified index, if any.
+    pub fn property_at(&self, index: usize) -> Option<(&Name, &Arc<VariableValue>)> {
+        // Just expose the custom property items from
+        // custom_properties.inherited, followed by custom property items from
+        // custom_properties.non_inherited.
+        // TODO(bug 1855629): In which order should we expose these properties?
+        match (&self.inherited, &self.non_inherited) {
+            (Some(p1), Some(p2)) => p1
+                .get_index(index)
+                .or_else(|| p2.get_index(index - p1.len())),
+            (Some(p1), None) => p1.get_index(index),
+            (None, Some(p2)) => p2.get_index(index),
+            (None, None) => None,
+        }
+    }
+
+    fn inherited_equal(&self, other: &Self) -> bool {
+        maps_equal(self.inherited.as_deref(), other.inherited.as_deref())
+    }
+
+    fn non_inherited_equal(&self, other: &Self) -> bool {
+        maps_equal(
+            self.non_inherited.as_deref(),
+            other.non_inherited.as_deref(),
+        )
+    }
+
+    /// Insert a custom property in the corresponding inherited/non_inherited
+    /// map, depending on whether the inherit flag is set or unset.
+    fn insert(
+        &mut self,
+        registration: Option<&PropertyRegistration>,
+        name: Name,
+        value: Arc<VariableValue>,
+    ) -> Option<Arc<VariableValue>> {
+        self.map_mut(registration).insert(name, value)
+    }
+
+    /// Remove a custom property from the corresponding inherited/non_inherited
+    /// map, depending on whether the inherit flag is set or unset.
+    fn remove(
+        &mut self,
+        registration: Option<&PropertyRegistration>,
+        name: &Name,
+    ) -> Option<Arc<VariableValue>> {
+        self.map_mut(registration).remove(name)
+    }
+
+    /// Shrink the capacity of the inherited maps as much as possible. An empty map is just
+    /// replaced with None and dropped.
+    fn shrink_to_fit(&mut self) {
+        if let Some(ref mut map) = self.inherited {
+            if map.is_empty() {
+                self.inherited = None;
+            } else if let Some(ref mut map) = Arc::get_mut(map) {
+                map.shrink_to_fit();
+            }
+        }
+
+        if let Some(ref mut map) = self.non_inherited {
+            if map.is_empty() {
+                self.non_inherited = None;
+            } else if let Some(ref mut map) = Arc::get_mut(map) {
+                map.shrink_to_fit();
+            }
+        }
+    }
+
+    fn map_mut(&mut self, registration: Option<&PropertyRegistration>) -> &mut CustomPropertiesMap {
+        // TODO: If the atomic load in make_mut shows up in profiles, we could cache whether
+        // the current map is unique, but that seems unlikely in practice.
+        let map = if registration.map_or(true, |r| r.inherits()) {
+            &mut self.inherited
+        } else {
+            &mut self.non_inherited
+        };
+        Arc::make_mut(map.get_or_insert_with(Default::default))
+    }
+
+    fn get(&self, stylist: &Stylist, name: &Name) -> Option<&Arc<VariableValue>> {
+        let registration = stylist.get_custom_property_registration(&name);
+        if registration.map_or(true, |r| r.inherits()) {
+            self.inherited.as_ref()?.get(name)
+        } else {
+            self.non_inherited.as_ref()?.get(name)
+        }
+    }
+}
+
 /// Both specified and computed values are VariableValues, the difference is
 /// whether var() functions are expanded.
 pub type SpecifiedValue = VariableValue;
@@ -229,11 +382,29 @@ impl VarOrEnvReferences {
 }
 
 impl VariableValue {
-    fn empty() -> Self {
+    fn empty(url_data: &UrlExtraData) -> Self {
         Self {
             css: String::new(),
-            last_token_type: TokenSerializationType::nothing(),
-            first_token_type: TokenSerializationType::nothing(),
+            last_token_type: Default::default(),
+            first_token_type: Default::default(),
+            url_data: url_data.clone(),
+            references: Default::default(),
+        }
+    }
+
+    /// Create a new custom property without parsing if the CSS is known to be valid and contain no
+    /// references.
+    pub fn new(
+        css: String,
+        url_data: &UrlExtraData,
+        first_token_type: TokenSerializationType,
+        last_token_type: TokenSerializationType,
+    ) -> Self {
+        Self {
+            css,
+            url_data: url_data.clone(),
+            first_token_type,
+            last_token_type,
             references: Default::default(),
         }
     }
@@ -309,7 +480,10 @@ impl VariableValue {
     }
 
     /// Parse a custom property value.
-    pub fn parse<'i, 't>(input: &mut Parser<'i, 't>) -> Result<Arc<Self>, ParseError<'i>> {
+    pub fn parse<'i, 't>(
+        input: &mut Parser<'i, 't>,
+        url_data: &UrlExtraData,
+    ) -> Result<Arc<Self>, ParseError<'i>> {
         let mut references = VarOrEnvReferences::default();
 
         let (first_token_type, css, last_token_type) =
@@ -322,6 +496,7 @@ impl VariableValue {
 
         Ok(Arc::new(VariableValue {
             css,
+            url_data: url_data.clone(),
             first_token_type,
             last_token_type,
             references,
@@ -329,49 +504,59 @@ impl VariableValue {
     }
 
     /// Create VariableValue from an int.
-    fn integer(number: i32) -> Self {
-        Self::from_token(Token::Number {
-            has_sign: false,
-            value: number as f32,
-            int_value: Some(number),
-        })
+    fn integer(number: i32, url_data: &UrlExtraData) -> Self {
+        Self::from_token(
+            Token::Number {
+                has_sign: false,
+                value: number as f32,
+                int_value: Some(number),
+            },
+            url_data,
+        )
     }
 
     /// Create VariableValue from an int.
-    fn ident(ident: &'static str) -> Self {
-        Self::from_token(Token::Ident(ident.into()))
+    fn ident(ident: &'static str, url_data: &UrlExtraData) -> Self {
+        Self::from_token(Token::Ident(ident.into()), url_data)
     }
 
     /// Create VariableValue from a float amount of CSS pixels.
-    fn pixels(number: f32) -> Self {
+    fn pixels(number: f32, url_data: &UrlExtraData) -> Self {
         // FIXME (https://github.com/servo/rust-cssparser/issues/266):
         // No way to get TokenSerializationType::Dimension without creating
         // Token object.
-        Self::from_token(Token::Dimension {
-            has_sign: false,
-            value: number,
-            int_value: None,
-            unit: CowRcStr::from("px"),
-        })
+        Self::from_token(
+            Token::Dimension {
+                has_sign: false,
+                value: number,
+                int_value: None,
+                unit: CowRcStr::from("px"),
+            },
+            url_data,
+        )
     }
 
     /// Create VariableValue from an integer amount of CSS pixels.
-    fn int_pixels(number: i32) -> Self {
-        Self::from_token(Token::Dimension {
-            has_sign: false,
-            value: number as f32,
-            int_value: Some(number),
-            unit: CowRcStr::from("px"),
-        })
+    fn int_pixels(number: i32, url_data: &UrlExtraData) -> Self {
+        Self::from_token(
+            Token::Dimension {
+                has_sign: false,
+                value: number as f32,
+                int_value: Some(number),
+                unit: CowRcStr::from("px"),
+            },
+            url_data,
+        )
     }
 
-    fn from_token(token: Token) -> Self {
+    fn from_token(token: Token, url_data: &UrlExtraData) -> Self {
         let token_type = token.serialization_type();
         let mut css = token.to_css_string();
         css.shrink_to_fit();
 
         VariableValue {
             css,
+            url_data: url_data.clone(),
             first_token_type: token_type,
             last_token_type: token_type,
             references: Default::default(),
@@ -440,10 +625,7 @@ fn parse_declaration_value_block<'i, 't>(
     let mut token = match input.next_including_whitespace_and_comments() {
         Ok(token) => token,
         Err(_) => {
-            return Ok((
-                TokenSerializationType::nothing(),
-                TokenSerializationType::nothing(),
-            ));
+            return Ok(Default::default());
         },
     };
     let first_token_type = token.serialization_type();
@@ -587,25 +769,28 @@ fn parse_fallback<'i, 't>(input: &mut Parser<'i, 't>) -> Result<(), ParseError<'
 
 fn parse_and_substitute_fallback<'i>(
     input: &mut Parser<'i, '_>,
-    custom_properties: &CustomPropertiesMap,
+    custom_properties: &ComputedCustomProperties,
+    url_data: &UrlExtraData,
     stylist: &Stylist,
+    computed_context: &computed::Context,
 ) -> Result<ComputedValue, ParseError<'i>> {
     input.skip_whitespace();
     let after_comma = input.state();
     let first_token_type = input
         .next_including_whitespace_and_comments()
         .ok()
-        .map_or_else(TokenSerializationType::nothing, |t| t.serialization_type());
+        .map_or_else(TokenSerializationType::default, |t| t.serialization_type());
     input.reset(&after_comma);
     let mut position = (after_comma.position(), first_token_type);
 
-    let mut fallback = ComputedValue::empty();
+    let mut fallback = ComputedValue::empty(url_data);
     let last_token_type = substitute_block(
         input,
         &mut position,
         &mut fallback,
         custom_properties,
         stylist,
+        computed_context,
     )?;
     fallback.push_from(input, position, last_token_type)?;
     Ok(fallback)
@@ -647,25 +832,36 @@ fn parse_env_function<'i, 't>(
 
 /// A struct that takes care of encapsulating the cascade process for custom
 /// properties.
-pub struct CustomPropertiesBuilder<'a> {
+pub struct CustomPropertiesBuilder<'a, 'b: 'a> {
     seen: PrecomputedHashSet<&'a Name>,
     may_have_cycles: bool,
-    custom_properties: Option<CustomPropertiesMap>,
-    inherited: Option<&'a Arc<CustomPropertiesMap>>,
+    custom_properties: ComputedCustomProperties,
     reverted: PrecomputedHashMap<&'a Name, (CascadePriority, bool)>,
     stylist: &'a Stylist,
+    computed_context: &'a computed::Context<'b>,
 }
 
-impl<'a> CustomPropertiesBuilder<'a> {
+impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
     /// Create a new builder, inheriting from a given custom properties map.
-    pub fn new(inherited: Option<&'a Arc<CustomPropertiesMap>>, stylist: &'a Stylist) -> Self {
+    pub fn new(stylist: &'a Stylist, computed_context: &'a computed::Context<'b>) -> Self {
+        let inherited = computed_context.inherited_custom_properties();
+        let initial_values = stylist.get_custom_property_initial_values();
+        let is_root_element = computed_context.is_root_element();
         Self {
             seen: PrecomputedHashSet::default(),
             reverted: Default::default(),
             may_have_cycles: false,
-            custom_properties: None,
-            inherited,
+            custom_properties: ComputedCustomProperties {
+                inherited: if is_root_element {
+                    debug_assert!(inherited.is_empty());
+                    initial_values.inherited.clone()
+                } else {
+                    inherited.inherited.clone()
+                },
+                non_inherited: initial_values.non_inherited.clone(),
+            },
             stylist,
+            computed_context,
         }
     }
 
@@ -691,14 +887,8 @@ impl<'a> CustomPropertiesBuilder<'a> {
             return;
         }
 
-        if self.custom_properties.is_none() {
-            self.custom_properties = Some(match self.inherited {
-                Some(inherited) => (**inherited).clone(),
-                None => CustomPropertiesMap::default(),
-            });
-        }
-
-        let map = self.custom_properties.as_mut().unwrap();
+        let map = &mut self.custom_properties;
+        let custom_registration = self.stylist.get_custom_property_registration(&name);
         match *value {
             CustomDeclarationValue::Value(ref unparsed_value) => {
                 let has_custom_property_references =
@@ -714,22 +904,40 @@ impl<'a> CustomPropertiesBuilder<'a> {
                             name,
                             unparsed_value,
                             map,
-                            self.inherited.map(|m| &**m),
                             self.stylist,
+                            self.computed_context,
                         );
                         return;
                     }
-                    if let Some(registration) = self.stylist.get_custom_property_registration(&name)
-                    {
+                    if let Some(registration) = custom_registration {
                         let mut input = ParserInput::new(&unparsed_value.css);
                         let mut input = Parser::new(&mut input);
-                        if ComputedRegisteredValue::compute(&mut input, registration).is_err() {
-                            map.remove(name);
-                            return;
+                        if let Ok(value) = SpecifiedRegisteredValue::compute(
+                            &mut input,
+                            registration,
+                            self.computed_context,
+                            AllowComputationallyDependent::Yes,
+                        ) {
+                            map.insert(custom_registration, name.clone(), value);
+                        } else {
+                            let inherited = self.computed_context.inherited_custom_properties();
+                            let is_root_element = self.computed_context.is_root_element();
+                            handle_invalid_at_computed_value_time(
+                                name,
+                                map,
+                                inherited,
+                                self.stylist,
+                                is_root_element,
+                            );
                         }
+                        return;
                     }
                 }
-                map.insert(name.clone(), Arc::clone(unparsed_value));
+                map.insert(
+                    custom_registration,
+                    name.clone(),
+                    Arc::clone(unparsed_value),
+                );
             },
             CustomDeclarationValue::CSSWideKeyword(keyword) => match keyword {
                 CSSWideKeyword::RevertLayer | CSSWideKeyword::Revert => {
@@ -738,41 +946,118 @@ impl<'a> CustomPropertiesBuilder<'a> {
                     self.reverted.insert(name, (priority, origin_revert));
                 },
                 CSSWideKeyword::Initial => {
-                    map.remove(name);
+                    // For non-inherited custom properties, 'initial' was handled in value_may_affect_style.
+                    debug_assert!(
+                        custom_registration.map_or(true, |r| r.inherits()),
+                        "Should've been handled earlier"
+                    );
+                    map.remove(custom_registration, name);
+                    if let Some(registration) = custom_registration {
+                        if let Some(ref initial_value) = registration.initial_value {
+                            map.insert(custom_registration, name.clone(), initial_value.clone());
+                        }
+                    }
+                },
+                CSSWideKeyword::Inherit => {
+                    // For inherited custom properties, 'inherit' was handled in value_may_affect_style.
+                    debug_assert!(
+                        !custom_registration.map_or(true, |r| r.inherits()),
+                        "Should've been handled earlier"
+                    );
+                    if let Some(inherited_value) = self
+                        .computed_context
+                        .inherited_custom_properties()
+                        .non_inherited
+                        .as_ref()
+                        .and_then(|m| m.get(name))
+                    {
+                        map.insert(custom_registration, name.clone(), inherited_value.clone());
+                    }
                 },
                 // handled in value_may_affect_style
-                CSSWideKeyword::Unset | CSSWideKeyword::Inherit => unreachable!(),
+                CSSWideKeyword::Unset => unreachable!(),
             },
         }
     }
 
     fn value_may_affect_style(&self, name: &Name, value: &CustomDeclarationValue) -> bool {
+        let custom_registration = self.stylist.get_custom_property_registration(&name);
         match *value {
-            CustomDeclarationValue::CSSWideKeyword(CSSWideKeyword::Unset) |
             CustomDeclarationValue::CSSWideKeyword(CSSWideKeyword::Inherit) => {
-                // Custom properties are inherited by default. So
-                // explicit 'inherit' or 'unset' means we can just use
-                // any existing value in the inherited CustomPropertiesMap.
+                // For inherited custom properties, explicit 'inherit' means we
+                // can just use any existing value in the inherited
+                // CustomPropertiesMap.
+                if custom_registration.map_or(true, |r| r.inherits()) {
+                    return false;
+                }
+            },
+            CustomDeclarationValue::CSSWideKeyword(CSSWideKeyword::Initial) => {
+                // For non-inherited custom properties, explicit 'initial' means
+                // we can just use any initial value in the registration.
+                if !custom_registration.map_or(true, |r| r.inherits()) {
+                    return false;
+                }
+            },
+            CustomDeclarationValue::CSSWideKeyword(CSSWideKeyword::Unset) => {
+                // Explicit 'unset' means we can either just use any existing
+                // value in the inherited CustomPropertiesMap or the initial
+                // value in the registration.
                 return false;
             },
             _ => {},
         }
 
-        let existing_value = self
-            .custom_properties
-            .as_ref()
-            .and_then(|m| m.get(name))
-            .or_else(|| self.inherited.and_then(|m| m.get(name)));
-
+        let existing_value = self.custom_properties.get(self.stylist, &name);
         match (existing_value, value) {
             (None, &CustomDeclarationValue::CSSWideKeyword(CSSWideKeyword::Initial)) => {
-                // The initial value of a custom property is the same as it
+                debug_assert!(
+                    custom_registration.map_or(true, |r| r.inherits()),
+                    "Should've been handled earlier"
+                );
+                // The initial value of a custom property without a
+                // guaranteed-invalid initial value is the same as it
                 // not existing in the map.
-                return false;
+                if custom_registration.map_or(true, |r| r.initial_value.is_none()) {
+                    return false;
+                }
+            },
+            (
+                Some(existing_value),
+                &CustomDeclarationValue::CSSWideKeyword(CSSWideKeyword::Initial),
+            ) => {
+                debug_assert!(
+                    custom_registration.map_or(true, |r| r.inherits()),
+                    "Should've been handled earlier"
+                );
+                // Don't bother overwriting an existing value with the initial
+                // value specified in the registration.
+                if let Some(registration) = custom_registration {
+                    if Some(existing_value) == registration.initial_value.as_ref() {
+                        return false;
+                    }
+                }
+            },
+            (Some(_), &CustomDeclarationValue::CSSWideKeyword(CSSWideKeyword::Inherit)) => {
+                debug_assert!(
+                    !custom_registration.map_or(true, |r| r.inherits()),
+                    "Should've been handled earlier"
+                );
+                // existing_value is the registered initial value.
+                // Don't bother adding it to self.custom_properties.non_inherited
+                // if the key is also absent from self.inherited.non_inherited.
+                if self
+                    .computed_context
+                    .inherited_custom_properties()
+                    .non_inherited
+                    .as_ref()
+                    .map_or(true, |m| !m.contains_key(name))
+                {
+                    return false;
+                }
             },
             (Some(existing_value), &CustomDeclarationValue::Value(ref value)) => {
-                // Don't bother overwriting an existing inherited value with
-                // the same specified value.
+                // Don't bother overwriting an existing value with the same
+                // specified value.
                 if existing_value == value {
                     return false;
                 }
@@ -783,53 +1068,49 @@ impl<'a> CustomPropertiesBuilder<'a> {
         true
     }
 
-    fn inherited_properties_match(&self, map: &CustomPropertiesMap) -> bool {
-        let inherited = match self.inherited {
-            Some(inherited) => inherited,
-            None => return false,
-        };
-        if inherited.len() != map.len() {
-            return false;
-        }
-        for name in self.seen.iter() {
-            if inherited.get(*name) != map.get(*name) {
-                return false;
-            }
-        }
-        true
-    }
-
     /// Returns the final map of applicable custom properties.
     ///
-    /// If there was any specified property, we've created a new map and now we
+    /// If there was any specified property or non-inherited custom property
+    /// with an initial value, we've created a new map and now we
     /// need to remove any potential cycles, and wrap it in an arc.
     ///
     /// Otherwise, just use the inherited custom properties map.
-    pub fn build(mut self) -> Option<Arc<CustomPropertiesMap>> {
-        let mut map = match self.custom_properties.take() {
-            Some(m) => m,
-            None => return self.inherited.cloned(),
-        };
-
+    pub fn build(mut self) -> ComputedCustomProperties {
         if self.may_have_cycles {
             substitute_all(
-                &mut map,
-                self.inherited.map(|m| &**m),
+                &mut self.custom_properties,
                 &self.seen,
                 self.stylist,
+                self.computed_context,
             );
         }
+
+        self.custom_properties.shrink_to_fit();
 
         // Some pages apply a lot of redundant custom properties, see e.g.
         // bug 1758974 comment 5. Try to detect the case where the values
         // haven't really changed, and save some memory by reusing the inherited
         // map in that case.
-        if self.inherited_properties_match(&map) {
-            return self.inherited.cloned();
+        let initial_values = self.stylist.get_custom_property_initial_values();
+        ComputedCustomProperties {
+            inherited: if self
+                .computed_context
+                .inherited_custom_properties()
+                .inherited_equal(&self.custom_properties)
+            {
+                self.computed_context
+                    .inherited_custom_properties()
+                    .inherited
+                    .clone()
+            } else {
+                self.custom_properties.inherited.take()
+            },
+            non_inherited: if initial_values.non_inherited_equal(&self.custom_properties) {
+                initial_values.non_inherited.clone()
+            } else {
+                self.custom_properties.non_inherited.take()
+            },
         }
-
-        map.shrink_to_fit();
-        Some(Arc::new(map))
     }
 }
 
@@ -838,10 +1119,10 @@ impl<'a> CustomPropertiesBuilder<'a> {
 ///
 /// It does cycle dependencies removal at the same time as substitution.
 fn substitute_all(
-    custom_properties_map: &mut CustomPropertiesMap,
-    inherited: Option<&CustomPropertiesMap>,
+    custom_properties_map: &mut ComputedCustomProperties,
     seen: &PrecomputedHashSet<&Name>,
     stylist: &Stylist,
+    computed_context: &computed::Context,
 ) {
     // The cycle dependencies removal in this function is a variant
     // of Tarjan's algorithm. It is mostly based on the pseudo-code
@@ -865,7 +1146,7 @@ fn substitute_all(
     }
     /// Context struct for traversing the variable graph, so that we can
     /// avoid referencing all the fields multiple times.
-    struct Context<'a> {
+    struct Context<'a, 'b: 'a> {
         /// Number of variables visited. This is used as the order index
         /// when we visit a new unresolved variable.
         count: usize,
@@ -876,12 +1157,13 @@ fn substitute_all(
         /// The stack of order index of visited variables. It contains
         /// all unfinished strong connected components.
         stack: SmallVec<[usize; 5]>,
-        map: &'a mut CustomPropertiesMap,
-        /// The inherited custom properties to handle wide keywords.
-        inherited: Option<&'a CustomPropertiesMap>,
+        map: &'a mut ComputedCustomProperties,
         /// The stylist is used to get registered properties, and to resolve the environment to
         /// substitute `env()` variables.
         stylist: &'a Stylist,
+        /// The computed context is used to get inherited custom
+        /// properties  and compute registered custom properties.
+        computed_context: &'a computed::Context<'b>,
     }
 
     /// This function combines the traversal for cycle removal and value
@@ -902,10 +1184,10 @@ fn substitute_all(
     ///   doesn't have reference at all in specified value, or it has
     ///   been completely resolved.
     /// * There is no such variable at all.
-    fn traverse<'a>(name: &Name, context: &mut Context<'a>) -> Option<usize> {
+    fn traverse<'a, 'b>(name: &Name, context: &mut Context<'a, 'b>) -> Option<usize> {
         // Some shortcut checks.
         let (name, value) = {
-            let value = context.map.get(name)?;
+            let value = context.map.get(context.stylist, name)?;
 
             // Nothing to resolve.
             if value.references.custom_properties.is_empty() {
@@ -1004,12 +1286,18 @@ fn substitute_all(
             // Anything here is in a loop which can traverse to the
             // variable we are handling, so remove it from the map, it's invalid
             // at computed-value time.
-            context.map.remove(&var_name);
+            context.map.remove(
+                context.stylist.get_custom_property_registration(&var_name),
+                &var_name,
+            );
             in_loop = true;
         }
         if in_loop {
             // This variable is in loop. Resolve to invalid.
-            context.map.remove(&name);
+            context.map.remove(
+                context.stylist.get_custom_property_registration(&name),
+                &name,
+            );
             return None;
         }
 
@@ -1019,8 +1307,8 @@ fn substitute_all(
             &name,
             &value,
             &mut context.map,
-            context.inherited,
             context.stylist,
+            context.computed_context,
         );
 
         // All resolved, so return the signal value.
@@ -1037,24 +1325,60 @@ fn substitute_all(
             stack: SmallVec::new(),
             var_info: SmallVec::new(),
             map: custom_properties_map,
-            inherited,
             stylist,
+            computed_context,
         };
         traverse(name, &mut context);
     }
+}
+
+// See https://drafts.csswg.org/css-variables-2/#invalid-at-computed-value-time
+fn handle_invalid_at_computed_value_time(
+    name: &Name,
+    custom_properties: &mut ComputedCustomProperties,
+    inherited: &ComputedCustomProperties,
+    stylist: &Stylist,
+    is_root_element: bool,
+) {
+    let custom_registration = stylist.get_custom_property_registration(&name);
+    if let Some(ref registration) = custom_registration {
+        if !registration.syntax.is_universal() {
+            // For the root element, inherited maps are empty. We should just
+            // use the initial value if any, rather than removing the name.
+            if registration.inherits() && !is_root_element {
+                if let Some(value) = inherited.get(stylist, name) {
+                    custom_properties.insert(custom_registration, name.clone(), Arc::clone(value));
+                    return;
+                }
+            } else {
+                if let Some(ref initial_value) = registration.initial_value {
+                    custom_properties.insert(
+                        custom_registration,
+                        name.clone(),
+                        Arc::clone(initial_value),
+                    );
+                    return;
+                }
+            }
+        }
+    }
+    custom_properties.remove(custom_registration, name);
 }
 
 /// Replace `var()` and `env()` functions in a pre-existing variable value.
 fn substitute_references_in_value_and_apply(
     name: &Name,
     value: &VariableValue,
-    custom_properties: &mut CustomPropertiesMap,
-    inherited: Option<&CustomPropertiesMap>,
+    custom_properties: &mut ComputedCustomProperties,
     stylist: &Stylist,
+    computed_context: &computed::Context,
 ) {
     debug_assert!(value.has_references());
 
-    let mut computed_value = ComputedValue::empty();
+    let inherited = computed_context.inherited_custom_properties();
+    let is_root_element = computed_context.is_root_element();
+    let custom_registration = stylist.get_custom_property_registration(&name);
+    let mut computed_value = ComputedValue::empty(&value.url_data);
 
     {
         let mut input = ParserInput::new(&value.css);
@@ -1067,13 +1391,19 @@ fn substitute_references_in_value_and_apply(
             &mut computed_value,
             custom_properties,
             stylist,
+            computed_context,
         );
 
         let last_token_type = match last_token_type {
             Ok(t) => t,
             Err(..) => {
-                // Invalid at computed value time.
-                custom_properties.remove(name);
+                handle_invalid_at_computed_value_time(
+                    name,
+                    custom_properties,
+                    inherited,
+                    stylist,
+                    is_root_element,
+                );
                 return;
             },
         };
@@ -1082,7 +1412,13 @@ fn substitute_references_in_value_and_apply(
             .push_from(&input, position, last_token_type)
             .is_err()
         {
-            custom_properties.remove(name);
+            handle_invalid_at_computed_value_time(
+                name,
+                custom_properties,
+                inherited,
+                stylist,
+                is_root_element,
+            );
             return;
         }
     }
@@ -1092,42 +1428,77 @@ fn substitute_references_in_value_and_apply(
         let mut input = Parser::new(&mut input);
 
         // If variable fallback results in a wide keyword, deal with it now.
+        let inherits = custom_registration.map_or(true, |r| r.inherits());
+
         if let Ok(kw) = input.try_parse(CSSWideKeyword::parse) {
-            match kw {
-                CSSWideKeyword::Initial => {
-                    custom_properties.remove(name);
+            // TODO: It's unclear what this should do for revert / revert-layer, see
+            // https://github.com/w3c/csswg-drafts/issues/9131. For now treating as unset
+            // seems fine?
+            match (kw, inherits, is_root_element) {
+                (CSSWideKeyword::Initial, _, _) |
+                (CSSWideKeyword::Revert, false, _) |
+                (CSSWideKeyword::RevertLayer, false, _) |
+                (CSSWideKeyword::Unset, false, _) |
+                (CSSWideKeyword::Revert, true, true) |
+                (CSSWideKeyword::RevertLayer, true, true) |
+                (CSSWideKeyword::Unset, true, true) |
+                (CSSWideKeyword::Inherit, _, true) => {
+                    custom_properties.remove(custom_registration, name);
+                    if let Some(registration) = custom_registration {
+                        if let Some(ref initial_value) = registration.initial_value {
+                            custom_properties.insert(
+                                custom_registration,
+                                name.clone(),
+                                Arc::clone(initial_value),
+                            );
+                        }
+                    }
                 },
-                CSSWideKeyword::Revert |
-                CSSWideKeyword::RevertLayer |
-                CSSWideKeyword::Inherit |
-                CSSWideKeyword::Unset => {
-                    // TODO: It's unclear what this should do for revert / revert-layer, see
-                    // https://github.com/w3c/csswg-drafts/issues/9131. For now treating as unset
-                    // seems fine?
-                    match inherited.and_then(|map| map.get(name)) {
+                (CSSWideKeyword::Revert, true, false) |
+                (CSSWideKeyword::RevertLayer, true, false) |
+                (CSSWideKeyword::Inherit, _, false) |
+                (CSSWideKeyword::Unset, true, false) => {
+                    match inherited.get(stylist, name) {
                         Some(value) => {
-                            custom_properties.insert(name.clone(), Arc::clone(value));
+                            custom_properties.insert(
+                                custom_registration,
+                                name.clone(),
+                                Arc::clone(value),
+                            );
                         },
                         None => {
-                            custom_properties.remove(name);
+                            custom_properties.remove(custom_registration, name);
                         },
                     };
                 },
             }
             false
         } else {
-            if let Some(registration) = stylist.get_custom_property_registration(&name) {
-                if ComputedRegisteredValue::compute(&mut input, registration).is_err() {
-                    custom_properties.remove(name);
-                    return;
+            if let Some(registration) = custom_registration {
+                if let Ok(value) = SpecifiedRegisteredValue::compute(
+                    &mut input,
+                    registration,
+                    computed_context,
+                    AllowComputationallyDependent::Yes,
+                ) {
+                    custom_properties.insert(custom_registration, name.clone(), value);
+                } else {
+                    handle_invalid_at_computed_value_time(
+                        name,
+                        custom_properties,
+                        inherited,
+                        stylist,
+                        is_root_element,
+                    );
                 }
+                return;
             }
             true
         }
     };
     if should_insert {
         computed_value.css.shrink_to_fit();
-        custom_properties.insert(name.clone(), Arc::new(computed_value));
+        custom_properties.insert(custom_registration, name.clone(), Arc::new(computed_value));
     }
 }
 
@@ -1145,10 +1516,11 @@ fn substitute_block<'i>(
     input: &mut Parser<'i, '_>,
     position: &mut (SourcePosition, TokenSerializationType),
     partial_computed_value: &mut ComputedValue,
-    custom_properties: &CustomPropertiesMap,
+    custom_properties: &ComputedCustomProperties,
     stylist: &Stylist,
+    computed_context: &computed::Context,
 ) -> Result<TokenSerializationType, ParseError<'i>> {
-    let mut last_token_type = TokenSerializationType::nothing();
+    let mut last_token_type = TokenSerializationType::default();
     let mut set_position_at_next_iteration = false;
     loop {
         let before_this_token = input.position();
@@ -1158,7 +1530,7 @@ fn substitute_block<'i>(
                 before_this_token,
                 match next {
                     Ok(token) => token.serialization_type(),
-                    Err(_) => TokenSerializationType::nothing(),
+                    Err(_) => TokenSerializationType::default(),
                 },
             );
             set_position_at_next_iteration = false;
@@ -1196,7 +1568,11 @@ fn substitute_block<'i>(
                     let value = if is_env {
                         registration = None;
                         let device = stylist.device();
-                        if let Some(v) = device.environment().get(&name, device) {
+                        if let Some(v) = device.environment().get(
+                            &name,
+                            device,
+                            &partial_computed_value.url_data,
+                        ) {
                             env_value = v;
                             Some(&env_value)
                         } else {
@@ -1204,7 +1580,7 @@ fn substitute_block<'i>(
                         }
                     } else {
                         registration = stylist.get_custom_property_registration(&name);
-                        custom_properties.get(&name).map(|v| &**v)
+                        custom_properties.get(stylist, &name).map(|v| &**v)
                     };
 
                     if let Some(v) = value {
@@ -1215,15 +1591,18 @@ fn substitute_block<'i>(
                                 let fallback = parse_and_substitute_fallback(
                                     input,
                                     custom_properties,
+                                    &partial_computed_value.url_data,
                                     stylist,
+                                    computed_context,
                                 )?;
                                 let mut fallback_input = ParserInput::new(&fallback.css);
                                 let mut fallback_input = Parser::new(&mut fallback_input);
-                                let compute_result = ComputedRegisteredValue::compute(
+                                if let Err(_) = SpecifiedRegisteredValue::compute(
                                     &mut fallback_input,
                                     registration,
-                                );
-                                if compute_result.is_err() {
+                                    computed_context,
+                                    AllowComputationallyDependent::Yes,
+                                ) {
                                     return Err(input
                                         .new_custom_error(StyleParseErrorKind::UnspecifiedError));
                                 }
@@ -1237,22 +1616,33 @@ fn substitute_block<'i>(
                         partial_computed_value.push_variable(input, v)?;
                     } else {
                         input.expect_comma()?;
-                        let fallback =
-                            parse_and_substitute_fallback(input, custom_properties, stylist)?;
+                        let fallback = parse_and_substitute_fallback(
+                            input,
+                            custom_properties,
+                            &partial_computed_value.url_data,
+                            stylist,
+                            computed_context,
+                        )?;
                         last_token_type = fallback.last_token_type;
 
                         if let Some(registration) = registration {
                             let mut fallback_input = ParserInput::new(&fallback.css);
                             let mut fallback_input = Parser::new(&mut fallback_input);
-                            let compute_result =
-                                ComputedRegisteredValue::compute(&mut fallback_input, registration);
-                            if compute_result.is_err() {
+                            if let Ok(fallback) = SpecifiedRegisteredValue::compute(
+                                &mut fallback_input,
+                                registration,
+                                computed_context,
+                                AllowComputationallyDependent::Yes,
+                            ) {
+                                partial_computed_value.push_variable(input, &fallback)?;
+                            } else {
                                 return Err(
                                     input.new_custom_error(StyleParseErrorKind::UnspecifiedError)
                                 );
                             }
+                        } else {
+                            partial_computed_value.push_variable(&input, &fallback)?;
                         }
-                        partial_computed_value.push_variable(&input, &fallback)?;
                     }
                     Ok(())
                 })?;
@@ -1269,6 +1659,7 @@ fn substitute_block<'i>(
                         partial_computed_value,
                         custom_properties,
                         stylist,
+                        computed_context,
                     )
                 })?;
                 // It's the same type for CloseCurlyBracket and CloseSquareBracket.
@@ -1293,24 +1684,22 @@ fn substitute_block<'i>(
 pub fn substitute<'i>(
     input: &'i str,
     first_token_type: TokenSerializationType,
-    computed_values_map: Option<&Arc<CustomPropertiesMap>>,
+    custom_properties: &ComputedCustomProperties,
+    url_data: &UrlExtraData,
     stylist: &Stylist,
+    computed_context: &computed::Context,
 ) -> Result<String, ParseError<'i>> {
-    let mut substituted = ComputedValue::empty();
+    let mut substituted = ComputedValue::empty(url_data);
     let mut input = ParserInput::new(input);
     let mut input = Parser::new(&mut input);
     let mut position = (input.position(), first_token_type);
-    let empty_map = CustomPropertiesMap::default();
-    let custom_properties = match computed_values_map {
-        Some(m) => &**m,
-        None => &empty_map,
-    };
     let last_token_type = substitute_block(
         &mut input,
         &mut position,
         &mut substituted,
-        &custom_properties,
+        custom_properties,
         stylist,
+        computed_context,
     )?;
     substituted.push_from(&input, position, last_token_type)?;
     Ok(substituted.css)

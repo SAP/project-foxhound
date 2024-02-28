@@ -20,7 +20,8 @@ import {
   GMPPrefs,
   GMPUtils,
   OPEN_H264_ID,
-  WIDEVINE_ID,
+  WIDEVINE_L1_ID,
+  WIDEVINE_L3_ID,
 } from "resource://gre/modules/GMPUtils.sys.mjs";
 
 const SEC_IN_A_DAY = 24 * 60 * 60;
@@ -44,6 +45,8 @@ const GMP_PLUGINS = [
     id: OPEN_H264_ID,
     name: "plugins-openh264-name",
     description: "plugins-openh264-description",
+    level: "",
+    libName: "gmpopenh264",
     // The following licenseURL is part of an awful hack to include the OpenH264
     // license without having bug 624602 fixed yet, and intentionally ignores
     // localisation.
@@ -51,9 +54,21 @@ const GMP_PLUGINS = [
     homepageURL: "https://www.openh264.org/",
   },
   {
-    id: WIDEVINE_ID,
+    id: WIDEVINE_L1_ID,
     name: "plugins-widevine-name",
     description: "plugins-widevine-description",
+    level: "L1",
+    libName: "Google.Widevine.CDM",
+    licenseURL: "https://www.google.com/policies/privacy/",
+    homepageURL: "https://www.widevine.com/",
+    isEME: true,
+  },
+  {
+    id: WIDEVINE_L3_ID,
+    name: "plugins-widevine-name",
+    description: "plugins-widevine-description",
+    level: "L3",
+    libName: "widevinecdm",
     licenseURL: "https://www.google.com/policies/privacy/",
     homepageURL: "https://www.widevine.com/",
     isEME: true,
@@ -62,8 +77,8 @@ const GMP_PLUGINS = [
 
 ChromeUtils.defineLazyGetter(
   lazy,
-  "pluginsBundle",
-  () => new Localization(["toolkit/about/aboutPlugins.ftl"], true)
+  "addonsBundle",
+  () => new Localization(["toolkit/about/aboutAddons.ftl"], true)
 );
 ChromeUtils.defineLazyGetter(lazy, "gmpService", () =>
   Cc["@mozilla.org/gecko-media-plugin-service;1"].getService(
@@ -161,6 +176,9 @@ GMPWrapper.prototype = {
   get id() {
     return this._plugin.id;
   },
+  get libName() {
+    return this._plugin.libName;
+  },
   get type() {
     return "plugin";
   },
@@ -192,14 +210,16 @@ GMPWrapper.prototype = {
       ["learnMoreURL", GMP_LEARN_MORE],
       [
         "licenseURL",
-        this.id == WIDEVINE_ID ? GMP_PRIVACY_INFO : GMP_LICENSE_INFO,
+        this.id == WIDEVINE_L1_ID || this.id == WIDEVINE_L3_ID
+          ? GMP_PRIVACY_INFO
+          : GMP_LICENSE_INFO,
       ],
     ]) {
       if (plugin[urlProp]) {
         let a = doc.createElementNS(XHTML, "a");
         a.href = plugin[urlProp];
         a.target = "_blank";
-        a.textContent = lazy.pluginsBundle.formatValueSync(labelId);
+        a.textContent = lazy.addonsBundle.formatValueSync(labelId);
 
         if (frag.childElementCount) {
           frag.append(
@@ -657,13 +677,16 @@ GMPWrapper.prototype = {
       return f.exists();
     };
 
-    let id = this._plugin.id.substring(4);
-    let libName = AppConstants.DLL_PREFIX + id + AppConstants.DLL_SUFFIX;
+    let libName =
+      AppConstants.DLL_PREFIX + this._plugin.libName + AppConstants.DLL_SUFFIX;
     let infoName;
-    if (this._plugin.id == WIDEVINE_ID) {
+    if (
+      this._plugin.id == WIDEVINE_L1_ID ||
+      this._plugin.id == WIDEVINE_L3_ID
+    ) {
       infoName = "manifest.json";
     } else {
-      infoName = id + ".info";
+      infoName = this._plugin.id.substring(4) + ".info";
     }
 
     return (
@@ -848,8 +871,9 @@ var GMPProvider = {
     for (let aPlugin of GMP_PLUGINS) {
       let plugin = {
         id: aPlugin.id,
-        name: lazy.pluginsBundle.formatValueSync(aPlugin.name),
-        description: lazy.pluginsBundle.formatValueSync(aPlugin.description),
+        name: lazy.addonsBundle.formatValueSync(aPlugin.name),
+        description: lazy.addonsBundle.formatValueSync(aPlugin.description),
+        libName: aPlugin.libName,
         homepageURL: aPlugin.homepageURL,
         optionsURL: aPlugin.optionsURL,
         wrapper: null,

@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_replace.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
@@ -330,7 +331,8 @@ TEST_F(SdpOfferAnswerTest, BundleRejectsHeaderExtensionIdCollision) {
   ASSERT_NE(desc, nullptr);
   RTCError error;
   pc->SetRemoteDescription(std::move(desc), &error);
-  EXPECT_TRUE(error.ok());
+  EXPECT_FALSE(error.ok());
+  EXPECT_EQ(error.type(), RTCErrorType::INVALID_PARAMETER);
   EXPECT_METRIC_EQ(
       1, webrtc::metrics::NumEvents(
              "WebRTC.PeerConnection.ValidBundledExtensionIds", false));
@@ -546,5 +548,133 @@ TEST_F(SdpOfferAnswerTest, RejectedDataChannelsDoGetReofferedWhenActive) {
 }
 
 #endif  // WEBRTC_HAVE_SCTP
+
+TEST_F(SdpOfferAnswerTest, SimulcastAnswerWithNoRidsIsRejected) {
+  auto pc = CreatePeerConnection();
+
+  RtpTransceiverInit init;
+  RtpEncodingParameters rid1;
+  rid1.rid = "1";
+  init.send_encodings.push_back(rid1);
+  RtpEncodingParameters rid2;
+  rid2.rid = "2";
+  init.send_encodings.push_back(rid2);
+
+  auto transceiver = pc->AddTransceiver(cricket::MEDIA_TYPE_VIDEO, init);
+  EXPECT_TRUE(pc->CreateOfferAndSetAsLocal());
+  auto mid = pc->pc()->local_description()->description()->contents()[0].mid();
+
+  // A SDP answer with simulcast but without mid/rid extensions.
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 4131505339648218884 3 IN IP4 **-----**\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "a=ice-ufrag:zGWFZ+fVXDeN6UoI/136\r\n"
+      "a=ice-pwd:9AUNgUqRNI5LSIrC1qFD2iTR\r\n"
+      "a=fingerprint:sha-256 "
+      "AD:52:52:E0:B1:37:34:21:0E:15:8E:B7:56:56:7B:B4:39:0E:6D:1C:F5:84:A7:EE:"
+      "B5:27:3E:30:B1:7D:69:42\r\n"
+      "a=setup:passive\r\n"
+      "m=video 9 UDP/TLS/RTP/SAVPF 96\r\n"
+      "c=IN IP4 0.0.0.0\r\n"
+      "a=rtcp:9 IN IP4 0.0.0.0\r\n"
+      "a=mid:" +
+      mid +
+      "\r\n"
+      "a=recvonly\r\n"
+      "a=rtcp-mux\r\n"
+      "a=rtcp-rsize\r\n"
+      "a=rtpmap:96 VP8/90000\r\n"
+      "a=rid:1 recv\r\n"
+      "a=rid:2 recv\r\n"
+      "a=simulcast:recv 1;2\r\n";
+  std::string extensions =
+      "a=extmap:9 urn:ietf:params:rtp-hdrext:sdes:mid\r\n"
+      "a=extmap:10 urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id\r\n";
+  auto answer = CreateSessionDescription(SdpType::kAnswer, sdp);
+  EXPECT_FALSE(pc->SetRemoteDescription(std::move(answer)));
+
+  auto answer_with_extensions =
+      CreateSessionDescription(SdpType::kAnswer, sdp + extensions);
+  EXPECT_TRUE(pc->SetRemoteDescription(std::move(answer_with_extensions)));
+}
+
+TEST_F(SdpOfferAnswerTest, ExpectAllSsrcsSpecifiedInSsrcGroupFid) {
+  auto pc = CreatePeerConnection();
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 0 3 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "a=group:BUNDLE 0\r\n"
+      "a=fingerprint:sha-1 "
+      "4A:AD:B9:B1:3F:82:18:3B:54:02:12:DF:3E:5D:49:6B:19:E5:7C:AB\r\n"
+      "a=setup:actpass\r\n"
+      "a=ice-ufrag:ETEn\r\n"
+      "a=ice-pwd:OtSK0WpNtpUjkY4+86js7Z/l\r\n"
+      "m=video 9 UDP/TLS/RTP/SAVPF 96 97\r\n"
+      "c=IN IP4 0.0.0.0\r\n"
+      "a=rtcp-mux\r\n"
+      "a=sendonly\r\n"
+      "a=mid:0\r\n"
+      "a=rtpmap:96 H264/90000\r\n"
+      "a=fmtp:96 "
+      "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id="
+      "42e01f\r\n"
+      "a=rtpmap:97 rtx/90000\r\n"
+      "a=fmtp:97 apt=96\r\n"
+      "a=ssrc-group:FID 1 2\r\n"
+      "a=ssrc:1 cname:test\r\n";
+  auto offer = CreateSessionDescription(SdpType::kOffer, sdp);
+  EXPECT_FALSE(pc->SetRemoteDescription(std::move(offer)));
+}
+
+TEST_F(SdpOfferAnswerTest, ExpectAllSsrcsSpecifiedInSsrcGroupFecFr) {
+  auto pc = CreatePeerConnection();
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 0 3 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "a=group:BUNDLE 0\r\n"
+      "a=fingerprint:sha-1 "
+      "4A:AD:B9:B1:3F:82:18:3B:54:02:12:DF:3E:5D:49:6B:19:E5:7C:AB\r\n"
+      "a=setup:actpass\r\n"
+      "a=ice-ufrag:ETEn\r\n"
+      "a=ice-pwd:OtSK0WpNtpUjkY4+86js7Z/l\r\n"
+      "m=video 9 UDP/TLS/RTP/SAVPF 96 98\r\n"
+      "c=IN IP4 0.0.0.0\r\n"
+      "a=rtcp-mux\r\n"
+      "a=sendonly\r\n"
+      "a=mid:0\r\n"
+      "a=rtpmap:96 H264/90000\r\n"
+      "a=fmtp:96 "
+      "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id="
+      "42e01f\r\n"
+      "a=rtpmap:98 flexfec-03/90000\r\n"
+      "a=fmtp:98 repair-window=10000000\r\n"
+      "a=ssrc-group:FEC-FR 1 2\r\n"
+      "a=ssrc:1 cname:test\r\n";
+  auto offer = CreateSessionDescription(SdpType::kOffer, sdp);
+  EXPECT_FALSE(pc->SetRemoteDescription(std::move(offer)));
+}
+
+TEST_F(SdpOfferAnswerTest, DuplicateSsrcsDisallowedInLocalDescription) {
+  auto pc = CreatePeerConnection();
+  pc->AddAudioTrack("audio_track", {});
+  pc->AddVideoTrack("video_track", {});
+  auto offer = pc->CreateOffer();
+  auto& offer_contents = offer->description()->contents();
+  ASSERT_EQ(offer_contents.size(), 2u);
+  uint32_t second_ssrc = offer_contents[1].media_description()->first_ssrc();
+
+  offer->description()
+      ->contents()[0]
+      .media_description()
+      ->mutable_streams()[0]
+      .ssrcs[0] = second_ssrc;
+  EXPECT_FALSE(pc->SetLocalDescription(std::move(offer)));
+}
 
 }  // namespace webrtc

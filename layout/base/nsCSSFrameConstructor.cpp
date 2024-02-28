@@ -117,8 +117,6 @@
 #undef NOISY_FIRST_LETTER
 
 #include "nsMathMLParts.h"
-#include "mozilla/dom/SVGFilters.h"
-#include "mozilla/dom/SVGTests.h"
 #include "mozilla/SVGGradientFrame.h"
 
 #include "nsRefreshDriver.h"
@@ -584,18 +582,16 @@ class MOZ_STACK_CLASS nsFrameConstructorSaveState {
   // Pointer to struct whose data we save/restore.
   AbsoluteFrameList* mList = nullptr;
 
+  // The saved pointer to the fixed list.
+  AbsoluteFrameList* mSavedFixedList = nullptr;
+
   // Copy of original frame list. This can be the original absolute list or a
-  // float list. If we're saving the abs-pos state for a transformed element,
-  // i.e. when mSavedFixedPosIsAbsPos is true, this is the original fixed list.
+  // float list.
   AbsoluteFrameList mSavedList;
 
   // The name of the child list in which our frames would belong.
   mozilla::FrameChildListID mChildListID = FrameChildListID::Principal;
   nsFrameConstructorState* mState = nullptr;
-
-  // Only used when saving an absolute list. See the description of
-  // nsFrameConstructorState::mFixedPosIsAbsPos for its meaning.
-  bool mSavedFixedPosIsAbsPos = false;
 
   friend class nsFrameConstructorState;
 };
@@ -609,35 +605,54 @@ class MOZ_STACK_CLASS nsFrameConstructorState {
   nsCSSFrameConstructor* mFrameConstructor;
 
   // Containing block information for out-of-flow frames.
-  AbsoluteFrameList mFixedList;
-  AbsoluteFrameList mAbsoluteList;
+  //
+  // Floats are easy. Whatever is our float CB.
+  //
+  // Regular abspos elements are easy too. Its containing block can be the
+  // nearest abspos element, or the ICB (the canvas frame).
+  //
+  // Top layer abspos elements are always children of the ICB, but we can get
+  // away with having two different lists (mAbsoluteList and
+  // mTopLayerAbsoluteList), because because top layer frames cause
+  // non-top-layer frames to be contained inside (so any descendants of a top
+  // layer abspos can never share containing block with it, unless they're also
+  // in the top layer).
+  //
+  // Regular fixed elements however are trickier. Fixed elements can be
+  // contained in one of three lists:
+  //
+  //  * mAbsoluteList, if our abspos cb is also a fixpos cb (e.g., is
+  //                   transformed or has a filter).
+  //
+  //  * mAncestorFixedList, if the fixpos cb is an ancestor element other than
+  //                        the viewport frame, (so, a transformed / filtered
+  //                        ancestor).
+  //
+  //  * mRealFixedList, which is also the fixed list used for the top layer
+  //                    fixed items, which is the fixed list of the viewport
+  //                    frame.
+  //
+  // It is important that mRealFixedList is shared between regular and top layer
+  // fixpos elements, since no-top-layer descendants of top layer fixed elements
+  // could share ICB and vice versa, so without that there would be no guarantee
+  // of layout ordering between them.
   AbsoluteFrameList mFloatedList;
-  // The containing block of a frame in the top layer is defined by the
-  // spec: fixed-positioned frames are children of the viewport frame,
-  // and absolutely-positioned frames are children of the initial
-  // containing block. They would not be caught by any other containing
-  // block, e.g. frames with transform or filter.
-  AbsoluteFrameList mTopLayerFixedList;
+  AbsoluteFrameList mAbsoluteList;
   AbsoluteFrameList mTopLayerAbsoluteList;
+  AbsoluteFrameList mAncestorFixedList;
+  AbsoluteFrameList mRealFixedList;
+
+  // Never null, always pointing to one of the lists documented above.
+  AbsoluteFrameList* mFixedList;
 
   // What `page: auto` resolves to. This is the used page-name of the parent
   // frame. Updated by AutoFrameConstructionPageName.
-  const nsAtom* mAutoPageNameValue;
+  const nsAtom* mAutoPageNameValue = nullptr;
 
   nsCOMPtr<nsILayoutHistoryState> mFrameState;
   // These bits will be added to the state bits of any frame we construct
   // using this state.
-  nsFrameState mAdditionalStateBits;
-
-  // When working with transform / filter properties, we want to hook the
-  // abs-pos and fixed-pos lists together, since such elements are fixed-pos
-  // containing blocks.
-  //
-  // Similarly when restricting absolute positioning (for e.g. mathml).
-  //
-  // This flag determines whether or not we want to wire the fixed-pos and
-  // abs-pos lists together.
-  bool mFixedPosIsAbsPos;
+  nsFrameState mAdditionalStateBits{0};
 
   // If false (which is the default) then call SetPrimaryFrame() as needed
   // during frame construction.  If true, don't make any SetPrimaryFrame()
@@ -755,12 +770,8 @@ class MOZ_STACK_CLASS nsFrameConstructorState {
    * we'll hand back the abs-pos list.  Callers should use this function if they
    * want to get the list acting as the fixed-pos item parent.
    */
-  AbsoluteFrameList& GetFixedList() {
-    return mFixedPosIsAbsPos ? mAbsoluteList : mFixedList;
-  }
-  const AbsoluteFrameList& GetFixedList() const {
-    return mFixedPosIsAbsPos ? mAbsoluteList : mFixedList;
-  }
+  AbsoluteFrameList& GetFixedList() { return *mFixedList; }
+  const AbsoluteFrameList& GetFixedList() const { return *mFixedList; }
 
  protected:
   friend class nsFrameConstructorSaveState;
@@ -796,24 +807,26 @@ nsFrameConstructorState::nsFrameConstructorState(
     : mPresContext(aPresShell->GetPresContext()),
       mPresShell(aPresShell),
       mFrameConstructor(aPresShell->FrameConstructor()),
-      mFixedList(aFixedContainingBlock),
-      mAbsoluteList(aAbsoluteContainingBlock),
       mFloatedList(aFloatContainingBlock),
-      mTopLayerFixedList(
-          static_cast<nsContainerFrame*>(mFrameConstructor->GetRootFrame())),
+      mAbsoluteList(aAbsoluteContainingBlock),
       mTopLayerAbsoluteList(mFrameConstructor->GetCanvasFrame()),
-      // Will be set by AutoFrameConstructionPageName
-      mAutoPageNameValue(nullptr),
+      mAncestorFixedList(aFixedContainingBlock),
+      mRealFixedList(
+          static_cast<nsContainerFrame*>(mFrameConstructor->GetRootFrame())),
       // See PushAbsoluteContaningBlock below
       mFrameState(aHistoryState),
-      mAdditionalStateBits(nsFrameState(0)),
-      // If the fixed-pos containing block is equal to the abs-pos containing
-      // block, use the abs-pos containing block's abs-pos list for fixed-pos
-      // frames.
-      mFixedPosIsAbsPos(aFixedContainingBlock == aAbsoluteContainingBlock),
       mCreatingExtraFrames(false),
       mHasRenderedLegend(false) {
   MOZ_COUNT_CTOR(nsFrameConstructorState);
+  mFixedList = [&] {
+    if (aFixedContainingBlock == aAbsoluteContainingBlock) {
+      return &mAbsoluteList;
+    }
+    if (aAbsoluteContainingBlock == mRealFixedList.mContainingBlock) {
+      return &mRealFixedList;
+    }
+    return &mAncestorFixedList;
+  }();
 }
 
 nsFrameConstructorState::nsFrameConstructorState(
@@ -834,11 +847,11 @@ nsFrameConstructorState::~nsFrameConstructorState() {
 }
 
 void nsFrameConstructorState::ProcessFrameInsertionsForAllLists() {
-  ProcessFrameInsertions(mTopLayerFixedList, FrameChildListID::Fixed);
-  ProcessFrameInsertions(mTopLayerAbsoluteList, FrameChildListID::Absolute);
   ProcessFrameInsertions(mFloatedList, FrameChildListID::Float);
   ProcessFrameInsertions(mAbsoluteList, FrameChildListID::Absolute);
-  ProcessFrameInsertions(mFixedList, FrameChildListID::Fixed);
+  ProcessFrameInsertions(mTopLayerAbsoluteList, FrameChildListID::Absolute);
+  ProcessFrameInsertions(*mFixedList, FrameChildListID::Fixed);
+  ProcessFrameInsertions(mRealFixedList, FrameChildListID::Fixed);
 }
 
 void nsFrameConstructorState::PushAbsoluteContainingBlock(
@@ -849,26 +862,29 @@ void nsFrameConstructorState::PushAbsoluteContainingBlock(
   aSaveState.mList = &mAbsoluteList;
   aSaveState.mChildListID = FrameChildListID::Absolute;
   aSaveState.mState = this;
-  aSaveState.mSavedFixedPosIsAbsPos = mFixedPosIsAbsPos;
-
-  if (mFixedPosIsAbsPos) {
-    // Since we're going to replace mAbsoluteList, we need to save it into
-    // mFixedList now (and save the current value of mFixedList).
-    aSaveState.mSavedList = std::move(mFixedList);
-    mFixedList = std::move(mAbsoluteList);
-  } else {
-    // Otherwise, we just save mAbsoluteList.
-    aSaveState.mSavedList = std::move(mAbsoluteList);
-  }
-
+  aSaveState.mSavedList = std::move(mAbsoluteList);
+  aSaveState.mSavedFixedList = mFixedList;
   mAbsoluteList = AbsoluteFrameList(aNewAbsoluteContainingBlock);
-
-  /* See if we're wiring the fixed-pos and abs-pos lists together.  This happens
-   * if we're a transformed/filtered/etc element, or if we force a null abspos
-   * containing block (for mathml for example).
-   */
-  mFixedPosIsAbsPos =
-      !aPositionedFrame || aPositionedFrame->IsFixedPosContainingBlock();
+  mFixedList = [&] {
+    if (!aPositionedFrame || aPositionedFrame->IsFixedPosContainingBlock()) {
+      // See if we need to treat abspos and fixedpos the same. This happens if
+      // we're a transformed/filtered/etc element, or if we force a null abspos
+      // containing block (for mathml for example).
+      return &mAbsoluteList;
+    }
+    if (aPositionedFrame->StyleDisplay()->mTopLayer == StyleTopLayer::Top) {
+      // If our new CB is in the top layer, and isn't a fixed CB itself, we also
+      // escape the usual containment.
+      return &mRealFixedList;
+    }
+    if (mFixedList == &mAbsoluteList) {
+      // If we were pointing to our old absolute list, keep pointing to it.
+      return &aSaveState.mSavedList;
+    }
+    // Otherwise keep pointing to the current thing (another ancestor's
+    // absolute list, or the real fixed list, doesn't matter).
+    return mFixedList;
+  }();
 
   if (aNewAbsoluteContainingBlock) {
     aNewAbsoluteContainingBlock->MarkAsAbsoluteContainingBlock();
@@ -949,8 +965,8 @@ nsContainerFrame* nsFrameConstructorState::GetGeometricParent(
     MOZ_ASSERT(aStyleDisplay.IsAbsolutelyPositionedStyle(),
                "Top layer items should always be absolutely positioned");
     if (aStyleDisplay.mPosition == StylePositionProperty::Fixed) {
-      MOZ_ASSERT(mTopLayerFixedList.mContainingBlock, "No root frame?");
-      return mTopLayerFixedList.mContainingBlock;
+      MOZ_ASSERT(mRealFixedList.mContainingBlock, "No root frame?");
+      return mRealFixedList.mContainingBlock;
     }
     MOZ_ASSERT(aStyleDisplay.mPosition == StylePositionProperty::Absolute);
     MOZ_ASSERT(mTopLayerAbsoluteList.mContainingBlock);
@@ -963,8 +979,8 @@ nsContainerFrame* nsFrameConstructorState::GetGeometricParent(
   }
 
   if (aStyleDisplay.mPosition == StylePositionProperty::Fixed &&
-      GetFixedList().mContainingBlock) {
-    return GetFixedList().mContainingBlock;
+      mFixedList->mContainingBlock) {
+    return mFixedList->mContainingBlock;
   }
 
   return aContentParentFrame;
@@ -1049,7 +1065,7 @@ AbsoluteFrameList* nsFrameConstructorState::GetOutOfFlowFrameList(
       *aPlaceholderType = PLACEHOLDER_FOR_TOPLAYER;
       if (disp->mPosition == StylePositionProperty::Fixed) {
         *aPlaceholderType |= PLACEHOLDER_FOR_FIXEDPOS;
-        return &mTopLayerFixedList;
+        return &mRealFixedList;
       }
       *aPlaceholderType |= PLACEHOLDER_FOR_ABSPOS;
       return &mTopLayerAbsoluteList;
@@ -1060,7 +1076,7 @@ AbsoluteFrameList* nsFrameConstructorState::GetOutOfFlowFrameList(
     }
     if (disp->mPosition == StylePositionProperty::Fixed) {
       *aPlaceholderType = PLACEHOLDER_FOR_FIXEDPOS;
-      return &GetFixedList();
+      return mFixedList;
     }
   }
   return nullptr;
@@ -1075,10 +1091,11 @@ void nsFrameConstructorState::ConstructBackdropFrameFor(nsIContent* aContent,
     return;
   }
 
+  ComputedStyle* parentStyle = nsLayoutUtils::GetStyleFrame(aFrame)->Style();
   RefPtr<ComputedStyle> style =
       mPresShell->StyleSet()->ResolvePseudoElementStyle(
           *aContent->AsElement(), PseudoStyleType::backdrop, nullptr,
-          /* aParentStyle */ nullptr);
+          parentStyle);
   MOZ_ASSERT(style->StyleDisplay()->mTopLayer == StyleTopLayer::Top);
   nsContainerFrame* parentFrame =
       GetGeometricParent(*style->StyleDisplay(), nullptr);
@@ -1158,15 +1175,23 @@ void nsFrameConstructorState::AddChild(
 // function's `AutoTArray`s into its callers' stack frames, so disable inlining.
 MOZ_NEVER_INLINE void nsFrameConstructorState::ProcessFrameInsertions(
     AbsoluteFrameList& aFrameList, FrameChildListID aChildListID) {
-#define NS_NONXUL_LIST_TEST                                                    \
-  (&aFrameList == &mFloatedList && aChildListID == FrameChildListID::Float) || \
-      ((&aFrameList == &mAbsoluteList ||                                       \
-        &aFrameList == &mTopLayerAbsoluteList) &&                              \
-       aChildListID == FrameChildListID::Absolute) ||                          \
-      ((&aFrameList == &mFixedList || &aFrameList == &mTopLayerFixedList) &&   \
-       aChildListID == FrameChildListID::Fixed)
-  MOZ_ASSERT(NS_NONXUL_LIST_TEST,
-             "Unexpected aFrameList/aChildListID combination");
+  MOZ_ASSERT(&aFrameList == &mFloatedList || &aFrameList == &mAbsoluteList ||
+             &aFrameList == &mTopLayerAbsoluteList ||
+             &aFrameList == &mAncestorFixedList || &aFrameList == mFixedList ||
+             &aFrameList == &mRealFixedList);
+  MOZ_ASSERT_IF(&aFrameList == &mFloatedList,
+                aChildListID == FrameChildListID::Float);
+  MOZ_ASSERT_IF(&aFrameList == &mAbsoluteList || &aFrameList == mFixedList,
+                aChildListID == FrameChildListID::Absolute ||
+                    aChildListID == FrameChildListID::Fixed);
+  MOZ_ASSERT_IF(&aFrameList == &mTopLayerAbsoluteList,
+                aChildListID == FrameChildListID::Absolute);
+  MOZ_ASSERT_IF(&aFrameList == mFixedList && &aFrameList != &mAbsoluteList,
+                aChildListID == FrameChildListID::Fixed);
+  MOZ_ASSERT_IF(&aFrameList == &mAncestorFixedList,
+                aChildListID == FrameChildListID::Fixed);
+  MOZ_ASSERT_IF(&aFrameList == &mRealFixedList,
+                aChildListID == FrameChildListID::Fixed);
 
   if (aFrameList.IsEmpty()) {
     return;
@@ -1291,15 +1316,8 @@ nsFrameConstructorSaveState::~nsFrameConstructorSaveState() {
     mState->ProcessFrameInsertions(*mList, mChildListID);
 
     if (mList == &mState->mAbsoluteList) {
-      mState->mFixedPosIsAbsPos = mSavedFixedPosIsAbsPos;
-      // mAbsoluteList was moved to mFixedList, so move mFixedList back
-      // and repair the old mFixedList now.
-      if (mSavedFixedPosIsAbsPos) {
-        mState->mAbsoluteList = std::move(mState->mFixedList);
-        mState->mFixedList = std::move(mSavedList);
-      } else {
-        mState->mAbsoluteList = std::move(mSavedList);
-      }
+      mState->mAbsoluteList = std::move(mSavedList);
+      mState->mFixedList = mSavedFixedList;
     } else {
       mState->mFloatedList = std::move(mSavedList);
     }
@@ -1350,16 +1368,6 @@ static void MoveChildrenTo(nsIFrame* aOldParent, nsContainerFrame* aNewParent,
   }
 }
 
-static bool MaybeApplyPageName(nsFrameConstructorState& aState,
-                               const StylePageName& aPageName) {
-  if (aPageName.IsPageName()) {
-    aState.mAutoPageNameValue = aPageName.AsPageName().AsAtom();
-    return true;
-  }
-  MOZ_ASSERT(aPageName.IsAuto(), "Impossible page name");
-  return false;
-}
-
 static void EnsureAutoPageName(nsFrameConstructorState& aState,
                                const nsContainerFrame* const aFrame) {
   // Check if we need to figure out our used page name.
@@ -1372,8 +1380,8 @@ static void EnsureAutoPageName(nsFrameConstructorState& aState,
 
   for (const nsContainerFrame* frame = aFrame; frame;
        frame = frame->GetParent()) {
-    const StylePageName& pageName = frame->StylePage()->mPage;
-    if (MaybeApplyPageName(aState, pageName)) {
+    if (const nsAtom* maybePageName = frame->GetStylePageName()) {
+      aState.mAutoPageNameValue = maybePageName;
       return;
     }
   }
@@ -1402,7 +1410,9 @@ nsCSSFrameConstructor::AutoFrameConstructionPageName::
 
   MOZ_ASSERT(mNameToRestore,
              "Page name should have been found by EnsureAutoPageName");
-  MaybeApplyPageName(aState, aFrame->StylePage()->mPage);
+  if (const nsAtom* maybePageName = aFrame->GetStylePageName()) {
+    aState.mAutoPageNameValue = maybePageName;
+  }
   aFrame->SetAutoPageValue(aState.mAutoPageNameValue);
 }
 
@@ -2607,8 +2617,8 @@ nsIFrame* nsCSSFrameConstructor::ConstructDocElementFrame(
 }
 
 nsIFrame* nsCSSFrameConstructor::ConstructRootFrame() {
-  AUTO_PROFILER_LABEL("nsCSSFrameConstructor::ConstructRootFrame",
-                      LAYOUT_FrameConstruction);
+  AUTO_PROFILER_LABEL_HOT("nsCSSFrameConstructor::ConstructRootFrame",
+                          LAYOUT_FrameConstruction);
   AUTO_LAYOUT_PHASE_ENTRY_POINT(mPresShell->GetPresContext(), FrameC);
 
   ServoStyleSet* styleSet = mPresShell->StyleSet();
@@ -2911,12 +2921,11 @@ nsContainerFrame* nsCSSFrameConstructor::ConstructPageFrame(
   nsContainerFrame* pageContentFrame = NS_NewPageContentFrame(
       aPresShell, pageContentPseudoStyle, pageName.forget());
 
-  // Initialize the page content frame and force it to have a view. Also make it
-  // the containing block for fixed elements which are repeated on every page.
-  nsIFrame* prevPageContentFrame = nullptr;
+  nsPageContentFrame* prevPageContentFrame = nullptr;
   if (aPrevPageFrame) {
-    prevPageContentFrame = aPrevPageFrame->PrincipalChildList().FirstChild();
-    NS_ASSERTION(prevPageContentFrame, "missing page content frame");
+    MOZ_ASSERT(aPrevPageFrame->IsPageFrame());
+    prevPageContentFrame =
+        static_cast<nsPageFrame*>(aPrevPageFrame)->PageContentFrame();
   }
   pageContentFrame->Init(nullptr, pageFrame, prevPageContentFrame);
   if (!prevPageContentFrame) {
@@ -3249,18 +3258,17 @@ nsIFrame* nsCSSFrameConstructor::ConstructFieldSetFrame(
   return fieldsetFrame;
 }
 
-nsIFrame* nsCSSFrameConstructor::ConstructDetails(
-    nsFrameConstructorState& aState, FrameConstructionItem& aItem,
-    nsContainerFrame* aParentFrame, const nsStyleDisplay* aStyleDisplay,
-    nsFrameList& aFrameList) {
-  if (!aStyleDisplay->IsScrollableOverflow()) {
-    return ConstructNonScrollableBlock(aState, aItem, aParentFrame,
-                                       aStyleDisplay, aFrameList);
+const nsCSSFrameConstructor::FrameConstructionData*
+nsCSSFrameConstructor::FindDetailsData(const Element& aElement,
+                                       ComputedStyle& aStyle) {
+  if (!StaticPrefs::layout_details_force_block_layout()) {
+    return nullptr;
   }
-
-  // Build a scroll frame if necessary.
-  return ConstructScrollableBlock(aState, aItem, aParentFrame, aStyleDisplay,
-                                  aFrameList);
+  static constexpr FrameConstructionData sBlockData[2] = {
+      {&nsCSSFrameConstructor::ConstructNonScrollableBlock},
+      {&nsCSSFrameConstructor::ConstructScrollableBlock},
+  };
+  return &sBlockData[aStyle.StyleDisplay()->IsScrollableOverflow()];
 }
 
 nsIFrame* nsCSSFrameConstructor::ConstructBlockRubyFrame(
@@ -3506,7 +3514,8 @@ nsCSSFrameConstructor::FindHTMLData(const Element& aElement,
       SIMPLE_TAG_CREATE(audio, NS_NewHTMLVideoFrame),
       SIMPLE_TAG_CREATE(progress, NS_NewProgressFrame),
       SIMPLE_TAG_CREATE(meter, NS_NewMeterFrame),
-      COMPLEX_TAG_CREATE(details, &nsCSSFrameConstructor::ConstructDetails)};
+      SIMPLE_TAG_CHAIN(details, nsCSSFrameConstructor::FindDetailsData),
+  };
 
   return FindDataByTag(aElement, aStyle, sHTMLData, ArrayLength(sHTMLData));
 }
@@ -4853,13 +4862,6 @@ nsIFrame* nsCSSFrameConstructor::ConstructMarker(
 #define SIMPLE_SVG_CREATE(_tag, _func) \
   { nsGkAtoms::_tag, SIMPLE_SVG_FCDATA(_func) }
 
-static bool IsFilterPrimitiveChildTag(const nsAtom* aTag) {
-  return aTag == nsGkAtoms::feDistantLight || aTag == nsGkAtoms::fePointLight ||
-         aTag == nsGkAtoms::feSpotLight || aTag == nsGkAtoms::feFuncR ||
-         aTag == nsGkAtoms::feFuncG || aTag == nsGkAtoms::feFuncB ||
-         aTag == nsGkAtoms::feFuncA || aTag == nsGkAtoms::feMergeNode;
-}
-
 /* static */
 const nsCSSFrameConstructor::FrameConstructionData*
 nsCSSFrameConstructor::FindSVGData(const Element& aElement,
@@ -4932,8 +4934,7 @@ nsCSSFrameConstructor::FindSVGData(const Element& aElement,
     return &sMarkerSVGData;
   }
 
-  nsCOMPtr<SVGTests> tests = do_QueryInterface(const_cast<Element*>(&aElement));
-  if (tests && !tests->PassesConditionalProcessingTests()) {
+  if (!aElement.PassesConditionalProcessingTests()) {
     // Elements with failing conditional processing attributes never get
     // rendered.  Note that this is not where we select which frame in a
     // <switch> to render!  That happens in SVGSwitchFrame::PaintSVG.
@@ -4964,10 +4965,8 @@ nsCSSFrameConstructor::FindSVGData(const Element& aElement,
   // primitives.  If aParentFrame is null, we know that the frame that will
   // be created will be an nsInlineFrame, so it can never be a filter.
   bool parentIsFilter = aParentFrame && aParentFrame->IsSVGFilterFrame();
-  nsCOMPtr<SVGFE> filterPrimitive =
-      do_QueryInterface(const_cast<Element*>(&aElement));
-  if ((parentIsFilter && !filterPrimitive) ||
-      (!parentIsFilter && filterPrimitive)) {
+  if ((parentIsFilter && !aElement.IsSVGFilterPrimitiveElement()) ||
+      (!parentIsFilter && aElement.IsSVGFilterPrimitiveElement())) {
     return &sSuppressData;
   }
 
@@ -4977,8 +4976,10 @@ nsCSSFrameConstructor::FindSVGData(const Element& aElement,
   // primitive.
   bool parentIsFEContainerFrame =
       aParentFrame && aParentFrame->IsSVGFEContainerFrame();
-  if ((parentIsFEContainerFrame && !IsFilterPrimitiveChildTag(tag)) ||
-      (!parentIsFEContainerFrame && IsFilterPrimitiveChildTag(tag))) {
+  if ((parentIsFEContainerFrame &&
+       !aElement.IsSVGFilterPrimitiveChildElement()) ||
+      (!parentIsFEContainerFrame &&
+       aElement.IsSVGFilterPrimitiveChildElement())) {
     return &sSuppressData;
   }
 
@@ -5596,8 +5597,10 @@ nsContainerFrame* nsCSSFrameConstructor::GetAbsoluteContainingBlock(
     // the correct containing block (the scrolledframe) in that case.
     // If we're looking for a fixed-pos containing block and the frame is
     // not transformed, skip it.
-    if (!frame->IsAbsPosContainingBlock() ||
-        (aType == FIXED_POS && !frame->IsFixedPosContainingBlock())) {
+    if (!frame->IsAbsPosContainingBlock()) {
+      continue;
+    }
+    if (aType == FIXED_POS && !frame->IsFixedPosContainingBlock()) {
       continue;
     }
     nsIFrame* absPosCBCandidate = frame;
@@ -6491,8 +6494,8 @@ void nsCSSFrameConstructor::ContentAppended(nsIContent* aFirstNewContent,
   MOZ_ASSERT(aInsertionKind == InsertionKind::Sync ||
              !RestyleManager()->IsInStyleRefresh());
 
-  AUTO_PROFILER_LABEL("nsCSSFrameConstructor::ContentAppended",
-                      LAYOUT_FrameConstruction);
+  AUTO_PROFILER_LABEL_HOT("nsCSSFrameConstructor::ContentAppended",
+                          LAYOUT_FrameConstruction);
   AUTO_LAYOUT_PHASE_ENTRY_POINT(mPresShell->GetPresContext(), FrameC);
 
 #ifdef DEBUG
@@ -6803,8 +6806,8 @@ void nsCSSFrameConstructor::ContentRangeInserted(nsIContent* aStartChild,
   MOZ_ASSERT(aInsertionKind == InsertionKind::Sync ||
              !RestyleManager()->IsInStyleRefresh());
 
-  AUTO_PROFILER_LABEL("nsCSSFrameConstructor::ContentRangeInserted",
-                      LAYOUT_FrameConstruction);
+  AUTO_PROFILER_LABEL_HOT("nsCSSFrameConstructor::ContentRangeInserted",
+                          LAYOUT_FrameConstruction);
   AUTO_LAYOUT_PHASE_ENTRY_POINT(mPresShell->GetPresContext(), FrameC);
 
   MOZ_ASSERT(aStartChild, "must always pass a child");
@@ -7301,8 +7304,8 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
   MOZ_ASSERT(aChild);
   MOZ_ASSERT(!aChild->IsRootOfNativeAnonymousSubtree() || !aOldNextSibling,
              "Anonymous roots don't have siblings");
-  AUTO_PROFILER_LABEL("nsCSSFrameConstructor::ContentRemoved",
-                      LAYOUT_FrameConstruction);
+  AUTO_PROFILER_LABEL_HOT("nsCSSFrameConstructor::ContentRemoved",
+                          LAYOUT_FrameConstruction);
   AUTO_LAYOUT_PHASE_ENTRY_POINT(mPresShell->GetPresContext(), FrameC);
   nsPresContext* presContext = mPresShell->GetPresContext();
   MOZ_ASSERT(presContext, "Our presShell should have a valid presContext");
@@ -7679,8 +7682,8 @@ bool nsCSSFrameConstructor::EnsureFrameForTextNodeIsCreatedAfterFlush(
 
 void nsCSSFrameConstructor::CharacterDataChanged(
     nsIContent* aContent, const CharacterDataChangeInfo& aInfo) {
-  AUTO_PROFILER_LABEL("nsCSSFrameConstructor::CharacterDataChanged",
-                      LAYOUT_FrameConstruction);
+  AUTO_PROFILER_LABEL_HOT("nsCSSFrameConstructor::CharacterDataChanged",
+                          LAYOUT_FrameConstruction);
   AUTO_LAYOUT_PHASE_ENTRY_POINT(mPresShell->GetPresContext(), FrameC);
 
   if ((aContent->HasFlag(NS_CREATE_FRAME_IF_NON_WHITESPACE) &&

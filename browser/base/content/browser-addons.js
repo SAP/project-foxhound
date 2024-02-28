@@ -14,6 +14,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AMBrowserExtensionsImport: "resource://gre/modules/AddonManager.sys.mjs",
+  AbuseReporter: "resource://gre/modules/AbuseReporter.sys.mjs",
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.sys.mjs",
   OriginControls: "resource://gre/modules/ExtensionPermissions.sys.mjs",
@@ -288,31 +289,6 @@ function buildNotificationAction(msg, callback) {
 }
 
 var gXPInstallObserver = {
-  _findChildShell(aDocShell, aSoughtShell) {
-    if (aDocShell == aSoughtShell) {
-      return aDocShell;
-    }
-
-    var node = aDocShell.QueryInterface(Ci.nsIDocShellTreeItem);
-    for (var i = 0; i < node.childCount; ++i) {
-      var docShell = node.getChildAt(i);
-      docShell = this._findChildShell(docShell, aSoughtShell);
-      if (docShell == aSoughtShell) {
-        return docShell;
-      }
-    }
-    return null;
-  },
-
-  _getBrowser(aDocShell) {
-    for (let browser of gBrowser.browsers) {
-      if (this._findChildShell(browser.docShell, aDocShell)) {
-        return browser;
-      }
-    }
-    return null;
-  },
-
   pendingInstalls: new WeakMap(),
 
   showInstallConfirmation(browser, installInfo, height = undefined) {
@@ -781,12 +757,7 @@ var gXPInstallObserver = {
           // from product about how to approach this for extensions.
           declineActions.push(
             buildNotificationAction(neverAllowAndReportMsg, () => {
-              AMTelemetry.recordEvent({
-                method: "reportSuspiciousSite",
-                object: "suspiciousSite",
-                value: displayURI?.displayHost ?? "(unknown)",
-                extra: {},
-              });
+              AMTelemetry.recordSuspiciousSiteEvent({ displayURI });
               neverAllowCallback();
             })
           );
@@ -1129,6 +1100,18 @@ var BrowserAddonUI = {
       return;
     }
 
+    // Do not open an additional about:addons tab if the abuse report should be
+    // opened in its own tab.
+    if (lazy.AbuseReporter.amoFormEnabled) {
+      const amoUrl = lazy.AbuseReporter.getAMOFormURL({ addonId });
+      window.openTrustedLinkIn(amoUrl, "tab", {
+        // Make sure the newly open tab is going to be focused, independently
+        // from general user prefs.
+        forceForeground: true,
+      });
+      return;
+    }
+
     const win = await BrowserOpenAddonsMgr("addons://list/extension");
 
     win.openAbuseReport({ addonId, reportEntryPoint });
@@ -1376,8 +1359,8 @@ var gUnifiedExtensions = {
     if (shouldShowQuarantinedNotification) {
       if (!this._messageBarQuarantinedDomain) {
         this._messageBarQuarantinedDomain = this._makeMessageBar({
-          titleFluentId: "unified-extensions-mb-quarantined-domain-title",
-          messageFluentId: "unified-extensions-mb-quarantined-domain-message-2",
+          messageBarFluentId:
+            "unified-extensions-mb-quarantined-domain-message-3",
           supportPage: "quarantined-domains",
           dismissable: false,
         });
@@ -1895,26 +1878,17 @@ var gUnifiedExtensions = {
   },
 
   _makeMessageBar({
-    messageFluentId,
-    titleFluentId = null,
+    messageBarFluentId,
     supportPage = null,
     type = "warning",
   }) {
-    const messageBar = document.createElement("message-bar");
+    window.ensureCustomElements("moz-message-bar");
+
+    const messageBar = document.createElement("moz-message-bar");
     messageBar.setAttribute("type", type);
     messageBar.classList.add("unified-extensions-message-bar");
-
-    if (titleFluentId) {
-      const titleEl = document.createElement("strong");
-      titleEl.setAttribute("id", titleFluentId);
-      document.l10n.setAttributes(titleEl, titleFluentId);
-      messageBar.append(titleEl);
-    }
-
-    const messageEl = document.createElement("span");
-    messageEl.setAttribute("id", messageFluentId);
-    document.l10n.setAttributes(messageEl, messageFluentId);
-    messageBar.append(messageEl);
+    document.l10n.setAttributes(messageBar, messageBarFluentId);
+    messageBar.setAttribute("data-l10n-attrs", "heading, message");
 
     if (supportPage) {
       window.ensureCustomElements("moz-support-link");
@@ -1923,12 +1897,12 @@ var gUnifiedExtensions = {
         is: "moz-support-link",
       });
       supportUrl.setAttribute("support-page", supportPage);
-      if (titleFluentId) {
-        supportUrl.setAttribute("aria-labelledby", titleFluentId);
-        supportUrl.setAttribute("aria-describedby", messageFluentId);
-      } else {
-        supportUrl.setAttribute("aria-labelledby", messageFluentId);
-      }
+      document.l10n.setAttributes(
+        supportUrl,
+        "unified-extensions-mb-quarantined-domain-learn-more"
+      );
+      supportUrl.setAttribute("data-l10n-attrs", "aria-label");
+      supportUrl.setAttribute("slot", "support-link");
 
       messageBar.append(supportUrl);
     }

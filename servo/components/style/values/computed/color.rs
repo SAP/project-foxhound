@@ -19,9 +19,6 @@ pub use crate::values::specified::color::{ColorScheme, ForcedColorAdjust, PrintC
 /// The computed value of the `color` property.
 pub type ColorPropertyValue = AbsoluteColor;
 
-/// The computed value of `-moz-font-smoothing-background-color`.
-pub type MozFontSmoothingBackgroundColor = AbsoluteColor;
-
 /// A computed value for `<color>`.
 pub type Color = GenericColor<Percentage>;
 
@@ -43,7 +40,7 @@ impl ToCss for Color {
 
 impl Color {
     /// A fully transparent color.
-    pub const TRANSPARENT: Self = Self::Absolute(AbsoluteColor::TRANSPARENT);
+    pub const TRANSPARENT_BLACK: Self = Self::Absolute(AbsoluteColor::TRANSPARENT_BLACK);
 
     /// An opaque black color.
     pub const BLACK: Self = Self::Absolute(AbsoluteColor::BLACK);
@@ -87,7 +84,7 @@ impl Color {
 
 impl ToAnimatedZero for AbsoluteColor {
     fn to_animated_zero(&self) -> Result<Self, ()> {
-        Ok(Self::TRANSPARENT)
+        Ok(Self::TRANSPARENT_BLACK)
     }
 }
 

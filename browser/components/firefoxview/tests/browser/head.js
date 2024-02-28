@@ -40,13 +40,10 @@ SessionStoreTestUtils.init(this, window);
 FirefoxViewTestUtilsInit(this, window);
 
 ChromeUtils.defineESModuleGetters(this, {
+  AboutWelcomeParent: "resource:///actors/AboutWelcomeParent.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
   TabStateFlusher: "resource:///modules/sessionstore/TabStateFlusher.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AboutWelcomeParent: "resource:///actors/AboutWelcomeParent.jsm",
 });
 
 const MOBILE_PROMO_DISMISSED_PREF =
@@ -396,7 +393,7 @@ const launchFeatureTourIn = win => {
  * @see FeatureCalloutMessages.sys.mjs for valid values of "screen"
  *
  * @param {number} screen The full ID of the feature callout screen
- * @return {string} JSON string used to set
+ * @returns {string} JSON string used to set
  * `browser.firefox-view.feature-tour`
  */
 const getPrefValueByScreen = screen => {
@@ -408,8 +405,9 @@ const getPrefValueByScreen = screen => {
 
 /**
  * Wait for a feature callout screen of given parameters to be shown
+ *
  * @param {Document} doc the document where the callout appears.
- * @param {String} screenPostfix The full ID of the feature callout screen.
+ * @param {string} screenPostfix The full ID of the feature callout screen.
  */
 const waitForCalloutScreen = async (doc, screenPostfix) => {
   await BrowserTestUtils.waitForCondition(() =>
@@ -460,7 +458,8 @@ const closeCallout = async doc => {
 /**
  * Get a Feature Callout message by id.
  *
- * @param {string} Message id
+ * @param {string} id
+ *   The message id.
  */
 const getCalloutMessageById = id => {
   return {
@@ -514,7 +513,8 @@ class TelemetrySpy {
   }
   /**
    * Assert that AWSendEventTelemetry sent the expected telemetry object.
-   * @param {Object} expectedData
+   *
+   * @param {object} expectedData
    */
   assertCalledWith(expectedData) {
     let match = this.spy.calledWith("AWPage:TELEMETRY_EVENT", expectedData);
@@ -542,7 +542,7 @@ class TelemetrySpy {
  * closed tabs list can have data.
  *
  * @param {string} url
- * @return {Promise} Promise that resolves when the session store
+ * @returns {Promise} Promise that resolves when the session store
  * has been updated after closing the tab.
  */
 async function open_then_close(url, win = window) {
@@ -597,12 +597,42 @@ function navigateToCategory(document, category) {
   navButton.buttonEl.click();
 }
 
+async function navigateToCategoryAndWait(document, category) {
+  info(`navigateToCategoryAndWait, for ${category}`);
+  const navigation = document.querySelector("fxview-category-navigation");
+  const win = document.ownerGlobal;
+  SimpleTest.promiseFocus(win);
+  let navButton = Array.from(navigation.categoryButtons).find(
+    categoryButton => {
+      return categoryButton.name === category;
+    }
+  );
+  const namedDeck = document.querySelector("named-deck");
+
+  await BrowserTestUtils.waitForCondition(
+    () => navButton.getBoundingClientRect().height,
+    `Waiting for ${category} button to be clickable`
+  );
+
+  EventUtils.synthesizeMouseAtCenter(navButton, {}, win);
+
+  await BrowserTestUtils.waitForCondition(() => {
+    let selectedView = Array.from(namedDeck.children).find(
+      child => child.slot == "selected"
+    );
+    return (
+      namedDeck.selectedViewName == category &&
+      selectedView?.getBoundingClientRect().height
+    );
+  }, `Waiting for ${category} to be visible`);
+}
+
 /**
  * Switch to the Firefox View tab.
  *
  * @param {Window} [win]
  *   The window to use, if specified. Defaults to the global window instance.
- * @return {Promise<MozTabbrowserTab>}
+ * @returns {Promise<MozTabbrowserTab>}
  *   The tab switched to.
  */
 async function switchToFxViewTab(win = window) {
@@ -634,7 +664,8 @@ async function clickFirefoxViewButton(win) {
 /**
  * Wait for and assert telemetry events.
  *
- * @param {Array} Nested array of event details
+ * @param {Array} eventDetails
+ *   Nested array of event details
  */
 async function telemetryEvent(eventDetails) {
   await TestUtils.waitForCondition(

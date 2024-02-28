@@ -47,7 +47,6 @@
 #include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/SVGElementFactory.h"
-#include "nsLanguageAtomService.h"
 #include "nsMathMLAtoms.h"
 #include "nsMathMLOperators.h"
 #include "Navigator.h"
@@ -58,7 +57,6 @@
 #include "ActiveLayerTracker.h"
 #include "AnimationCommon.h"
 #include "LayerAnimationInfo.h"
-#include "mozilla/TimelineConsumers.h"
 
 #include "AudioChannelService.h"
 #include "mozilla/dom/PromiseDebugging.h"
@@ -104,13 +102,6 @@
 #include "mozilla/dom/AbstractRange.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
-#ifdef MOZ_WIDGET_ANDROID
-#  include "mozilla/dom/U2FTokenManager.h"
-#endif
-#include "mozilla/dom/WebAuthnController.h"
-#ifdef XP_WIN
-#  include "mozilla/dom/WinWebAuthnManager.h"
-#endif
 #include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/dom/RemoteWorkerService.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
@@ -261,16 +252,6 @@ nsresult nsLayoutStatics::Initialize() {
   // This must be initialized on the main-thread.
   mozilla::RemoteLazyInputStreamStorage::Initialize();
 
-#ifdef MOZ_WIDGET_ANDROID
-  mozilla::dom::U2FTokenManager::Initialize();
-#endif
-
-  mozilla::dom::WebAuthnController::Initialize();
-
-#ifdef XP_WIN
-  mozilla::dom::WinWebAuthnManager::Initialize();
-#endif
-
   if (XRE_IsParentProcess()) {
     // On content process we initialize these components when PContentChild is
     // fully initialized.
@@ -336,7 +317,6 @@ void nsLayoutStatics::Shutdown() {
   HTMLDNSPrefetch::Shutdown();
   nsCSSRendering::Shutdown();
   StaticPresData::Shutdown();
-  nsLanguageAtomService::Shutdown();
 #ifdef DEBUG
   nsIFrame::DisplayReflowShutdown();
 #endif

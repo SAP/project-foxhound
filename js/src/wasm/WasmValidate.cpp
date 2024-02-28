@@ -633,6 +633,16 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
             CHECK(iter.readArrayNewElem(&unusedUint1, &unusedUint2, &nothing,
                                         &nothing));
           }
+          case uint32_t(GcOp::ArrayInitData): {
+            uint32_t unusedUint1, unusedUint2;
+            CHECK(iter.readArrayInitData(&unusedUint1, &unusedUint2, &nothing,
+                                         &nothing, &nothing, &nothing));
+          }
+          case uint32_t(GcOp::ArrayInitElem): {
+            uint32_t unusedUint1, unusedUint2;
+            CHECK(iter.readArrayInitElem(&unusedUint1, &unusedUint2, &nothing,
+                                         &nothing, &nothing, &nothing));
+          }
           case uint32_t(GcOp::ArrayGet): {
             uint32_t unusedUint1;
             CHECK(iter.readArrayGet(&unusedUint1, FieldWideningOp::None,
@@ -661,6 +671,11 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
             bool unusedBool;
             CHECK(iter.readArrayCopy(&unusedInt, &unusedBool, &nothing,
                                      &nothing, &nothing, &nothing, &nothing));
+          }
+          case uint32_t(GcOp::ArrayFill): {
+            uint32_t unusedTypeIndex;
+            CHECK(iter.readArrayFill(&unusedTypeIndex, &nothing, &nothing,
+                                     &nothing, &nothing));
           }
           case uint32_t(GcOp::RefI31): {
             CHECK(iter.readConversion(ValType::I32,
@@ -1524,12 +1539,8 @@ bool wasm::ValidateFunctionBody(const ModuleEnvironment& env,
     return false;
   }
 
-  if (!DecodeFunctionBodyExprs(env, funcIndex, locals, bodyBegin + bodySize,
-                               &d)) {
-    return false;
-  }
-
-  return true;
+  return DecodeFunctionBodyExprs(env, funcIndex, locals, bodyBegin + bodySize,
+                                 &d);
 }
 
 // Section macros.
@@ -2025,8 +2036,7 @@ static bool DecodeTableTypeAndLimits(Decoder& d, ModuleEnvironment* env) {
   Maybe<InitExpr> initExpr;
   if (initExprPresent) {
     InitExpr initializer;
-    if (!InitExpr::decodeAndValidate(d, env, tableElemType,
-                                     env->globals.length(), &initializer)) {
+    if (!InitExpr::decodeAndValidate(d, env, tableElemType, &initializer)) {
       return false;
     }
     initExpr = Some(std::move(initializer));
@@ -2244,6 +2254,7 @@ static bool DecodeImportSection(Decoder& d, ModuleEnvironment* env) {
   }
 
   env->numFuncImports = env->funcs.length();
+  env->numGlobalImports = env->globals.length();
   return true;
 }
 
@@ -2365,7 +2376,7 @@ static bool DecodeGlobalSection(Decoder& d, ModuleEnvironment* env) {
     }
 
     InitExpr initializer;
-    if (!InitExpr::decodeAndValidate(d, env, type, i, &initializer)) {
+    if (!InitExpr::decodeAndValidate(d, env, type, &initializer)) {
       return false;
     }
 
@@ -2643,8 +2654,7 @@ static bool DecodeElemSegment(Decoder& d, ModuleEnvironment* env) {
     seg.tableIndex = tableIndex;
 
     InitExpr offset;
-    if (!InitExpr::decodeAndValidate(d, env, ValType::I32,
-                                     env->globals.length(), &offset)) {
+    if (!InitExpr::decodeAndValidate(d, env, ValType::I32, &offset)) {
       return false;
     }
     seg.offsetIfActive.emplace(std::move(offset));
@@ -2739,8 +2749,7 @@ static bool DecodeElemSegment(Decoder& d, ModuleEnvironment* env) {
       seg.elemExpressions.count = numElems;
       for (uint32_t i = 0; i < numElems; i++) {
         Maybe<LitVal> unusedLiteral;
-        if (!DecodeConstantExpression(d, env, elemType, env->globals.length(),
-                                      &unusedLiteral)) {
+        if (!DecodeConstantExpression(d, env, elemType, &unusedLiteral)) {
           return false;
         }
       }
@@ -3005,8 +3014,7 @@ static bool DecodeDataSection(Decoder& d, ModuleEnvironment* env) {
 
       InitExpr segOffset;
       ValType exprType = ToValType(env->memories[seg.memoryIndex].indexType());
-      if (!InitExpr::decodeAndValidate(d, env, exprType, env->globals.length(),
-                                       &segOffset)) {
+      if (!InitExpr::decodeAndValidate(d, env, exprType, &segOffset)) {
         return false;
       }
       seg.offsetIfActive.emplace(std::move(segOffset));

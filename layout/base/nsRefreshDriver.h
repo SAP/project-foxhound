@@ -419,6 +419,11 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
     mNeedToUpdateIntersectionObservations = true;
   }
 
+  void EnsureResizeObserverUpdateHappens() {
+    EnsureTimerStarted();
+    mNeedToUpdateResizeObservers = true;
+  }
+
   void ScheduleMediaQueryListenerUpdate() {
     EnsureTimerStarted();
     mMightNeedMediaQueryListenerUpdate = true;
@@ -446,6 +451,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
     eHasScrollEvents = 1 << 5,
     eHasVisualViewportScrollEvents = 1 << 6,
     eHasPendingMediaQueryListeners = 1 << 7,
+    eNeedsToNotifyResizeObservers = 1 << 8,
     eRootNeedsMoreTicksForUserInput = 1 << 9,
   };
 
@@ -493,6 +499,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   void RunFrameRequestCallbacks(mozilla::TimeStamp aNowTime);
   void UpdateIntersectionObservations(mozilla::TimeStamp aNowTime);
   void UpdateRelevancyOfContentVisibilityAutoFrames();
+  MOZ_CAN_RUN_SCRIPT void NotifyResizeObservers();
   void MaybeIncreaseMeasuredTicksSinceLoading();
   void EvaluateMediaQueriesAndReportChanges();
 
@@ -500,6 +507,16 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
     No,
     Yes,
   };
+
+  // Helper for Tick, to call WillRefresh(aNowTime) on each entry in
+  // mObservers[aIdx] and then potentially do some additional post-notification
+  // work that's associated with the FlushType corresponding to aIdx.
+  //
+  // Returns true on success, or false if one of our calls has destroyed our
+  // pres context (in which case our callsite Tick() should immediately bail).
+  MOZ_CAN_RUN_SCRIPT
+  bool TickObserverArray(uint32_t aIdx, mozilla::TimeStamp aNowTime);
+
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void Tick(mozilla::VsyncId aId, mozilla::TimeStamp aNowTime,
             IsExtraTick aIsExtraTick = IsExtraTick::No);
@@ -627,6 +644,10 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   // True if we need to flush in order to update intersection observations in
   // all our documents.
   bool mNeedToUpdateIntersectionObservations : 1;
+
+  // True if we need to flush in order to update intersection observations in
+  // all our documents.
+  bool mNeedToUpdateResizeObservers : 1;
 
   // True if we might need to report media query changes in any of our
   // documents.

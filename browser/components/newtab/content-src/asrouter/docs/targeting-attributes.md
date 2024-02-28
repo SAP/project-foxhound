@@ -4,7 +4,7 @@ When you create ASRouter messages such as snippets, contextual feature recommend
 
 Targeting information must be captured in [an expression](./targeting-guide.md) that has access to the following attributes. You may combine and compare any of these attributes as needed.
 
-Please note that some targeting attributes require stricter controls on the telemetry than can be colleted, so when in doubt, ask for review.
+Please note that some targeting attributes require stricter controls on the telemetry than can be collected, so when in doubt, ask for review.
 
 ## Available attributes
 
@@ -53,6 +53,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [pinnedSites](#pinnedsites)
 * [platformName](#platformname)
 * [previousSessionEnd](#previoussessionend)
+* [primaryResolution](#primaryresolution)
 * [profileAgeCreated](#profileagecreated)
 * [profileAgeReset](#profileagereset)
 * [profileRestartCount](#profilerestartcount)
@@ -360,6 +361,19 @@ Timestamp of the previously closed session.
 declare const previousSessionEnd: UnixEpochNumber;
 // UnixEpochNumber is UNIX Epoch timestamp, e.g. 1522843725924
 type UnixEpochNumber = number;
+```
+
+### `primaryResolution`
+
+An object containing the available width and available height of the primary monitor in pixel values. The values take into account the existence of docks and task bars.
+
+#### Definition
+
+```ts
+interface primaryResolution {
+  width: number;
+  height: number;
+}
 ```
 
 ### `profileAgeCreated`

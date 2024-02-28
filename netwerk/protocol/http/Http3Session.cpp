@@ -264,17 +264,13 @@ void Http3Session::Shutdown() {
           mNetAddr->GetNetAddr(&addr);
           gHttpHandler->ConnMgr()->SetRetryDifferentIPFamilyForHttp3(
               mConnInfo, addr.raw.family);
-          nsHttpTransaction* trans =
-              stream->Transaction()->QueryHttpTransaction();
-          if (trans) {
-            // This is a bit hacky. We redispatch the transaction here to avoid
-            // touching the complicated retry logic in nsHttpTransaction.
-            trans->RemoveConnection();
-            Unused << gHttpHandler->InitiateTransaction(trans,
-                                                        trans->Priority());
-          } else {
-            stream->Close(NS_ERROR_NET_RESET);
-          }
+          // We want the transaction to be restarted with the same connection
+          // info.
+          stream->Transaction()->DoNotRemoveAltSvc();
+          // We already set the preference in SetRetryDifferentIPFamilyForHttp3,
+          // so we want to keep it for the next retry.
+          stream->Transaction()->DoNotResetIPFamilyPreference();
+          stream->Close(NS_ERROR_NET_RESET);
           // Since Http3Session::Shutdown can be called multiple times, we set
           // mDontExclude for not putting this domain into the excluded list.
           mDontExclude = true;
@@ -940,7 +936,7 @@ nsresult Http3Session::ProcessOutputAndEvents(nsIUDPSocket* socket) {
 
   mTimerShouldTrigger = TimeStamp();
 
-  nsresult rv = ProcessOutput(socket);
+  nsresult rv = SendData(socket);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1601,7 +1597,7 @@ nsresult Http3Session::RecvData(nsIUDPSocket* socket) {
     return rv;
   }
 
-  rv = ProcessOutput(socket);
+  rv = SendData(socket);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -2502,7 +2498,8 @@ uint64_t Http3Session::MaxDatagramSize(uint64_t aSessionId) {
   return size;
 }
 
-void Http3Session::SetSendOrder(Http3StreamBase* aStream, int64_t aSendOrder) {
+void Http3Session::SetSendOrder(Http3StreamBase* aStream,
+                                Maybe<int64_t> aSendOrder) {
   if (!IsClosing()) {
     nsresult rv = mHttp3Connection->WebTransportSetSendOrder(
         aStream->StreamId(), aSendOrder);

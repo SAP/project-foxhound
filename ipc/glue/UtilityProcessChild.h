@@ -72,6 +72,9 @@ class UtilityProcessChild final : public PUtilityProcessChild {
   mozilla::ipc::IPCResult RecvStartWindowsUtilsService(
       Endpoint<PWindowsUtilsChild>&& aEndpoint);
 
+  mozilla::ipc::IPCResult RecvStartWinFileDialogService(
+      Endpoint<PWinFileDialogChild>&& aEndpoint);
+
   mozilla::ipc::IPCResult RecvGetUntrustedModulesData(
       GetUntrustedModulesDataResolver&& aResolver);
   mozilla::ipc::IPCResult RecvUnblockUntrustedModulesThread();

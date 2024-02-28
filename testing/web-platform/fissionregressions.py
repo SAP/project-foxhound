@@ -59,10 +59,12 @@ run_infos = {
         "fission": True,
         "sessionHistoryInParent": True,
         "swgl": False,
+        "privateBrowsing": False,
         "win10_2004": False,
         "win11_2009": False,
         "domstreams": True,
         "isolated_process": False,
+        "display": "x11",
     },
     "linux-debug": {
         "os": "linux",
@@ -112,10 +114,12 @@ run_infos = {
         "fission": False,
         "sessionHistoryInParent": False,
         "swgl": False,
+        "privateBrowsing": False,
         "win10_2004": False,
         "win11_2009": False,
         "domstreams": True,
         "isolated_process": False,
+        "display": "x11",
     },
     "win-opt": {
         "os": "win",
@@ -165,10 +169,12 @@ run_infos = {
         "fission": False,
         "sessionHistoryInParent": False,
         "swgl": False,
+        "privateBrowsing": False,
         "win10_2004": False,
         "win11_2009": False,
         "domstreams": True,
         "isolated_process": False,
+        "display": None,
     },
 }
 

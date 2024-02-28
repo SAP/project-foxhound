@@ -85,7 +85,7 @@ public class GeckoThread extends Thread {
      */
     private final int mRank;
 
-    private State(final int rank) {
+    State(final int rank) {
       mRank = rank;
     }
 
@@ -662,7 +662,7 @@ public class GeckoThread extends Thread {
         mInitInfo.fds.prefMap,
         mInitInfo.fds.ipc,
         mInitInfo.fds.crashReporter,
-        isChildProcess ? false : mInitInfo.xpcshell,
+        !isChildProcess && mInitInfo.xpcshell,
         isChildProcess ? null : mInitInfo.outFilePath);
 
     // And... we're done.

@@ -819,6 +819,9 @@ static void DebugDoContentSecurityCheck(nsIChannel* aChannel,
     MOZ_LOG(sCSMLog, LogLevel::Verbose,
             ("  allowDeprecatedSystemRequests: %s\n",
              aLoadInfo->GetAllowDeprecatedSystemRequests() ? "true" : "false"));
+    MOZ_LOG(sCSMLog, LogLevel::Verbose,
+            ("  wasSchemeless: %s\n",
+             aLoadInfo->GetWasSchemelessInput() ? "true" : "false"));
 
     // Log CSPrequestPrincipal
     nsCOMPtr<nsIContentSecurityPolicy> csp = aLoadInfo->GetCsp();
@@ -841,7 +844,9 @@ static void DebugDoContentSecurityCheck(nsIChannel* aChannel,
     // Security Flags
     MOZ_LOG(sCSMLog, LogLevel::Verbose, ("  securityFlags:"));
     LogSecurityFlags(aLoadInfo->GetSecurityFlags());
+    // HTTPS-Only
     LogHTTPSOnlyInfo(aLoadInfo);
+
     MOZ_LOG(sCSMLog, LogLevel::Debug, ("\n#DebugDoContentSecurityCheck End\n"));
   }
 }
@@ -1753,6 +1758,7 @@ void nsContentSecurityManager::GetSerializedOrigin(
     entry->GetPrincipal(getter_AddRefs(currentOrigin));
 
     if (!currentOrigin->Equals(lastOrigin) && !lastOrigin->Equals(aOrigin)) {
+      aSerializedOrigin.AssignLiteral("null");
       return;
     }
     lastOrigin = currentOrigin;
@@ -1769,7 +1775,8 @@ void nsContentSecurityManager::GetSerializedOrigin(
 
   // Same as above, redirectChain doesn't contain the current redirect,
   // so we have to do the check one last time here.
-  if (lastOrigin->Equals(aResourceOrigin) && !lastOrigin->Equals(aOrigin)) {
+  if (!lastOrigin->Equals(aResourceOrigin) && !lastOrigin->Equals(aOrigin)) {
+    aSerializedOrigin.AssignLiteral("null");
     return;
   }
 

@@ -22,7 +22,7 @@
 #include "XULTreeElement.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"  // JS::CompileOptions, JS::OwningCompileOptions, , JS::ReadOnlyCompileOptions, JS::ReadOnlyDecodeOptions, JS::DecodeOptions
-#include "js/experimental/CompileScript.h"  // JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::CompileGlobalScriptToStencil, JS::CompilationStorage
+#include "js/experimental/CompileScript.h"  // JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::ThreadStackQuotaForSize, JS::CompileGlobalScriptToStencil, JS::CompilationStorage
 #include "js/experimental/JSStencil.h"      // JS::Stencil, JS::FrontendContext
 #include "js/SourceText.h"
 #include "js/Transcoding.h"
@@ -1856,17 +1856,11 @@ class ScriptCompileTask final : public Task {
   }
 
  private:
-  static size_t ThreadStackQuotaForSize(size_t size) {
-    // Set the stack quota to 10% less that the actual size.
-    // NOTE: This follows what JS helper thread does.
-    return size_t(double(size) * 0.9);
-  }
-
   void Compile() {
     // NOTE: The stack limit must be set from the same thread that compiles.
     size_t stackSize = TaskController::GetThreadStackSize();
     JS::SetNativeStackQuota(mFrontendContext,
-                            ThreadStackQuotaForSize(stackSize));
+                            JS::ThreadStackQuotaForSize(stackSize));
 
     JS::SourceText<Utf8Unit> srcBuf;
     if (NS_WARN_IF(!srcBuf.init(mFrontendContext, mText.get(), mTextLength,
@@ -1885,9 +1879,9 @@ class ScriptCompileTask final : public Task {
   }
 
  public:
-  bool Run() override {
+  TaskResult Run() override {
     Compile();
-    return true;
+    return TaskResult::Complete;
   }
 
   already_AddRefed<JS::Stencil> StealStencil() { return mStencil.forget(); }
@@ -1923,11 +1917,11 @@ class NotifyOffThreadScriptCompletedTask : public Task {
         mReceiver(aReceiver),
         mCompileTask(aCompileTask) {}
 
-  bool Run() override {
+  TaskResult Run() override {
     MOZ_ASSERT(NS_IsMainThread());
 
     if (PastShutdownPhase(ShutdownPhase::XPCOMShutdownFinal)) {
-      return true;
+      return TaskResult::Complete;
     }
 
     RefPtr<JS::Stencil> stencil = mCompileTask->StealStencil();
@@ -1936,7 +1930,7 @@ class NotifyOffThreadScriptCompletedTask : public Task {
     (void)mReceiver->OnScriptCompileComplete(
         stencil, stencil ? NS_OK : NS_ERROR_FAILURE);
 
-    return true;
+    return TaskResult::Complete;
   }
 
 #ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY

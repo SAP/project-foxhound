@@ -118,6 +118,7 @@ skip-if(Android&&AndroidVersion=='22') load video-replay-after-audio-end.html # 
 skip-if(Android||ThreadSanitizer) load 691096-1.html # Bug 1365451
 load 1236639.html
 test-pref(media.navigator.permission.disabled,true) test-pref(media.devices.insecure.enabled,true) test-pref(media.getusermedia.insecure.enabled,true) load 1388372.html
+load 1414444.mp4
 load 1494073.html
 skip-if(Android) load 1526044.html # Bug 1528391
 load 1530897.webm
@@ -126,7 +127,7 @@ load encrypted-track-without-tenc.mp4 # Bug 1533215
 asserts-if(Android,0-1) load encrypted-track-with-sample-missing-cenc-aux.mp4 # Bug 1533625, bug 1588967
 load 1538727.html
 load empty-samples.webm # Bug 1540580
-test-pref(media.autoplay.block-webaudio,false) load 1545133.html
+test-pref(media.autoplay.default,0) load 1545133.html
 load track-with-zero-dimensions.mp4 # Bug 1542539
 load 1560215.html
 skip-if(Android) load 1547784.html # Skip on Android as clearkey is not supported
@@ -173,3 +174,7 @@ load 1835118.adts
 load trimming_needed_and_last_sample_invalid_duration.ogg
 load 1839193.html
 load 1850453.html
+test-pref(media.wmf.hevc.enabled,1) load 1859384.mp4
+test-pref(media.wmf.hevc.enabled,1) load 1859600.mp4
+test-pref(media.wmf.hevc.enabled,1) load 1860840.mp4
+load 1864450.html

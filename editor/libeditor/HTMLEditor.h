@@ -26,6 +26,7 @@
 #include "nsIHTMLEditor.h"
 #include "nsIHTMLInlineTableEditor.h"
 #include "nsIHTMLObjectResizer.h"
+#include "nsIPrincipal.h"
 #include "nsITableEditor.h"
 #include "nsPoint.h"
 #include "nsStubMutationObserver.h"
@@ -299,7 +300,26 @@ class HTMLEditor final : public EditorBase,
   MOZ_CAN_RUN_SCRIPT nsresult
   OutdentAsAction(nsIPrincipal* aPrincipal = nullptr);
 
-  MOZ_CAN_RUN_SCRIPT nsresult SetParagraphFormatAsAction(
+  /**
+   * The Document.execCommand("formatBlock") handler.
+   *
+   * @param aParagraphFormat    Must not be an empty string, and the value must
+   *                            be one of address, article, aside, blockquote,
+   *                            div, footer, h1, h2, h3, h4, h5, h6, header,
+   *                            hgroup, main, nav, p, pre, selection, dt or dd.
+   */
+  MOZ_CAN_RUN_SCRIPT nsresult FormatBlockAsAction(
+      const nsAString& aParagraphFormat, nsIPrincipal* aPrincipal = nullptr);
+
+  /**
+   * The cmd_paragraphState command handler.
+   *
+   * @param aParagraphFormat    Can be empty string.  If this is empty string,
+   *                            this removes ancestor format elements.
+   *                            Otherwise, the value must be one of p, pre,
+   *                            h1, h2, h3, h4, h5, h6, address, dt or dl.
+   */
+  MOZ_CAN_RUN_SCRIPT nsresult SetParagraphStateAsAction(
       const nsAString& aParagraphFormat, nsIPrincipal* aPrincipal = nullptr);
 
   MOZ_CAN_RUN_SCRIPT nsresult AlignAsAction(const nsAString& aAlignType,
@@ -432,42 +452,6 @@ class HTMLEditor final : public EditorBase,
   }
   bool IsAbsolutePositionEditorEnabled() const {
     return mIsAbsolutelyPositioningEnabled;
-  }
-
-  /**
-   * Enable/disable Gecko's traditional join/split node direction, that is,
-   * creating left node at splitting a node and removing left node at joining 2
-   * nodes.  This is acceptable only before first join/split transaction is
-   * created.
-   */
-  bool EnableCompatibleJoinSplitNodeDirection(bool aEnable) {
-    if (!CanChangeJoinSplitNodeDirection()) {
-      return false;
-    }
-    mUseGeckoTraditionalJoinSplitBehavior = !aEnable;
-    return true;
-  }
-
-  /**
-   * Return true if the instance works with the legacy join/split node
-   * direction.
-   */
-  [[nodiscard]] bool IsCompatibleJoinSplitNodeDirectionEnabled() const {
-    return !mUseGeckoTraditionalJoinSplitBehavior;
-  }
-
-  /**
-   * Return true if web apps can still change the join split node direction.
-   * For saving the footprint, each transaction does not store join/split node
-   * direction at first run.  Therefore, join/split node transactions need to
-   * refer the direction of corresponding HTMLEditor.  So if the direction were
-   * changed after creating join/split transactions, they would break the DOM
-   * tree with undoing/redoing within wrong direction.  Therefore, once this
-   * instance created a join or split node transaction, this returns false to
-   * block to change the direction.
-   */
-  [[nodiscard]] bool CanChangeJoinSplitNodeDirection() const {
-    return !mMaybeHasJoinSplitTransactions;
   }
 
   /**
@@ -1004,12 +988,9 @@ class HTMLEditor final : public EditorBase,
    * @param aNewNode            The new node called.  The previous or following
    *                            content of aStartOfRightNode will be moved into
    *                            this node.
-   * @param aDirection          Whether aNewNode will have previous or following
-   *                            content of aStartOfRightNode.
    */
   MOZ_CAN_RUN_SCRIPT Result<SplitNodeResult, nsresult> DoSplitNode(
-      const EditorDOMPoint& aStartOfRightNode, nsIContent& aNewNode,
-      SplitNodeDirection aDirection);
+      const EditorDOMPoint& aStartOfRightNode, nsIContent& aNewNode);
 
   /**
    * DoJoinNodes() merges contents in aContentToRemove to aContentToKeep and
@@ -1022,13 +1003,9 @@ class HTMLEditor final : public EditorBase,
    * @param aContentToRemove  The node that will be joined with aContentToKeep.
    *                          There is no requirement that the two nodes be of
    *                          the same type.
-   * @param aDirection        Whether aContentToKeep is right node or left node,
-   *                          and whether aContentToRemove is left node or right
-   *                          node.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
-  DoJoinNodes(nsIContent& aContentToKeep, nsIContent& aContentToRemove,
-              JoinNodesDirection aDirection);
+  DoJoinNodes(nsIContent& aContentToKeep, nsIContent& aContentToRemove);
 
   /**
    * Routines for managing the preservation of selection across
@@ -1203,13 +1180,15 @@ class HTMLEditor final : public EditorBase,
                        const Element& aEditingHost);
 
   /**
-   * Splits parent inline nodes at both start and end of aRangeItem.  If this
-   * splits at every point, this modifies aRangeItem to point each split point
-   * (typically, at right node).
+   * Splits inclusive inline ancestors at both start and end of aRangeItem.  If
+   * this splits at every point, this modifies aRangeItem to point each split
+   * point (typically, at right node).
    *
    * @param aRangeItem          [in/out] One or two DOM points where should be
    *                            split.  Will be modified to split point if
    *                            they're split.
+   * @param aBlockInlineCheck   [in] Whether this method considers block vs.
+   *                            inline with computed style or the default style.
    * @param aEditingHost        [in] The editing host.
    * @param aAncestorLimiter    [in/optional] If specified, this stops splitting
    *                            ancestors when meets this node.
@@ -1217,8 +1196,9 @@ class HTMLEditor final : public EditorBase,
    *                            it may be unset.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
-  SplitParentInlineElementsAtRangeBoundaries(
-      RangeItem& aRangeItem, const Element& aEditingHost,
+  SplitInlineAncestorsAtRangeBoundaries(
+      RangeItem& aRangeItem, BlockInlineCheck aBlockInlineCheck,
+      const Element& aEditingHost,
       const nsIContent* aAncestorLimiter = nullptr);
 
   /**
@@ -1341,7 +1321,7 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CreateElementResult, nsresult>
   CreateAndInsertElement(
-      WithTransaction aWithTransaction, nsAtom& aTagName,
+      WithTransaction aWithTransaction, const nsAtom& aTagName,
       const EditorDOMPoint& aPointToInsert,
       const InitializeInsertingElement& aInitializer = DoNothingForNewElement);
 
@@ -1398,7 +1378,7 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitNodeResult, nsresult>
   MaybeSplitAncestorsForInsertWithTransaction(
-      nsAtom& aTag, const EditorDOMPoint& aStartOfDeepestRightNode,
+      const nsAtom& aTag, const EditorDOMPoint& aStartOfDeepestRightNode,
       const Element& aEditingHost);
 
   /**
@@ -1427,24 +1407,24 @@ class HTMLEditor final : public EditorBase,
   enum class BRElementNextToSplitPoint { Keep, Delete };
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CreateElementResult, nsresult>
   InsertElementWithSplittingAncestorsWithTransaction(
-      nsAtom& aTagName, const EditorDOMPoint& aPointToInsert,
+      const nsAtom& aTagName, const EditorDOMPoint& aPointToInsert,
       BRElementNextToSplitPoint aBRElementNextToSplitPoint,
       const Element& aEditingHost,
       const InitializeInsertingElement& aInitializer = DoNothingForNewElement);
 
   /**
-   * SplitRangeOffFromBlock() splits aBlockElement at two points, before
-   * aStartOfMiddleElement and after aEndOfMiddleElement.  If they are very
-   * start or very end of aBlockElement, this won't create empty block.
+   * Split aElementToSplit at two points, before aStartOfMiddleElement and after
+   * aEndOfMiddleElement.  If they are very start or very end of aBlockElement,
+   * this won't create empty block.
    *
-   * @param aBlockElement           A block element which will be split.
+   * @param aElementToSplit         An element which will be split.
    * @param aStartOfMiddleElement   Start node of middle block element.
    * @param aEndOfMiddleElement     End node of middle block element.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitRangeOffFromNodeResult, nsresult>
-  SplitRangeOffFromBlock(Element& aBlockElement,
-                         nsIContent& aStartOfMiddleElement,
-                         nsIContent& aEndOfMiddleElement);
+  SplitRangeOffFromElement(Element& aElementToSplit,
+                           nsIContent& aStartOfMiddleElement,
+                           nsIContent& aEndOfMiddleElement);
 
   /**
    * RemoveBlockContainerElementWithTransactionBetween() splits the nodes
@@ -1459,6 +1439,9 @@ class HTMLEditor final : public EditorBase,
    *                                from aBlockContainerElement.
    * @param aEndOfRange             The last node which will be unwrapped from
    *                                aBlockContainerElement.
+   * @param aBlockInlineCheck       Whether this method considers block vs.
+   *                                inline with computed style or the default
+   *                                style.
    * @return                        The left content is new created left
    *                                element of aBlockContainerElement.
    *                                The right content is split element,
@@ -1469,7 +1452,7 @@ class HTMLEditor final : public EditorBase,
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitRangeOffFromNodeResult, nsresult>
   RemoveBlockContainerElementWithTransactionBetween(
       Element& aBlockContainerElement, nsIContent& aStartOfRange,
-      nsIContent& aEndOfRange);
+      nsIContent& aEndOfRange, BlockInlineCheck aBlockInlineCheck);
 
   /**
    * WrapContentsInBlockquoteElementsWithTransaction() inserts at least one
@@ -1492,6 +1475,25 @@ class HTMLEditor final : public EditorBase,
       const Element& aEditingHost);
 
   /**
+   * Our traditional formatBlock was same as XUL cmd_paragraphState command.
+   * However, the behavior is pretty different from the others and aligning
+   * the XUL command behavior may break Thunderbird a lot because it handles
+   * <blockquote> in a special path and <div> (generic block element) is not
+   * treated as a format node and these things may be used for designing
+   * current roles of the elements in the email composer of Thunderbird.
+   * Therefore, we create a new mode for HTMLFormatBlockCommand to align
+   * the behavior to the others but does not harm Thunderbird.
+   */
+  enum class FormatBlockMode {
+    // Document.execCommand("formatBlock"). Cannot set new format to "normal"
+    // nor "".  So, the paths to handle these ones are not used in this mode.
+    HTMLFormatBlockCommand,
+    // cmd_paragraphState.  Can set new format to "normal" or "" to remove
+    // ancestor format blocks.
+    XULParagraphStateCommand,
+  };
+
+  /**
    * RemoveBlockContainerElementsWithTransaction() removes all format blocks,
    * table related element, etc in aArrayOfContents from the DOM tree. If
    * aArrayOfContents has a format node, it will be removed and its contents
@@ -1499,35 +1501,44 @@ class HTMLEditor final : public EditorBase,
    * If aArrayOfContents has a table related element, <li>, <blockquote> or
    * <div>, it will be removed and its contents will be moved to where it was.
    *
+   * @param aFormatBlockMode    Whether HTML formatBlock command or XUL
+   *                            paragraphState command.
+   *
    * @return            A suggest point to put caret if succeeded, but it may be
    *                    unset if there is no suggestion.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
   RemoveBlockContainerElementsWithTransaction(
-      const nsTArray<OwningNonNull<nsIContent>>& aArrayOfContents);
+      const nsTArray<OwningNonNull<nsIContent>>& aArrayOfContents,
+      FormatBlockMode aFormatBlockMode, BlockInlineCheck aBlockInlineCheck);
 
   /**
-   * CreateOrChangeBlockContainerElement() formats all nodes in aArrayOfContents
-   * with block elements whose name is aBlockTag.
+   * CreateOrChangeFormatContainerElement() formats all nodes in
+   * aArrayOfContents with block elements whose name is aNewFormatTagName.
+   *
    * If aArrayOfContents has an inline element, a block element is created and
    * the inline element and following inline elements are moved into the new
    * block element.
-   * If aArrayOfContents has <br> elements, they'll be removed from the DOM
-   * tree and new block element will be created when there are some remaining
-   * inline elements.
-   * If aArrayOfContents has a block element, this calls itself with children
-   * of the block element.  Then, new block element will be created when there
-   * are some remaining inline elements.
+   * If aArrayOfContents has <br> elements, they'll be removed from the DOM tree
+   * and new block element will be created when there are some remaining inline
+   * elements.
+   * If aArrayOfContents has a block element, this calls itself with children of
+   * the block element.  Then, new block element will be created when there are
+   * some remaining inline elements.
    *
    * @param aArrayOfContents    Must be descendants of a node.
-   * @param aBlockTag           The element name of new block elements.
+   * @param aNewFormatTagName   The element name of new block elements.
+   * @param aFormatBlockMode    The replacing block element target type is for
+   *                            whether HTML formatBLock command or XUL
+   *                            paragraphState command.
    * @param aEditingHost        The editing host.
    * @return                    The latest created new block element and a
    *                            suggest point to put caret.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CreateElementResult, nsresult>
-  CreateOrChangeBlockContainerElement(
-      nsTArray<OwningNonNull<nsIContent>>& aArrayOfContents, nsAtom& aBlockTag,
+  CreateOrChangeFormatContainerElement(
+      nsTArray<OwningNonNull<nsIContent>>& aArrayOfContents,
+      const nsStaticAtom& aNewFormatTagName, FormatBlockMode aFormatBlockMode,
       const Element& aEditingHost);
 
   /**
@@ -1538,22 +1549,25 @@ class HTMLEditor final : public EditorBase,
    * @param aSelectionRanges    The ranges which are cloned by selection or
    *                            updated from it with doing something before
    *                            calling this.
-   * @param aBlockType  New block tag name.
-   *                    If nsGkAtoms::normal or nsGkAtoms::_empty,
-   *                    RemoveBlockContainerElementsWithTransaction() will be
-   *                    called.
-   *                    If nsGkAtoms::blockquote,
-   *                    WrapContentsInBlockquoteElementsWithTransaction() will
-   *                    be called.
-   *                    Otherwise, CreateOrChangeBlockContainerElement() will be
-   *                    called.
+   * @param aNewFormatTagName   New block tag name.
+   *                            If nsGkAtoms::normal or nsGkAtoms::_empty,
+   *                            RemoveBlockContainerElementsWithTransaction()
+   *                            will be called.
+   *                            If nsGkAtoms::blockquote,
+   *                            WrapContentsInBlockquoteElementsWithTransaction()
+   *                            will be called.
+   *                            Otherwise, CreateOrChangeBlockContainerElement()
+   *                            will be called.
+   * @param aFormatBlockMode    Whether HTML formatBlock command or XUL
+   *                            paragraphState command.
    * @param aEditingHost        The editing host.
    * @return                    If selection should be finally collapsed in a
    *                            created block element, this returns the element.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<RefPtr<Element>, nsresult>
   FormatBlockContainerWithTransaction(AutoRangeArray& aSelectionRanges,
-                                      nsAtom& aBlockType,
+                                      const nsStaticAtom& aNewFormatTagName,
+                                      FormatBlockMode aFormatBlockMode,
                                       const Element& aEditingHost);
 
   /**
@@ -1690,6 +1704,9 @@ class HTMLEditor final : public EditorBase,
                         nsAtom& aItemType);
 
   class AutoListElementCreator;
+
+  [[nodiscard]] static bool IsFormatElement(FormatBlockMode aFormatBlockMode,
+                                            const nsIContent& aContent);
 
   /**
    * MakeOrChangeListAndListItemAsSubAction() handles create list commands with
@@ -2649,12 +2666,6 @@ class HTMLEditor final : public EditorBase,
   MOZ_CAN_RUN_SCRIPT nsresult OnDocumentModified();
 
  protected:  // Called by helper classes.
-  /**
-   * Get split/join node(s) direction for **this** instance.
-   */
-  [[nodiscard]] inline SplitNodeDirection GetSplitNodeDirection() const;
-  [[nodiscard]] inline JoinNodesDirection GetJoinNodesDirection() const;
-
   MOZ_CAN_RUN_SCRIPT void OnStartToHandleTopLevelEditSubAction(
       EditSubAction aTopLevelEditSubAction,
       nsIEditor::EDirection aDirectionOfTopLevelEditSubAction,
@@ -3859,8 +3870,11 @@ class HTMLEditor final : public EditorBase,
    *
    * @param aTagName            A block level element name.  Must NOT be
    *                            nsGkAtoms::dt nor nsGkAtoms::dd.
+   * @param aFormatBlockMode    Whether HTML formatBlock command or XUL
+   *                            paragraphState command.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult FormatBlockContainerAsSubAction(nsAtom& aTagName);
+  MOZ_CAN_RUN_SCRIPT nsresult FormatBlockContainerAsSubAction(
+      const nsStaticAtom& aTagName, FormatBlockMode aFormatBlockMode);
 
   /**
    * Increase/decrease the font size of selection.
@@ -4396,10 +4410,6 @@ class HTMLEditor final : public EditorBase,
 
   bool mCRInParagraphCreatesParagraph;
 
-  // Whether use Blink/WebKit compatible joining nodes and split a node
-  // direction or Gecko's traditional direction.
-  bool mUseGeckoTraditionalJoinSplitBehavior;
-
   // resizing
   bool mIsObjectResizingEnabled;
   bool mIsResizing;
@@ -4493,16 +4503,12 @@ class HTMLEditor final : public EditorBase,
 
   bool mHasBeforeInputBeenCanceled = false;
 
-  // Set to true once the instance creates a JoinNodesTransaction or
-  // SplitNodeTransaction.  See also CanChangeJoinSplitNodeDirection().
-  bool mMaybeHasJoinSplitTransactions = false;
-
   ParagraphSeparator mDefaultParagraphSeparator;
 
   friend class AlignStateAtSelection;  // CollectEditableTargetNodes,
                                        // CollectNonEditableNodes
   friend class AutoRangeArray;  // RangeUpdaterRef, SplitNodeWithTransaction,
-                                // SplitParentInlineElementsAtRangeBoundaries
+                                // SplitInlineAncestorsAtRangeBoundaries
   friend class AutoSelectionSetterAfterTableEdit;  // SetSelectionAfterEdit
   friend class
       AutoSetTemporaryAncestorLimiter;  // InitializeSelectionAncestorLimit
@@ -4518,8 +4524,7 @@ class HTMLEditor final : public EditorBase,
                             // RemoveEmptyInclusiveAncestorInlineElements,
                             // mComposerUpdater, mHasBeforeInputBeenCanceled
   friend class JoinNodesTransaction;  // DidJoinNodesTransaction, DoJoinNodes,
-                                      // DoSplitNode, GetJoinNodesDirection,
-                                      // RangeUpdaterRef
+                                      // DoSplitNode, // RangeUpdaterRef
   friend class ListElementSelectionState;      // CollectEditTargetNodes,
                                                // CollectNonEditableNodes
   friend class ListItemElementSelectionState;  // CollectEditTargetNodes,
@@ -4533,8 +4538,7 @@ class HTMLEditor final : public EditorBase,
                                            // CollectNonEditableNodes,
                                            // CollectTableChildren
   friend class SlurpBlobEventListener;     // BlobReader
-  friend class SplitNodeTransaction;       // DoJoinNodes, DoSplitNode,
-                                           // GetSplitNodeDirection
+  friend class SplitNodeTransaction;       // DoJoinNodes, DoSplitNode
   friend class TransactionManager;  // DidDoTransaction, DidRedoTransaction,
                                     // DidUndoTransaction
   friend class
@@ -4622,8 +4626,15 @@ class MOZ_STACK_CLASS AlignStateAtSelection final {
  */
 class MOZ_STACK_CLASS ParagraphStateAtSelection final {
  public:
+  using FormatBlockMode = HTMLEditor::FormatBlockMode;
+
   ParagraphStateAtSelection() = delete;
-  ParagraphStateAtSelection(HTMLEditor& aHTMLEditor, ErrorResult& aRv);
+  /**
+   * @param aFormatBlockMode    Whether HTML formatBlock command or XUL
+   *                            paragraphState command.
+   */
+  ParagraphStateAtSelection(HTMLEditor& aHTMLEditor,
+                            FormatBlockMode aFormatBlockMode, ErrorResult& aRv);
 
   /**
    * GetFirstParagraphStateAtSelection() returns:
@@ -4635,17 +4646,21 @@ class MOZ_STACK_CLASS ParagraphStateAtSelection final {
    *     this may return non-first paragraph state.
    */
   nsAtom* GetFirstParagraphStateAtSelection() const {
-    return mFirstParagraphState;
+    return mIsMixed && mIsInDLElement ? nsGkAtoms::dl
+                                      : mFirstParagraphState.get();
   }
 
   /**
    * If selected nodes are not in same format node nor only in no-format blocks,
    * this returns true.
    */
-  bool IsMixed() const { return mIsMixed; }
+  bool IsMixed() const { return mIsMixed && !mIsInDLElement; }
 
  private:
   using EditorType = EditorBase::EditorType;
+
+  [[nodiscard]] static bool IsFormatElement(FormatBlockMode aFormatBlockMode,
+                                            const nsIContent& aContent);
 
   /**
    * AppendDescendantFormatNodesAndFirstInlineNode() appends descendant
@@ -4656,11 +4671,13 @@ class MOZ_STACK_CLASS ParagraphStateAtSelection final {
    * @param aArrayOfContents            [in/out] Found descendant format blocks
    *                                    and first inline node in each non-format
    *                                    block will be appended to this.
+   * @param aFormatBlockMode            Whether HTML formatBlock command or XUL
+   *                                    paragraphState command.
    * @param aNonFormatBlockElement      Must be a non-format block element.
    */
   static void AppendDescendantFormatNodesAndFirstInlineNode(
       nsTArray<OwningNonNull<nsIContent>>& aArrayOfContents,
-      dom::Element& aNonFormatBlockElement);
+      FormatBlockMode aFormatBlockMode, dom::Element& aNonFormatBlockElement);
 
   /**
    * CollectEditableFormatNodesInSelection() collects only editable nodes
@@ -4669,12 +4686,17 @@ class MOZ_STACK_CLASS ParagraphStateAtSelection final {
    * `HTMLEditor::CollectEditTargetNodes()`, see its document for the detail).
    * If it includes list, list item or table related elements, they will be
    * replaced their children.
+   *
+   * @param aFormatBlockMode            Whether HTML formatBlock command or XUL
+   *                                    paragraphState command.
    */
   static nsresult CollectEditableFormatNodesInSelection(
-      HTMLEditor& aHTMLEditor, const dom::Element& aEditingHost,
+      HTMLEditor& aHTMLEditor, FormatBlockMode aFormatBlockMode,
+      const dom::Element& aEditingHost,
       nsTArray<OwningNonNull<nsIContent>>& aArrayOfContents);
 
   RefPtr<nsAtom> mFirstParagraphState;
+  bool mIsInDLElement = false;
   bool mIsMixed = false;
 };
 

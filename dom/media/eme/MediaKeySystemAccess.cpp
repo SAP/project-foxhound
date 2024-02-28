@@ -128,7 +128,8 @@ MediaKeySystemStatus MediaKeySystemAccess::GetKeySystemStatus(
   }
 
 #ifdef MOZ_WMF_CDM
-  if (IsPlayReadyKeySystemAndSupported(aKeySystem) &&
+  if ((IsPlayReadyKeySystemAndSupported(aKeySystem) ||
+       IsWidevineExperimentKeySystemAndSupported(aKeySystem)) &&
       KeySystemConfig::Supports(aKeySystem)) {
     return MediaKeySystemStatus::Available;
   }
@@ -160,6 +161,11 @@ static KeySystemConfig::EMECodecString ToEMEAPICodecString(
   if (IsVP9CodecString(aCodec)) {
     return KeySystemConfig::EME_CODEC_VP9;
   }
+#ifdef MOZ_WMF
+  if (IsH265CodecString(aCodec)) {
+    return KeySystemConfig::EME_CODEC_HEVC;
+  }
+#endif
   return ""_ns;
 }
 
@@ -172,6 +178,8 @@ static nsTArray<KeySystemConfig> GetSupportedKeySystems() {
 #ifdef MOZ_WMF_CDM
       NS_ConvertUTF8toUTF16(kPlayReadyKeySystemName),
       NS_ConvertUTF8toUTF16(kPlayReadyKeySystemHardware),
+      NS_ConvertUTF8toUTF16(kWidevineExperimentKeySystemName),
+      NS_ConvertUTF8toUTF16(kWidevineExperiment2KeySystemName),
 #endif
   };
   for (const auto& name : keySystemNames) {
@@ -185,7 +193,7 @@ static bool GetKeySystemConfigs(
     nsTArray<KeySystemConfig>& aOutKeySystemConfig) {
   bool foundConfigs = false;
   for (auto& config : GetSupportedKeySystems()) {
-    if (config.mKeySystem.Equals(aKeySystem)) {
+    if (config.IsSameKeySystem(aKeySystem)) {
       aOutKeySystemConfig.AppendElement(std::move(config));
       foundConfigs = true;
     }
@@ -328,7 +336,8 @@ static CodecType GetCodecType(const KeySystemConfig::EMECodecString& aCodec) {
   }
   if (aCodec.Equals(KeySystemConfig::EME_CODEC_H264) ||
       aCodec.Equals(KeySystemConfig::EME_CODEC_VP8) ||
-      aCodec.Equals(KeySystemConfig::EME_CODEC_VP9)) {
+      aCodec.Equals(KeySystemConfig::EME_CODEC_VP9) ||
+      aCodec.Equals(KeySystemConfig::EME_CODEC_HEVC)) {
     return Video;
   }
   return Invalid;
@@ -720,6 +729,9 @@ static bool GetSupportedConfig(
     MediaKeySystemConfiguration& aOutConfig,
     DecoderDoctorDiagnostics* aDiagnostics, bool aInPrivateBrowsing,
     const std::function<void(const char*)>& aDeprecationLogFn) {
+  EME_LOG("Compare implementation '%s'\n with request '%s'",
+          NS_ConvertUTF16toUTF8(aKeySystem.GetDebugInfo()).get(),
+          ToCString(aCandidate).get());
   // Let accumulated configuration be a new MediaKeySystemConfiguration
   // dictionary.
   MediaKeySystemConfiguration config;

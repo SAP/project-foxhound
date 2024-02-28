@@ -175,6 +175,9 @@ with Files("InputEvent.webidl"):
 with Files("InstallTrigger.webidl"):
     BUG_COMPONENT = ("Toolkit", "Add-ons Manager")
 
+with Files("InvokerElement.webidl"):
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+
 with Files("KeyAlgorithm.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Security")
 
@@ -267,9 +270,6 @@ with Files("PopStateEvent.webidl*"):
 
 with Files("GeolocationPosition*"):
     BUG_COMPONENT = ("Core", "DOM: Geolocation")
-
-with Files("ProfileTimelineMarker.webidl"):
-    BUG_COMPONENT = ("DevTools", "Performance Tools (Profiler/Timeline)")
 
 with Files("PopoverInvokerElement.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
@@ -375,9 +375,6 @@ with Files("XR*"):
 
 with Files("WheelEvent.webidl"):
     BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
-
-with Files("WidevineCDMManifest.webidl"):
-    BUG_COMPONENT = ("Core", "Audio/Video: Playback")
 
 with Files("WindowOrWorkerGlobalScope.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Workers")
@@ -690,6 +687,8 @@ WEBIDL_FILES = [
     "InputEvent.webidl",
     "IntersectionObserver.webidl",
     "IntlUtils.webidl",
+    "InvokeEvent.webidl",
+    "InvokerElement.webidl",
     "IterableIterator.webidl",
     "KeyAlgorithm.webidl",
     "KeyboardEvent.webidl",
@@ -698,7 +697,6 @@ WEBIDL_FILES = [
     "KeyframeEffect.webidl",
     "KeyIdsInitData.webidl",
     "LinkStyle.webidl",
-    "LoadURIOptions.webidl",
     "Localization.webidl",
     "Location.webidl",
     "Lock.webidl",
@@ -798,7 +796,6 @@ WEBIDL_FILES = [
     "PointerEvent.webidl",
     "PopoverInvokerElement.webidl",
     "ProcessingInstruction.webidl",
-    "ProfileTimelineMarker.webidl",
     "Promise.webidl",
     "PushEvent.webidl",
     "PushManager.webidl",
@@ -981,6 +978,7 @@ WEBIDL_FILES = [
     "UIEvent.webidl",
     "URL.webidl",
     "URLSearchParams.webidl",
+    "UserActivation.webidl",
     "ValidityState.webidl",
     "VideoColorSpace.webidl",
     "VideoDecoder.webidl",
@@ -1007,7 +1005,6 @@ WEBIDL_FILES = [
     "WebTransportSendReceiveStream.webidl",
     "WebXR.webidl",
     "WheelEvent.webidl",
-    "WidevineCDMManifest.webidl",
     "WindowOrWorkerGlobalScope.webidl",
     "WindowRoot.webidl",
     "Worker.webidl",

@@ -28,6 +28,7 @@ DIRS += [
     "clearsitedata",
     "cookiebanners",
     "commandlines",
+    "contentanalysis",
     "contentprefs",
     "contextualidentity",
     "crashes",
@@ -61,6 +62,7 @@ DIRS += [
     "remotebrowserutils",
     "reflect",
     "reputationservice",
+    "reportbrokensite",
     "resistfingerprinting",
     "search",
     "sessionstore",
@@ -122,6 +124,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
     XPCOM_MANIFESTS += [
         "components.conf",
     ]
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] not in ("android", "windows"):
+    DIRS += ["aboutwebauthn"]
 
 if CONFIG["MOZ_BUILD_APP"] == "browser":
     DIRS += ["normandy", "messaging-system"]

@@ -23,6 +23,7 @@ namespace mozilla::media {
   X(VP8)           \
   X(VP9)           \
   X(AV1)           \
+  X(HEVC)          \
   X(Theora)        \
   X(AAC)           \
   X(FLAC)          \
@@ -45,6 +46,10 @@ using MediaCodecSet = EnumSet<MediaCodec, uint64_t>;
 #define SW_DECODE(codec) codec##SoftwareDecode
 #define HW_DECODE(codec) codec##HardwareDecode
 
+// For codec which we can do hardware decoding once user installs the free
+// platform extension, eg. AV1 on Windows
+#define LACK_HW_EXTENSION(codec) codec##LackOfExtension
+
 // Generate the MediaCodecsSupport enum, containing
 // codec-specific SW/HW decode/encode information.
 // Entries for HW audio decode/encode should never be set as we
@@ -52,7 +57,7 @@ using MediaCodecSet = EnumSet<MediaCodec, uint64_t>;
 // for debug purposes / check for erroneous PDM return values.
 // Example: MediaCodecsSupport::AACSoftwareDecode
 enum class MediaCodecsSupport : int {
-#define X(name) SW_DECODE(name), HW_DECODE(name),
+#define X(name) SW_DECODE(name), HW_DECODE(name), LACK_HW_EXTENSION(name),
   CODEC_LIST
 #undef X
       SENTINEL
@@ -68,6 +73,7 @@ using MediaCodecsSupported = EnumSet<MediaCodecsSupport, uint64_t>;
 enum class DecodeSupport : int {
   SoftwareDecode,
   HardwareDecode,
+  UnsureDueToLackOfExtension,
 };
 using DecodeSupportSet = EnumSet<DecodeSupport, uint64_t>;
 
@@ -79,6 +85,7 @@ struct CodecDefinition {
   const char* mimeTypeString = "Undefined MIME type string";
   MediaCodecsSupport swDecodeSupport = MediaCodecsSupport::SENTINEL;
   MediaCodecsSupport hwDecodeSupport = MediaCodecsSupport::SENTINEL;
+  MediaCodecsSupport lackOfHWExtenstion = MediaCodecsSupport::SENTINEL;
 };
 
 // Singleton class used to collect, manage, and report codec support data.
@@ -167,7 +174,7 @@ class MCSInfo final {
   static MediaCodec GetMediaCodecFromMimeType(const nsACString& aMimeType);
 
   // Returns array of hardcoded codec definitions.
-  static std::array<CodecDefinition, 12> GetAllCodecDefinitions();
+  static std::array<CodecDefinition, 13> GetAllCodecDefinitions();
 
   // Parses an array of MIME type strings and returns a MediaCodecSet.
   static MediaCodecSet GetMediaCodecSetFromMimeTypes(

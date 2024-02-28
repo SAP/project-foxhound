@@ -1,38 +1,24 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Wed, 17 May 2023 08:25:00 +0000
-Subject: Bug 1830945 - Do not lock in VideoCaptureDS::{Start|Stop}Capture.
- r=padenot
+From: Michael Froman <mfroman@mozilla.com>
+Date: Wed, 5 Jul 2023 19:15:00 +0000
+Subject: Bug 1841864 - upstream commit 4baea5b07f should properly check size
+ of encoder_config_.simulcast_layers. r=jib
 
-Unclear what they are guarding.
-
-Differential Revision: https://phabricator.services.mozilla.com/D178279
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fcd48e81c9c2cb68ea2cb3d44b3574281be2154e
+Differential Revision: https://phabricator.services.mozilla.com/D182813
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a7179d8d75313b6c9c76a496e10d102da019ff4f
 ---
- modules/video_capture/windows/video_capture_ds.cc | 4 ----
- 1 file changed, 4 deletions(-)
+ video/video_stream_encoder.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/modules/video_capture/windows/video_capture_ds.cc b/modules/video_capture/windows/video_capture_ds.cc
-index 8695f76245..b13ac074f8 100644
---- a/modules/video_capture/windows/video_capture_ds.cc
-+++ b/modules/video_capture/windows/video_capture_ds.cc
-@@ -122,8 +122,6 @@ int32_t VideoCaptureDS::Init(const char* deviceUniqueIdUTF8) {
- }
+diff --git a/video/video_stream_encoder.cc b/video/video_stream_encoder.cc
+index 1e2409372a..0782a5f5f2 100644
+--- a/video/video_stream_encoder.cc
++++ b/video/video_stream_encoder.cc
+@@ -1404,7 +1404,7 @@ void VideoStreamEncoder::ReconfigureEncoder() {
  
- int32_t VideoCaptureDS::StartCapture(const VideoCaptureCapability& capability) {
--  MutexLock lock(&api_lock_);
--
-   if (capability != _requestedCapability) {
-     DisconnectGraph();
- 
-@@ -146,8 +144,6 @@ int32_t VideoCaptureDS::StartCapture(const VideoCaptureCapability& capability) {
- }
- 
- int32_t VideoCaptureDS::StopCapture() {
--  MutexLock lock(&api_lock_);
--
-   HRESULT hr = _mediaControl->StopWhenReady();
-   if (FAILED(hr)) {
-     RTC_LOG(LS_INFO) << "Failed to stop the capture graph. " << hr;
--- 
-2.34.1
-
+   bool is_svc = false;
+   bool single_stream_or_non_first_inactive = true;
+-  for (size_t i = 1; i < encoder_config_.number_of_streams; ++i) {
++  for (size_t i = 1; i < encoder_config_.simulcast_layers.size(); ++i) {
+     if (encoder_config_.simulcast_layers[i].active) {
+       single_stream_or_non_first_inactive = false;
+       break;

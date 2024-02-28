@@ -112,13 +112,13 @@ FINAL_LIBRARY = "xul"
 JAR_MANIFESTS += ["jar.mn"]
 
 BROWSER_CHROME_MANIFESTS += [
-    "test/browser/browser-serviceworker.ini",
-    "test/browser/browser.ini",
+    "test/browser/browser-serviceworker.toml",
+    "test/browser/browser.toml",
 ]
 
 MOCHITEST_MANIFESTS += [
-    "test/mochitest/mochitest-remote.ini",
-    "test/mochitest/mochitest.ini",
+    "test/mochitest/mochitest-remote.toml",
+    "test/mochitest/mochitest.toml",
 ]
 MOCHITEST_CHROME_MANIFESTS += ["test/mochitest/chrome.toml"]
 XPCSHELL_TESTS_MANIFESTS += [

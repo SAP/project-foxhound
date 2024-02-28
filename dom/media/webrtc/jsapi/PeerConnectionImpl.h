@@ -583,6 +583,8 @@ class PeerConnectionImpl final
   static void SetupPreferredRtpExtensions(
       std::vector<RtpExtensionHeader>& aPreferredheaders);
 
+  void BreakCycles();
+
  private:
   virtual ~PeerConnectionImpl();
   PeerConnectionImpl(const PeerConnectionImpl& rhs);
@@ -591,7 +593,7 @@ class PeerConnectionImpl final
   RefPtr<dom::RTCStatsPromise> GetDataChannelStats(
       const RefPtr<DataChannelConnection>& aDataChannelConnection,
       const DOMHighResTimeStamp aTimestamp);
-  nsresult CalculateFingerprint(const std::string& algorithm,
+  nsresult CalculateFingerprint(const nsACString& algorithm,
                                 std::vector<uint8_t>* fingerprint) const;
   nsresult ConfigureJsepSessionCodecs();
 
@@ -843,8 +845,6 @@ class PeerConnectionImpl final
   bool AnyCodecHasPluginID(uint64_t aPluginID);
 
   already_AddRefed<nsIHttpChannelInternal> GetChannel() const;
-
-  void BreakCycles();
 
   bool HasPendingSetParameters() const;
   void InvalidateLastReturnedParameters();

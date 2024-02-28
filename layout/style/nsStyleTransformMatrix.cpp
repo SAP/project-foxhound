@@ -5,7 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
- * A class used for intermediate representations of the -moz-transform property.
+ * A class used for intermediate representations of the transform and
+ * transform-like properties.
  */
 
 #include "nsStyleTransformMatrix.h"
@@ -56,7 +57,7 @@ static nsRect GetSVGBox(const nsIFrame* aFrame) {
     case StyleTransformBox::FillBox: {
       // Percentages in transforms resolve against the SVG bbox, and the
       // transform is relative to the top-left of the SVG bbox.
-      nsRect bboxInAppUnits = nsLayoutUtils::ComputeGeometryBox(
+      nsRect bboxInAppUnits = nsLayoutUtils::ComputeSVGReferenceRect(
           const_cast<nsIFrame*>(aFrame), StyleGeometryBox::FillBox);
       // The mRect of an SVG nsIFrame is its user space bounds *including*
       // stroke and markers, whereas bboxInAppUnits is its user space bounds
@@ -85,7 +86,7 @@ static nsRect GetSVGBox(const nsIFrame* aFrame) {
       // have simple bounds.
       // FIXME: Bug 1849054. We may have to update
       // SVGGeometryFrame::GetBBoxContribution() to get tighter stroke bounds.
-      nsRect strokeBox = nsLayoutUtils::ComputeGeometryBox(
+      nsRect strokeBox = nsLayoutUtils::ComputeSVGReferenceRect(
           const_cast<nsIFrame*>(aFrame), StyleGeometryBox::StrokeBox);
       // The |nsIFrame::mRect| includes markers, so we have to compute the
       // offsets without markers.

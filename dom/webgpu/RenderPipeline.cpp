@@ -20,7 +20,9 @@ RenderPipeline::RenderPipeline(Device* const aParent, RawId aId,
     : ChildOf(aParent),
       mImplicitPipelineLayoutId(aImplicitPipelineLayoutId),
       mImplicitBindGroupLayoutIds(std::move(aImplicitBindGroupLayoutIds)),
-      mId(aId) {}
+      mId(aId) {
+  MOZ_RELEASE_ASSERT(aId);
+}
 
 RenderPipeline::~RenderPipeline() { Cleanup(); }
 
@@ -29,21 +31,35 @@ void RenderPipeline::Cleanup() {
     mValid = false;
     auto bridge = mParent->GetBridge();
     if (bridge && bridge->IsOpen()) {
-      bridge->SendRenderPipelineDestroy(mId);
+      bridge->SendRenderPipelineDrop(mId);
       if (mImplicitPipelineLayoutId) {
-        bridge->SendImplicitLayoutDestroy(mImplicitPipelineLayoutId,
-                                          mImplicitBindGroupLayoutIds);
+        // Bug 1862759: wgpu does not yet guarantee that the implicit pipeline
+        // layout was actually created, and requesting its destruction in such
+        // a case will crash the parent process. Until this is fixed, we leak
+        // all implicit pipeline layouts and bind group layouts.
+        /*
+        bridge->SendImplicitLayoutDrop(mImplicitPipelineLayoutId,
+                                       mImplicitBindGroupLayoutIds);
+        */
       }
     }
   }
 }
 
 already_AddRefed<BindGroupLayout> RenderPipeline::GetBindGroupLayout(
-    uint32_t index) const {
-  const RawId id = index < mImplicitBindGroupLayoutIds.Length()
-                       ? mImplicitBindGroupLayoutIds[index]
-                       : 0;
-  RefPtr<BindGroupLayout> object = new BindGroupLayout(mParent, id, false);
+    uint32_t aIndex) const {
+  auto bridge = mParent->GetBridge();
+  auto* client = bridge->GetClient();
+
+  ipc::ByteBuf bb;
+  const RawId bglId = ffi::wgpu_client_render_pipeline_get_bind_group_layout(
+      client, mId, aIndex, ToFFI(&bb));
+
+  if (!bridge->SendDeviceAction(mParent->GetId(), std::move(bb))) {
+    MOZ_CRASH("IPC failure");
+  }
+
+  RefPtr<BindGroupLayout> object = new BindGroupLayout(mParent, bglId, false);
   return object.forget();
 }
 

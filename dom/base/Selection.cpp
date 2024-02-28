@@ -35,6 +35,7 @@
 #include "mozilla/StackWalk.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/Try.h"
 
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
@@ -381,9 +382,7 @@ class AutoScroller final : public nsITimerCallback, public nsINamed {
     mContent = PresShell::GetCapturingContent();
 
     if (!mTimer) {
-      mTimer = NS_NewTimer(
-          mPresContext->Document()->EventTargetFor(TaskCategory::Other));
-
+      mTimer = NS_NewTimer(GetMainThreadSerialEventTarget());
       if (!mTimer) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
@@ -804,9 +803,8 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Selection)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_ADDREF(Selection)
-NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(
-    Selection, Disconnect())
+NS_IMPL_CYCLE_COLLECTING_ADDREF(Selection)
+NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(Selection, Disconnect())
 
 const RangeBoundary& Selection::AnchorRef() const {
   if (!mAnchorFocusRange) {

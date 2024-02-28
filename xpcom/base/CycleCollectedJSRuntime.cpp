@@ -80,13 +80,10 @@
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/TimelineConsumers.h"
-#include "mozilla/TimelineMarker.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/JSExecutionManager.h"
-#include "mozilla/dom/ProfileTimelineMarkerBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/PromiseDebugging.h"
@@ -822,7 +819,7 @@ void CycleCollectedJSRuntime::DescribeGCThing(
       // Nothing else to do!
     } else if (js::IsFunctionObject(obj)) {
       JSFunction* fun = JS_GetObjectFunction(obj);
-      JSString* str = JS_GetFunctionDisplayId(fun);
+      JSString* str = JS_GetMaybePartialFunctionDisplayId(fun);
       if (str) {
         JSLinearString* linear = JS_ASSERT_STRING_IS_LINEAR(str);
         nsAutoString chars;
@@ -1135,44 +1132,6 @@ void CycleCollectedJSRuntime::GCSliceCallback(JSContext* aContext,
   }
 }
 
-class MinorGCMarker : public TimelineMarker {
- private:
-  JS::GCReason mReason;
-
- public:
-  MinorGCMarker(MarkerTracingType aTracingType, JS::GCReason aReason)
-      : TimelineMarker("MinorGC", aTracingType, MarkerStackRequest::NO_STACK),
-        mReason(aReason) {
-    MOZ_ASSERT(aTracingType == MarkerTracingType::START ||
-               aTracingType == MarkerTracingType::END);
-  }
-
-  MinorGCMarker(JS::GCNurseryProgress aProgress, JS::GCReason aReason)
-      : TimelineMarker(
-            "MinorGC",
-            aProgress == JS::GCNurseryProgress::GC_NURSERY_COLLECTION_START
-                ? MarkerTracingType::START
-                : MarkerTracingType::END,
-            MarkerStackRequest::NO_STACK),
-        mReason(aReason) {}
-
-  virtual void AddDetails(JSContext* aCx,
-                          dom::ProfileTimelineMarker& aMarker) override {
-    TimelineMarker::AddDetails(aCx, aMarker);
-
-    if (GetTracingType() == MarkerTracingType::START) {
-      auto reason = JS::ExplainGCReason(mReason);
-      aMarker.mCauseName.Construct(NS_ConvertUTF8toUTF16(reason));
-    }
-  }
-
-  virtual UniquePtr<AbstractTimelineMarker> Clone() override {
-    auto clone = MakeUnique<MinorGCMarker>(GetTracingType(), mReason);
-    clone->SetCustomTime(GetTime());
-    return UniquePtr<AbstractTimelineMarker>(std::move(clone));
-  }
-};
-
 /* static */
 void CycleCollectedJSRuntime::GCNurseryCollectionCallback(
     JSContext* aContext, JS::GCNurseryProgress aProgress, JS::GCReason aReason,
@@ -1180,12 +1139,6 @@ void CycleCollectedJSRuntime::GCNurseryCollectionCallback(
   CycleCollectedJSRuntime* self = CycleCollectedJSRuntime::Get();
   MOZ_ASSERT(CycleCollectedJSContext::Get()->Context() == aContext);
   MOZ_ASSERT(NS_IsMainThread());
-
-  if (!TimelineConsumers::IsEmpty()) {
-    UniquePtr<AbstractTimelineMarker> abstractMarker(
-        MakeUnique<MinorGCMarker>(aProgress, aReason));
-    TimelineConsumers::AddMarkerForAllObservedDocShells(abstractMarker);
-  }
 
   TimeStamp now = TimeStamp::Now();
   if (aProgress == JS::GCNurseryProgress::GC_NURSERY_COLLECTION_START) {
@@ -1768,15 +1721,21 @@ IncrementalFinalizeRunnable::Run() {
 }
 
 void CycleCollectedJSRuntime::FinalizeDeferredThings(
-    CycleCollectedJSContext::DeferredFinalizeType aType) {
-  /*
-   * If the previous GC created a runnable to finalize objects
-   * incrementally, and if it hasn't finished yet, finish it now. We
-   * don't want these to build up. We also don't want to allow any
-   * existing incremental finalize runnables to run after a
-   * non-incremental GC, since they are often used to detect leaks.
-   */
+    DeferredFinalizeType aType) {
+  // If mFinalizeRunnable isn't null, we didn't finalize everything from the
+  // previous GC.
   if (mFinalizeRunnable) {
+    if (aType == FinalizeLater) {
+      // We need to defer all finalization until we return to the event loop,
+      // so leave things alone. Any new objects to be finalized from the current
+      // GC will be handled by the existing mFinalizeRunnable.
+      return;
+    }
+    MOZ_ASSERT(aType == FinalizeIncrementally || aType == FinalizeNow);
+    // If we're finalizing incrementally, we don't want finalizers to build up,
+    // so try to finish them off now.
+    // If we're finalizing synchronously, also go ahead and clear them out,
+    // so we make sure as much as possible is freed.
     mFinalizeRunnable->ReleaseNow(false);
     if (mFinalizeRunnable) {
       // If we re-entered ReleaseNow, we couldn't delete mFinalizeRunnable and
@@ -1785,6 +1744,7 @@ void CycleCollectedJSRuntime::FinalizeDeferredThings(
     }
   }
 
+  // If there's nothing to finalize, don't create a new runnable.
   if (mDeferredFinalizerTable.Count() == 0) {
     return;
   }
@@ -1795,12 +1755,13 @@ void CycleCollectedJSRuntime::FinalizeDeferredThings(
   // Everything should be gone now.
   MOZ_ASSERT(mDeferredFinalizerTable.Count() == 0);
 
-  if (aType == CycleCollectedJSContext::FinalizeIncrementally) {
-    NS_DispatchToCurrentThreadQueue(do_AddRef(mFinalizeRunnable), 2500,
-                                    EventQueuePriority::Idle);
-  } else {
+  if (aType == FinalizeNow) {
     mFinalizeRunnable->ReleaseNow(false);
     MOZ_ASSERT(!mFinalizeRunnable);
+  } else {
+    MOZ_ASSERT(aType == FinalizeIncrementally || aType == FinalizeLater);
+    NS_DispatchToCurrentThreadQueue(do_AddRef(mFinalizeRunnable), 2500,
+                                    EventQueuePriority::Idle);
   }
 }
 
@@ -1855,29 +1816,34 @@ void CycleCollectedJSRuntime::OnGC(JSContext* aContext, JSGCStatus aStatus,
                                   OOMState::Recovered);
       }
 
-      // Do any deferred finalization of native objects. We will run the
-      // finalizer later after we've returned to the event loop if any of
-      // three conditions hold:
-      // a) The GC is incremental. In this case, we probably care about pauses.
-      // b) There is a pending exception. The finalizers are not set up to run
-      // in that state.
-      // c) The GC was triggered for internal JS engine reasons. If this is the
-      // case, then we may be in the middle of running some code that the JIT
-      // has assumed can't have certain kinds of side effects. Finalizers can do
-      // all sorts of things, such as run JS, so we want to run them later.
-      // However, if we're shutting down, we need to destroy things immediately.
-      //
-      // Why do we ever bother finalizing things immediately if that's so
-      // questionable? In some situations, such as while testing or in low
-      // memory situations, we really want to free things right away.
-      bool finalizeIncrementally = JS::WasIncrementalGC(mJSRuntime) ||
-                                   JS_IsExceptionPending(aContext) ||
-                                   (JS::InternalGCReason(aReason) &&
-                                    aReason != JS::GCReason::DESTROY_RUNTIME);
-
-      FinalizeDeferredThings(
-          finalizeIncrementally ? CycleCollectedJSContext::FinalizeIncrementally
-                                : CycleCollectedJSContext::FinalizeNow);
+      DeferredFinalizeType finalizeType;
+      if (JS_IsExceptionPending(aContext)) {
+        // There is a pending exception. The finalizers are not set up to run
+        // in that state, so don't run the finalizer until we've returned to the
+        // event loop.
+        finalizeType = FinalizeLater;
+      } else if (JS::InternalGCReason(aReason)) {
+        if (aReason == JS::GCReason::DESTROY_RUNTIME) {
+          // We're shutting down, so we need to destroy things immediately.
+          finalizeType = FinalizeNow;
+        } else {
+          // We may be in the middle of running some code that the JIT has
+          // assumed can't have certain kinds of side effects. Finalizers can do
+          // all sorts of things, such as run JS, so we want to run them later,
+          // after we've returned to the event loop.
+          finalizeType = FinalizeLater;
+        }
+      } else if (JS::WasIncrementalGC(mJSRuntime)) {
+        // The GC was incremental, so we probably care about pauses. Try to
+        // break up finalization, but it is okay if we do some now.
+        finalizeType = FinalizeIncrementally;
+      } else {
+        // If we're running a synchronous GC, we probably want to free things as
+        // quickly as possible. This can happen during testing or if memory is
+        // low.
+        finalizeType = FinalizeNow;
+      }
+      FinalizeDeferredThings(finalizeType);
 
       break;
     }

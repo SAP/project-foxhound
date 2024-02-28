@@ -1247,7 +1247,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
    * the frame.
    *
    * Note that this does not add PageValuesProperty to the frame when not in a
-   * paginated context, or if layout.css.named-pages.enabled is set to false.
+   * paginated context.
    */
   class MOZ_RAII AutoFrameConstructionPageName final {
     nsFrameConstructorState& mState;
@@ -1377,13 +1377,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                    const nsStyleDisplay* aStyleDisplay,
                                    nsFrameList& aFrameList);
 
-  // <details> always creates a block per spec.
-  nsIFrame* ConstructDetails(nsFrameConstructorState& aState,
-                             FrameConstructionItem& aItem,
-                             nsContainerFrame* aParentFrame,
-                             const nsStyleDisplay* aStyleDisplay,
-                             nsFrameList& aFrameList);
-
   // Creates a block frame wrapping an anonymous ruby frame.
   nsIFrame* ConstructBlockRubyFrame(nsFrameConstructorState& aState,
                                     FrameConstructionItem& aItem,
@@ -1444,6 +1437,9 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                                      ComputedStyle&);
   static const FrameConstructionData* FindCanvasData(const Element&,
                                                      ComputedStyle&);
+  // <details> always creates a block per spec.
+  static const FrameConstructionData* FindDetailsData(const Element&,
+                                                      ComputedStyle&);
 
   /* Construct a frame from the given FrameConstructionItem.  This function
      will handle adding the frame to frame lists, processing children, setting

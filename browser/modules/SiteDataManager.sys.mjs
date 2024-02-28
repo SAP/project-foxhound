@@ -416,40 +416,6 @@ export var SiteDataManager = {
     }
   },
 
-  _removeQuotaUsage(site) {
-    let promises = [];
-    let removals = new Set();
-    for (let principal of site.principals) {
-      let { originNoSuffix } = principal;
-      if (removals.has(originNoSuffix)) {
-        // In case of encountering
-        //   - https://www.foo.com
-        //   - https://www.foo.com^userContextId=2
-        // below we have already removed across OAs so skip the same origin without suffix
-        continue;
-      }
-      removals.add(originNoSuffix);
-      promises.push(
-        new Promise(resolve => {
-          // We are clearing *All* across OAs so need to ensure a principal without suffix here,
-          // or the call of `clearStoragesForPrincipal` would fail.
-          principal =
-            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-              originNoSuffix
-            );
-          let request = this._qms.clearStoragesForPrincipal(
-            principal,
-            null,
-            null,
-            true
-          );
-          request.callback = resolve;
-        })
-      );
-    }
-    return Promise.all(promises);
-  },
-
   _removeCookies(site) {
     for (let cookie of site.cookies) {
       Services.cookies.remove(
@@ -507,7 +473,8 @@ export var SiteDataManager = {
         Ci.nsIClearDataService.CLEAR_COOKIES |
         Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
         Ci.nsIClearDataService.CLEAR_EME |
-        Ci.nsIClearDataService.CLEAR_ALL_CACHES;
+        Ci.nsIClearDataService.CLEAR_ALL_CACHES |
+        Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD;
       promises.push(
         new Promise(function (resolve) {
           const { clearData } = Services;

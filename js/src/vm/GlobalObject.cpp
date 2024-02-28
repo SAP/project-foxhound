@@ -234,14 +234,16 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
 }
 
 static bool ShouldFreezeBuiltin(JSProtoKey key) {
-  switch (key) {
-    case JSProto_Object:
-    case JSProto_Array:
-    case JSProto_Function:
-      return true;
-    default:
-      return false;
+  // We can't freeze Reflect because JS_InitReflectParse defines Reflect.parse.
+  if (key == JSProto_Reflect) {
+    return false;
   }
+  // We can't freeze Date because some browser tests use the Sinon library which
+  // redefines Date.now.
+  if (key == JSProto_Date) {
+    return false;
+  }
+  return true;
 }
 
 static unsigned GetAttrsForResolvedGlobal(GlobalObject* global,
@@ -872,11 +874,11 @@ bool GlobalObject::getSelfHostedFunction(JSContext* cx,
                                          MutableHandleValue funVal) {
   if (global->maybeGetIntrinsicValue(selfHostedName, funVal.address(), cx)) {
     RootedFunction fun(cx, &funVal.toObject().as<JSFunction>());
-    if (fun->explicitName() == name) {
+    if (fun->fullExplicitName() == name) {
       return true;
     }
 
-    if (fun->explicitName() == selfHostedName) {
+    if (fun->fullExplicitName() == selfHostedName) {
       // This function was initially cloned because it was called by
       // other self-hosted code, so the clone kept its self-hosted name,
       // instead of getting the name it's intended to have in content

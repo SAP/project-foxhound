@@ -228,6 +228,12 @@ var gIdentityHandler = {
       "identity-popup-securityView"
     ));
   },
+  get _identityPopupHttpsOnlyMode() {
+    delete this._identityPopupHttpsOnlyMode;
+    return (this._identityPopupHttpsOnlyMode = document.getElementById(
+      "identity-popup-security-httpsonlymode"
+    ));
+  },
   get _identityPopupHttpsOnlyModeMenuList() {
     delete this._identityPopupHttpsOnlyModeMenuList;
     return (this._identityPopupHttpsOnlyModeMenuList = document.getElementById(
@@ -352,6 +358,15 @@ var gIdentityHandler = {
     );
     return this._httpsFirstModeEnabledPBM;
   },
+  get _schemelessHttpsFirstModeEnabled() {
+    delete this._schemelessHttpsFirstModeEnabled;
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_schemelessHttpsFirstModeEnabled",
+      "dom.security.https_first_schemeless"
+    );
+    return this._schemelessHttpsFirstModeEnabled;
+  },
 
   _isHttpsOnlyModeActive(isWindowPrivate) {
     return (
@@ -364,6 +379,13 @@ var gIdentityHandler = {
       !this._isHttpsOnlyModeActive(isWindowPrivate) &&
       (this._httpsFirstModeEnabled ||
         (isWindowPrivate && this._httpsFirstModeEnabledPBM))
+    );
+  },
+  _isSchemelessHttpsFirstModeActive(isWindowPrivate) {
+    return (
+      !this._isHttpsOnlyModeActive(isWindowPrivate) &&
+      !this._isHttpsFirstModeActive(isWindowPrivate) &&
+      this._schemelessHttpsFirstModeEnabled
     );
   },
 
@@ -791,6 +813,11 @@ var gIdentityHandler = {
     let icon_label = "";
     let tooltip = "";
 
+    let warnTextOnInsecure =
+      this._insecureConnectionTextEnabled ||
+      (this._insecureConnectionTextPBModeEnabled &&
+        PrivateBrowsingUtils.isWindowPrivate(window));
+
     if (this._isSecureInternalUI) {
       // This is a secure internal Firefox page.
       this._identityBox.className = "chromeUI";
@@ -823,6 +850,10 @@ var gIdentityHandler = {
 
       if (this._isMixedActiveContentLoaded) {
         this._identityBox.classList.add("mixedActiveContent");
+        if (UrlbarPrefs.get("trimHttps") && warnTextOnInsecure) {
+          icon_label = gNavigatorBundle.getString("identity.notSecure.label");
+          this._identityBox.classList.add("notSecureText");
+        }
       } else if (this._isMixedActiveContentBlocked) {
         this._identityBox.classList.add(
           "mixedDisplayContentLoadedActiveBlocked"
@@ -852,11 +883,6 @@ var gIdentityHandler = {
       let className = "notSecure";
       this._identityBox.className = className;
       tooltip = gNavigatorBundle.getString("identity.notSecure.tooltip");
-
-      let warnTextOnInsecure =
-        this._insecureConnectionTextEnabled ||
-        (this._insecureConnectionTextPBModeEnabled &&
-          PrivateBrowsingUtils.isWindowPrivate(window));
       if (warnTextOnInsecure) {
         icon_label = gNavigatorBundle.getString("identity.notSecure.label");
         this._identityBox.classList.add("notSecureText");
@@ -1017,11 +1043,22 @@ var gIdentityHandler = {
     const isHttpsFirstModeActive = this._isHttpsFirstModeActive(
       privateBrowsingWindow
     );
+    const isSchemelessHttpsFirstModeActive =
+      this._isSchemelessHttpsFirstModeActive(privateBrowsingWindow);
     let httpsOnlyStatus = "";
-    if (isHttpsFirstModeActive || isHttpsOnlyModeActive) {
+    if (
+      isHttpsFirstModeActive ||
+      isHttpsOnlyModeActive ||
+      isSchemelessHttpsFirstModeActive
+    ) {
       // Note: value and permission association is laid out
       //       in _getHttpsOnlyPermission
       let value = this._getHttpsOnlyPermission();
+
+      // We do not want to display the exception ui for schemeless
+      // HTTPS-First, but we still want the "Upgraded to HTTPS" label.
+      this._identityPopupHttpsOnlyMode.hidden =
+        isSchemelessHttpsFirstModeActive;
 
       this._identityPopupHttpsOnlyModeMenuListOffItem.hidden =
         privateBrowsingWindow && value != 1;

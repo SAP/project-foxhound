@@ -9,6 +9,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/Maybe.h"
 
 #include <cstdlib>
 #include <utility>
@@ -123,20 +124,17 @@ bool js::temporal::InterpretISODateTimeOffset(
   if (offsetBehaviour == OffsetBehaviour::Exact ||
       offsetOption == TemporalOffset::Use) {
     // Step 4.a.
-    auto epochNanoseconds = GetUTCEpochNanoseconds(dateTime);
-    auto offsetNs = InstantSpan::fromNanoseconds(offsetNanoseconds);
+    auto epochNanoseconds = GetUTCEpochNanoseconds(
+        dateTime, InstantSpan::fromNanoseconds(offsetNanoseconds));
 
     // Step 4.b.
-    epochNanoseconds = epochNanoseconds - offsetNs;
-
-    // Step 4.c.
     if (!IsValidEpochInstant(epochNanoseconds)) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_TEMPORAL_INSTANT_INVALID);
       return false;
     }
 
-    // Step 4.d.
+    // Step 4.c.
     *result = epochNanoseconds;
     return true;
   }
@@ -207,14 +205,20 @@ bool js::temporal::InterpretISODateTimeOffset(
   }
 
   // Step 10.
-  auto instant = DisambiguatePossibleInstants(cx, possibleInstants, timeZone,
-                                              temporalDateTime, disambiguation);
-  if (!instant) {
+  Rooted<Wrapped<InstantObject*>> instant(cx);
+  if (!DisambiguatePossibleInstants(cx, possibleInstants, timeZone,
+                                    temporalDateTime, disambiguation,
+                                    &instant)) {
+    return false;
+  }
+
+  auto* unwrappedInstant = instant.unwrap(cx);
+  if (!unwrappedInstant) {
     return false;
   }
 
   // Step 11.
-  *result = ToInstant(&instant.unwrap());
+  *result = ToInstant(unwrappedInstant);
   return true;
 }
 
@@ -224,7 +228,16 @@ bool js::temporal::InterpretISODateTimeOffset(
 static Wrapped<ZonedDateTimeObject*> ToTemporalZonedDateTime(
     JSContext* cx, Handle<Value> item,
     Handle<JSObject*> maybeOptions = nullptr) {
-  // Steps 1-2. (Not applicable in our implementation)
+  // Step 1. (Not applicable in our implementation)
+
+  // Step 2.
+  Rooted<PlainObject*> maybeResolvedOptions(cx);
+  if (maybeOptions) {
+    maybeResolvedOptions = SnapshotOwnProperties(cx, maybeOptions);
+    if (!maybeResolvedOptions) {
+      return nullptr;
+    }
+  }
 
   // Step 3.
   auto offsetBehaviour = OffsetBehaviour::Option;
@@ -257,22 +270,28 @@ static Wrapped<ZonedDateTimeObject*> ToTemporalZonedDateTime(
     // Step 5.c.
     JS::RootedVector<PropertyKey> fieldNames(cx);
     if (!CalendarFields(cx, calendar,
-                        {CalendarField::Day, CalendarField::Hour,
-                         CalendarField::Microsecond, CalendarField::Millisecond,
-                         CalendarField::Minute, CalendarField::Month,
-                         CalendarField::MonthCode, CalendarField::Nanosecond,
-                         CalendarField::Second, CalendarField::Year},
+                        {CalendarField::Day, CalendarField::Month,
+                         CalendarField::MonthCode, CalendarField::Year},
                         &fieldNames)) {
       return nullptr;
     }
 
-    // Steps 5.d-e.
+    // Step 5.d.
     if (!AppendSorted(cx, fieldNames.get(),
-                      {TemporalField::Offset, TemporalField::TimeZone})) {
+                      {
+                          TemporalField::Hour,
+                          TemporalField::Microsecond,
+                          TemporalField::Millisecond,
+                          TemporalField::Minute,
+                          TemporalField::Nanosecond,
+                          TemporalField::Offset,
+                          TemporalField::Second,
+                          TemporalField::TimeZone,
+                      })) {
       return nullptr;
     }
 
-    // Step 5.f.
+    // Step 5.e.
     Rooted<PlainObject*> fields(
         cx, PrepareTemporalFields(cx, itemObj, fieldNames,
                                   {TemporalField::TimeZone}));
@@ -280,28 +299,28 @@ static Wrapped<ZonedDateTimeObject*> ToTemporalZonedDateTime(
       return nullptr;
     }
 
-    // Step 5.g.
+    // Step 5.f.
     Rooted<Value> timeZoneValue(cx);
     if (!GetProperty(cx, fields, fields, cx->names().timeZone,
                      &timeZoneValue)) {
       return nullptr;
     }
 
-    // Step 5.h.
+    // Step 5.g.
     if (!ToTemporalTimeZone(cx, timeZoneValue, &timeZone)) {
       return nullptr;
     }
 
-    // Step 5.i.
+    // Step 5.h.
     Rooted<Value> offsetValue(cx);
     if (!GetProperty(cx, fields, fields, cx->names().offset, &offsetValue)) {
       return nullptr;
     }
 
-    // Step 5.j.
+    // Step 5.i.
     MOZ_ASSERT(offsetValue.isString() || offsetValue.isUndefined());
 
-    // Step 5.k.
+    // Step 5.j.
     Rooted<JSString*> offsetString(cx);
     if (offsetValue.isString()) {
       offsetString = offsetValue.toString();
@@ -309,26 +328,27 @@ static Wrapped<ZonedDateTimeObject*> ToTemporalZonedDateTime(
       offsetBehaviour = OffsetBehaviour::Wall;
     }
 
-    if (maybeOptions) {
-      // Steps 5.l-m.
-      if (!ToTemporalDisambiguation(cx, maybeOptions, &disambiguation)) {
+    if (maybeResolvedOptions) {
+      // Steps 5.k-l.
+      if (!ToTemporalDisambiguation(cx, maybeResolvedOptions,
+                                    &disambiguation)) {
+        return nullptr;
+      }
+
+      // Step 5.m.
+      if (!ToTemporalOffset(cx, maybeResolvedOptions, &offsetOption)) {
         return nullptr;
       }
 
       // Step 5.n.
-      if (!ToTemporalOffset(cx, maybeOptions, &offsetOption)) {
-        return nullptr;
-      }
-
-      // Step 5.o.
-      if (!InterpretTemporalDateTimeFields(cx, calendar, fields, maybeOptions,
-                                           &dateTime)) {
+      if (!InterpretTemporalDateTimeFields(cx, calendar, fields,
+                                           maybeResolvedOptions, &dateTime)) {
         return nullptr;
       }
     } else {
-      // Steps 5.l-n. (Not applicable)
+      // Steps 5.k-m. (Not applicable)
 
-      // Step 5.o.
+      // Step 5.n.
       if (!InterpretTemporalDateTimeFields(cx, calendar, fields, &dateTime)) {
         return nullptr;
       }
@@ -411,20 +431,21 @@ static Wrapped<ZonedDateTimeObject*> ToTemporalZonedDateTime(
     // Step 6.m.
     matchBehaviour = MatchBehaviour::MatchMinutes;
 
-    if (maybeOptions) {
+    if (maybeResolvedOptions) {
       // Step 6.n.
-      if (!ToTemporalDisambiguation(cx, maybeOptions, &disambiguation)) {
+      if (!ToTemporalDisambiguation(cx, maybeResolvedOptions,
+                                    &disambiguation)) {
         return nullptr;
       }
 
       // Step 6.o.
-      if (!ToTemporalOffset(cx, maybeOptions, &offsetOption)) {
+      if (!ToTemporalOffset(cx, maybeResolvedOptions, &offsetOption)) {
         return nullptr;
       }
 
       // Step 6.p.
       TemporalOverflow ignored;
-      if (!ToTemporalOverflow(cx, maybeOptions, &ignored)) {
+      if (!ToTemporalOverflow(cx, maybeResolvedOptions, &ignored)) {
         return nullptr;
       }
     }
@@ -554,12 +575,13 @@ ZonedDateTimeObject* js::temporal::CreateTemporalZonedDateTime(
 /**
  * AddZonedDateTime ( epochNanoseconds, timeZone, calendar, years, months,
  * weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds
- * [ , options ] )
+ * [ , precalculatedPlainDateTime [ , options ] ] )
  */
 static bool AddZonedDateTime(JSContext* cx, const Instant& epochNanoseconds,
                              Handle<TimeZoneValue> timeZone,
                              Handle<CalendarValue> calendar,
                              const Duration& duration,
+                             mozilla::Maybe<const PlainDateTime&> dateTime,
                              Handle<JSObject*> maybeOptions, Instant* result) {
   MOZ_ASSERT(IsValidEpochInstant(epochNanoseconds));
   MOZ_ASSERT(IsValidDuration(duration.date()));
@@ -576,8 +598,15 @@ static bool AddZonedDateTime(JSContext* cx, const Instant& epochNanoseconds,
 
   // Steps 4-5.
   PlainDateTime temporalDateTime;
-  if (!GetPlainDateTimeFor(cx, timeZone, epochNanoseconds, &temporalDateTime)) {
-    return false;
+  if (dateTime) {
+    // Step 4.a.
+    temporalDateTime = *dateTime;
+  } else {
+    // Steps 5.a-b.
+    if (!GetPlainDateTimeFor(cx, timeZone, epochNanoseconds,
+                             &temporalDateTime)) {
+      return false;
+    }
   }
   auto& [date, time] = temporalDateTime;
 
@@ -622,14 +651,41 @@ static bool AddZonedDateTime(JSContext* cx, const Instant& epochNanoseconds,
 /**
  * AddZonedDateTime ( epochNanoseconds, timeZone, calendar, years, months,
  * weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds
- * [ , options ] )
+ * [ , precalculatedPlainDateTime [ , options ] ] )
+ */
+static bool AddZonedDateTime(JSContext* cx, const Instant& epochNanoseconds,
+                             Handle<TimeZoneValue> timeZone,
+                             Handle<CalendarValue> calendar,
+                             const Duration& duration,
+                             Handle<JSObject*> maybeOptions, Instant* result) {
+  return ::AddZonedDateTime(cx, epochNanoseconds, timeZone, calendar, duration,
+                            mozilla::Nothing(), maybeOptions, result);
+}
+
+/**
+ * AddZonedDateTime ( epochNanoseconds, timeZone, calendar, years, months,
+ * weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds
+ * [ , precalculatedPlainDateTime [ , options ] ] )
  */
 bool js::temporal::AddZonedDateTime(JSContext* cx, const Instant& epochInstant,
                                     Handle<TimeZoneValue> timeZone,
                                     Handle<CalendarValue> calendar,
                                     const Duration& duration, Instant* result) {
   return ::AddZonedDateTime(cx, epochInstant, timeZone, calendar, duration,
-                            nullptr, result);
+                            mozilla::Nothing(), nullptr, result);
+}
+
+/**
+ * AddZonedDateTime ( epochNanoseconds, timeZone, calendar, years, months,
+ * weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds
+ * [ , precalculatedPlainDateTime [ , options ] ] )
+ */
+bool js::temporal::AddZonedDateTime(
+    JSContext* cx, const Instant& epochNanoseconds,
+    Handle<TimeZoneValue> timeZone, Handle<CalendarValue> calendar,
+    const Duration& duration, const PlainDateTime& dateTime, Instant* result) {
+  return ::AddZonedDateTime(cx, epochNanoseconds, timeZone, calendar, duration,
+                            mozilla::SomeRef(dateTime), nullptr, result);
 }
 
 double js::temporal::NanosecondsAndDays::daysNumber() const {
@@ -681,26 +737,26 @@ bool js::temporal::NanosecondsToDays(
     return false;
   }
 
-  // Steps 4-5.
-  PlainDateTime startDateTime;
-  if (!GetPlainDateTimeFor(cx, timeZone, startNs, &startDateTime)) {
-    return false;
-  }
-
-  // Step 6.
+  // Step 5.
   //
   // NB: This addition can't overflow, because we've checked that |nanoseconds|
   // can be represented as an InstantSpan value.
   auto endNs = startNs + nanoseconds;
 
-  // Step 7.
+  // Step 6.
   if (!IsValidEpochInstant(endNs)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_INSTANT_INVALID);
     return false;
   }
 
-  // Steps 8-9.
+  // Steps 4 and 8.
+  PlainDateTime startDateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, startNs, &startDateTime)) {
+    return false;
+  }
+
+  // Steps 7 and 9.
   PlainDateTime endDateTime;
   if (!GetPlainDateTimeFor(cx, timeZone, endNs, &endDateTime)) {
     return false;
@@ -719,7 +775,7 @@ bool js::temporal::NanosecondsToDays(
   // Step 12.
   Instant intermediateNs;
   if (!AddZonedDateTime(cx, startNs, timeZone, calendar, {0, 0, 0, days},
-                        &intermediateNs)) {
+                        startDateTime, &intermediateNs)) {
     return false;
   }
   MOZ_ASSERT(IsValidEpochInstant(intermediateNs));
@@ -744,7 +800,8 @@ bool js::temporal::NanosecondsToDays(
       // Step 13.a.ii.
       double durationDays = days - double(daysToSubtract);
       if (!AddZonedDateTime(cx, startNs, timeZone, calendar,
-                            {0, 0, 0, durationDays}, &intermediateNs)) {
+                            {0, 0, 0, durationDays}, startDateTime,
+                            &intermediateNs)) {
         return false;
       }
       MOZ_ASSERT(IsValidEpochInstant(intermediateNs));
@@ -995,7 +1052,7 @@ static bool DifferenceZonedDateTime(JSContext* cx, const Instant& ns1,
                             dateDifference.months,
                             dateDifference.weeks,
                         },
-                        &intermediateNs)) {
+                        startDateTime, &intermediateNs)) {
     return false;
   }
   MOZ_ASSERT(IsValidEpochInstant(intermediateNs));
@@ -1053,33 +1110,6 @@ bool js::temporal::DifferenceZonedDateTime(JSContext* cx, const Instant& ns1,
 /**
  * TimeZoneEquals ( one, two )
  */
-static bool TimeZoneEquals(JSContext* cx, Handle<TimeZoneValue> one,
-                           Handle<TimeZoneValue> two, bool* equals) {
-  // Step 1.
-  if (one.isObject() && two.isObject() && one.toObject() == two.toObject()) {
-    *equals = true;
-    return true;
-  }
-
-  // Step 2.
-  Rooted<JSString*> timeZoneOne(cx, ToTemporalTimeZoneIdentifier(cx, one));
-  if (!timeZoneOne) {
-    return false;
-  }
-
-  // Step 3.
-  JSString* timeZoneTwo = ToTemporalTimeZoneIdentifier(cx, two);
-  if (!timeZoneTwo) {
-    return false;
-  }
-
-  // Steps 4-5.
-  return EqualStrings(cx, timeZoneOne, timeZoneTwo, equals);
-}
-
-/**
- * TimeZoneEquals ( one, two )
- */
 static bool TimeZoneEqualsOrThrow(JSContext* cx, Handle<TimeZoneValue> one,
                                   Handle<TimeZoneValue> two) {
   // Step 1.
@@ -1094,14 +1124,14 @@ static bool TimeZoneEqualsOrThrow(JSContext* cx, Handle<TimeZoneValue> one,
   }
 
   // Step 3.
-  JSString* timeZoneTwo = ToTemporalTimeZoneIdentifier(cx, two);
+  Rooted<JSString*> timeZoneTwo(cx, ToTemporalTimeZoneIdentifier(cx, two));
   if (!timeZoneTwo) {
     return false;
   }
 
-  // Steps 4-5.
+  // Steps 4-9.
   bool equals;
-  if (!EqualStrings(cx, timeZoneOne, timeZoneTwo, &equals)) {
+  if (!TimeZoneEquals(cx, timeZoneOne, timeZoneTwo, &equals)) {
     return false;
   }
   if (equals) {
@@ -1134,13 +1164,13 @@ static bool RoundISODateTime(JSContext* cx, const PlainDateTime& dateTime,
 
   const auto& [date, time] = dateTime;
 
-  // Steps 1-2.
+  // Step 1.
   MOZ_ASSERT(IsValidISODateTime(dateTime));
   MOZ_ASSERT(ISODateTimeWithinLimits(dateTime));
 
-  // Step 3. (Not applicable in our implementation.)
+  // Step 2. (Not applicable in our implementation.)
 
-  // Step 4.
+  // Step 3.
   auto roundedTime = RoundTime(time, increment, unit, roundingMode, dayLength);
 
   // |dayLength| can be as small as 1, so the number of rounded days can be as
@@ -1148,14 +1178,14 @@ static bool RoundISODateTime(JSContext* cx, const PlainDateTime& dateTime,
   MOZ_ASSERT(0 <= roundedTime.days &&
              roundedTime.days < ToNanoseconds(TemporalUnit::Day));
 
-  // Step 5.
+  // Step 4.
   PlainDate balanceResult;
   if (!BalanceISODate(cx, date.year, date.month,
                       int64_t(date.day) + roundedTime.days, &balanceResult)) {
     return false;
   }
 
-  // Step 6.
+  // Step 5.
   *result = {balanceResult, roundedTime.time};
   return true;
 }
@@ -1281,7 +1311,23 @@ static bool DifferenceTemporalZonedDateTime(JSContext* cx,
     }
   }
 
-  // Steps 10-11.
+  // Step 10.
+  if (settings.smallestUnit == TemporalUnit::Nanosecond &&
+      settings.roundingIncrement == Increment{1}) {
+    if (operation == TemporalDifference::Since) {
+      difference = difference.negate();
+    }
+
+    auto* obj = CreateTemporalDuration(cx, difference);
+    if (!obj) {
+      return false;
+    }
+
+    args.rval().setObject(*obj);
+    return true;
+  }
+
+  // Steps 11-14.
   Duration roundResult;
   if (!RoundDuration(cx, difference, settings.roundingIncrement,
                      settings.smallestUnit, settings.roundingMode,
@@ -1290,7 +1336,7 @@ static bool DifferenceTemporalZonedDateTime(JSContext* cx,
     return false;
   }
 
-  // Step 12.
+  // Step 15.
   Duration result;
   if (!AdjustRoundedDurationDays(cx, roundResult, settings.roundingIncrement,
                                  settings.smallestUnit, settings.roundingMode,
@@ -1298,7 +1344,7 @@ static bool DifferenceTemporalZonedDateTime(JSContext* cx,
     return false;
   }
 
-  // Step 13.
+  // Step 16.
   if (operation == TemporalDifference::Since) {
     result = result.negate();
   }
@@ -1579,14 +1625,13 @@ static bool ZonedDateTime_year(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarYear(cx, calendar, temporalDateTime, args.rval());
+  return CalendarYear(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -1608,14 +1653,13 @@ static bool ZonedDateTime_month(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarMonth(cx, calendar, temporalDateTime, args.rval());
+  return CalendarMonth(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -1637,14 +1681,13 @@ static bool ZonedDateTime_monthCode(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarMonthCode(cx, calendar, temporalDateTime, args.rval());
+  return CalendarMonthCode(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -1667,14 +1710,13 @@ static bool ZonedDateTime_day(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarDay(cx, calendar, temporalDateTime, args.rval());
+  return CalendarDay(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -1979,14 +2021,13 @@ static bool ZonedDateTime_dayOfWeek(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarDayOfWeek(cx, calendar, temporalDateTime, args.rval());
+  return CalendarDayOfWeek(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -2009,14 +2050,13 @@ static bool ZonedDateTime_dayOfYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarDayOfYear(cx, calendar, temporalDateTime, args.rval());
+  return CalendarDayOfYear(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -2039,14 +2079,13 @@ static bool ZonedDateTime_weekOfYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarWeekOfYear(cx, calendar, temporalDateTime, args.rval());
+  return CalendarWeekOfYear(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -2069,14 +2108,13 @@ static bool ZonedDateTime_yearOfWeek(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarYearOfWeek(cx, calendar, temporalDateTime, args.rval());
+  return CalendarYearOfWeek(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -2117,8 +2155,7 @@ static bool ZonedDateTime_hoursInDay(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 10.
-  PlainDate tomorrowFields =
-      BalanceISODate(date.year, date.month, date.day + 1);
+  auto tomorrowFields = BalanceISODate(date.year, date.month, date.day + 1);
 
   // Step 11.
   Rooted<PlainDateTimeObject*> tomorrow(
@@ -2179,14 +2216,13 @@ static bool ZonedDateTime_daysInWeek(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarDaysInWeek(cx, calendar, temporalDateTime, args.rval());
+  return CalendarDaysInWeek(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -2209,14 +2245,13 @@ static bool ZonedDateTime_daysInMonth(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarDaysInMonth(cx, calendar, temporalDateTime, args.rval());
+  return CalendarDaysInMonth(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -2239,14 +2274,13 @@ static bool ZonedDateTime_daysInYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarDaysInYear(cx, calendar, temporalDateTime, args.rval());
+  return CalendarDaysInYear(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -2269,14 +2303,13 @@ static bool ZonedDateTime_monthsInYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarMonthsInYear(cx, calendar, temporalDateTime, args.rval());
+  return CalendarMonthsInYear(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -2300,14 +2333,13 @@ static bool ZonedDateTime_inLeapYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-6.
-  auto* dateTime = GetPlainDateTimeFor(cx, timeZone, instant, calendar);
-  if (!dateTime) {
+  PlainDateTime dateTime;
+  if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return false;
   }
-  Rooted<Value> temporalDateTime(cx, ObjectValue(*dateTime));
 
   // Step 7.
-  return CalendarInLeapYear(cx, calendar, temporalDateTime, args.rval());
+  return CalendarInLeapYear(cx, calendar, dateTime, args.rval());
 }
 
 /**
@@ -2365,14 +2397,8 @@ static bool ZonedDateTime_offset(JSContext* cx, const CallArgs& args) {
   // Step 3.
   Rooted<TimeZoneValue> timeZone(cx, zonedDateTime->timeZone());
 
-  // Step 4.
-  Rooted<InstantObject*> instant(cx, CreateTemporalInstant(cx, epochInstant));
-  if (!instant) {
-    return false;
-  }
-
-  // Step 5.
-  JSString* str = GetOffsetStringFor(cx, timeZone, instant);
+  // Steps 4-5.
+  JSString* str = GetOffsetStringFor(cx, timeZone, epochInstant);
   if (!str) {
     return false;
   }
@@ -2412,13 +2438,18 @@ static bool ZonedDateTime_with(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 5.
-  Rooted<JSObject*> options(cx);
+  Rooted<PlainObject*> resolvedOptions(cx);
   if (args.hasDefined(1)) {
-    options = RequireObjectArg(cx, "options", "with", args[1]);
+    Rooted<JSObject*> options(cx,
+                              RequireObjectArg(cx, "options", "with", args[1]));
+    if (!options) {
+      return false;
+    }
+    resolvedOptions = SnapshotOwnProperties(cx, options);
   } else {
-    options = NewPlainObjectWithProto(cx, nullptr);
+    resolvedOptions = NewPlainObjectWithProto(cx, nullptr);
   }
-  if (!options) {
+  if (!resolvedOptions) {
     return false;
   }
 
@@ -2426,31 +2457,91 @@ static bool ZonedDateTime_with(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Step 7.
-  JS::RootedVector<PropertyKey> fieldNames(cx);
-  if (!CalendarFields(cx, calendar,
-                      {CalendarField::Day, CalendarField::Hour,
-                       CalendarField::Microsecond, CalendarField::Millisecond,
-                       CalendarField::Minute, CalendarField::Month,
-                       CalendarField::MonthCode, CalendarField::Nanosecond,
-                       CalendarField::Second, CalendarField::Year},
-                      &fieldNames)) {
-    return false;
-  }
+  Rooted<TimeZoneValue> timeZone(cx, zonedDateTime->timeZone());
 
   // Step 8.
-  if (!AppendSorted(cx, fieldNames.get(), {TemporalField::Offset})) {
-    return false;
-  }
+  auto instant = ToInstant(zonedDateTime);
 
   // Step 9.
-  Rooted<PlainObject*> fields(
-      cx, PrepareTemporalFields(cx, zonedDateTime, fieldNames,
-                                {TemporalField::Offset}));
-  if (!fields) {
+  int64_t offsetNanoseconds;
+  if (!GetOffsetNanosecondsFor(cx, timeZone, instant, &offsetNanoseconds)) {
     return false;
   }
 
   // Step 10.
+  Rooted<PlainDateTimeObject*> dateTime(
+      cx, GetPlainDateTimeFor(cx, instant, calendar, offsetNanoseconds));
+  if (!dateTime) {
+    return false;
+  }
+
+  // Step 11.
+  JS::RootedVector<PropertyKey> fieldNames(cx);
+  if (!CalendarFields(cx, calendar,
+                      {CalendarField::Day, CalendarField::Month,
+                       CalendarField::MonthCode, CalendarField::Year},
+                      &fieldNames)) {
+    return false;
+  }
+
+  // Step 12.
+  Rooted<PlainObject*> fields(cx,
+                              PrepareTemporalFields(cx, dateTime, fieldNames));
+  if (!fields) {
+    return false;
+  }
+
+  // Steps 13-18.
+  struct TimeField {
+    using FieldName = ImmutableTenuredPtr<PropertyName*> JSAtomState::*;
+
+    FieldName name;
+    int32_t value;
+  } timeFields[] = {
+      {&JSAtomState::hour, dateTime->isoHour()},
+      {&JSAtomState::minute, dateTime->isoMinute()},
+      {&JSAtomState::second, dateTime->isoSecond()},
+      {&JSAtomState::millisecond, dateTime->isoMillisecond()},
+      {&JSAtomState::microsecond, dateTime->isoMicrosecond()},
+      {&JSAtomState::nanosecond, dateTime->isoNanosecond()},
+  };
+
+  Rooted<Value> timeFieldValue(cx);
+  for (const auto& timeField : timeFields) {
+    Handle<PropertyName*> name = cx->names().*(timeField.name);
+    timeFieldValue.setInt32(timeField.value);
+
+    if (!DefineDataProperty(cx, fields, name, timeFieldValue)) {
+      return false;
+    }
+  }
+
+  // Step 19.
+  JSString* fieldsOffset = FormatUTCOffsetNanoseconds(cx, offsetNanoseconds);
+  if (!fieldsOffset) {
+    return false;
+  }
+
+  timeFieldValue.setString(fieldsOffset);
+  if (!DefineDataProperty(cx, fields, cx->names().offset, timeFieldValue)) {
+    return false;
+  }
+
+  // Step 20.
+  if (!AppendSorted(cx, fieldNames.get(),
+                    {
+                        TemporalField::Hour,
+                        TemporalField::Microsecond,
+                        TemporalField::Millisecond,
+                        TemporalField::Minute,
+                        TemporalField::Nanosecond,
+                        TemporalField::Offset,
+                        TemporalField::Second,
+                    })) {
+    return false;
+  }
+
+  // Step 21.
   Rooted<PlainObject*> partialZonedDateTime(
       cx,
       PreparePartialTemporalFields(cx, temporalZonedDateTimeLike, fieldNames));
@@ -2458,68 +2549,65 @@ static bool ZonedDateTime_with(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // Step 11.
+  // Step 22.
   Rooted<JSObject*> mergedFields(
       cx, CalendarMergeFields(cx, calendar, fields, partialZonedDateTime));
   if (!mergedFields) {
     return false;
   }
 
-  // Step 12.
+  // Step 23.
   fields = PrepareTemporalFields(cx, mergedFields, fieldNames,
                                  {TemporalField::Offset});
   if (!fields) {
     return false;
   }
 
-  // Step 13-14.
+  // Step 24-25.
   auto disambiguation = TemporalDisambiguation::Compatible;
-  if (!ToTemporalDisambiguation(cx, options, &disambiguation)) {
+  if (!ToTemporalDisambiguation(cx, resolvedOptions, &disambiguation)) {
     return false;
   }
 
-  // Step 15.
+  // Step 26.
   auto offset = TemporalOffset::Prefer;
-  if (!ToTemporalOffset(cx, options, &offset)) {
+  if (!ToTemporalOffset(cx, resolvedOptions, &offset)) {
     return false;
   }
 
-  // Step 16.
+  // Step 27.
   PlainDateTime dateTimeResult;
-  if (!InterpretTemporalDateTimeFields(cx, calendar, fields, options,
+  if (!InterpretTemporalDateTimeFields(cx, calendar, fields, resolvedOptions,
                                        &dateTimeResult)) {
     return false;
   }
 
-  // Step 17.
+  // Step 28.
   Rooted<Value> offsetString(cx);
   if (!GetProperty(cx, fields, fields, cx->names().offset, &offsetString)) {
     return false;
   }
 
-  // Step 18.
+  // Step 29.
   MOZ_ASSERT(offsetString.isString());
 
-  // Steps 19-21.
+  // Step 30.
   Rooted<JSString*> offsetStr(cx, offsetString.toString());
-  int64_t offsetNanoseconds;
-  if (!ParseDateTimeUTCOffset(cx, offsetStr, &offsetNanoseconds)) {
+  int64_t newOffsetNanoseconds;
+  if (!ParseDateTimeUTCOffset(cx, offsetStr, &newOffsetNanoseconds)) {
     return false;
   }
 
-  // Step 21.
-  Rooted<TimeZoneValue> timeZone(cx, zonedDateTime->timeZone());
-
-  // Step 22.
+  // Step 31.
   Instant epochNanoseconds;
-  if (!InterpretISODateTimeOffset(cx, dateTimeResult, OffsetBehaviour::Option,
-                                  offsetNanoseconds, timeZone, disambiguation,
-                                  offset, MatchBehaviour::MatchExactly,
-                                  &epochNanoseconds)) {
+  if (!InterpretISODateTimeOffset(
+          cx, dateTimeResult, OffsetBehaviour::Option, newOffsetNanoseconds,
+          timeZone, disambiguation, offset, MatchBehaviour::MatchExactly,
+          &epochNanoseconds)) {
     return false;
   }
 
-  // Step 23.
+  // Step 32.
   auto* result =
       CreateTemporalZonedDateTime(cx, epochNanoseconds, timeZone, calendar);
   if (!result) {
@@ -2816,10 +2904,10 @@ static bool ZonedDateTime_round(JSContext* cx, const CallArgs& args) {
   auto* zonedDateTime = &args.thisv().toObject().as<ZonedDateTimeObject>();
   auto epochInstant = ToInstant(zonedDateTime);
 
-  // Step 13. (Reorderd)
+  // Step 14. (Reorderd)
   Rooted<TimeZoneValue> timeZone(cx, zonedDateTime->timeZone());
 
-  // Step 15. (Reordered)
+  // Step 16. (Reordered)
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
   // Steps 3-12.
@@ -2885,20 +2973,32 @@ static bool ZonedDateTime_round(JSContext* cx, const CallArgs& args) {
     }
   }
 
-  // Step 14.
-  Rooted<InstantObject*> instant(cx, CreateTemporalInstant(cx, epochInstant));
-  if (!instant) {
-    return false;
+  // Step 13.
+  if (smallestUnit == TemporalUnit::Nanosecond &&
+      roundingIncrement == Increment{1}) {
+    // Step 13.a.
+    auto* result =
+        CreateTemporalZonedDateTime(cx, epochInstant, timeZone, calendar);
+    if (!result) {
+      return false;
+    }
+
+    args.rval().setObject(*result);
+    return true;
   }
 
-  // Step 16.
-  PlainDateTime temporalDateTime;
-  if (!temporal::GetPlainDateTimeFor(cx, timeZone, instant,
-                                     &temporalDateTime)) {
+  // Steps 15 and 17.
+  int64_t offsetNanoseconds;
+  if (!GetOffsetNanosecondsFor(cx, timeZone, epochInstant,
+                               &offsetNanoseconds)) {
     return false;
   }
+  MOZ_ASSERT(std::abs(offsetNanoseconds) < ToNanoseconds(TemporalUnit::Day));
 
-  // Step 17.
+  // Step 18.
+  auto temporalDateTime = GetPlainDateTimeFor(epochInstant, offsetNanoseconds);
+
+  // Step 19.
   Rooted<CalendarValue> isoCalendar(cx, CalendarValue(cx->names().iso8601));
   Rooted<PlainDateTimeObject*> dtStart(
       cx, CreateTemporalDateTime(cx, {temporalDateTime.date}, isoCalendar));
@@ -2906,26 +3006,26 @@ static bool ZonedDateTime_round(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // Steps 18-19.
+  // Steps 20-21.
   Instant startNs;
   if (!GetInstantFor(cx, timeZone, dtStart, TemporalDisambiguation::Compatible,
                      &startNs)) {
     return false;
   }
 
-  // Step 20.
+  // Step 22.
   Instant endNs;
   if (!AddZonedDateTime(cx, startNs, timeZone, calendar, {0, 0, 0, 1},
-                        &endNs)) {
+                        ToPlainDateTime(dtStart), &endNs)) {
     return false;
   }
   MOZ_ASSERT(IsValidEpochInstant(endNs));
 
-  // Step 21.
+  // Step 23.
   auto dayLengthNs = endNs - startNs;
   MOZ_ASSERT(IsValidInstantSpan(dayLengthNs));
 
-  // Step 22.
+  // Step 24.
   if (dayLengthNs <= InstantSpan{}) {
     JS_ReportErrorNumberASCII(
         cx, GetErrorMessage, nullptr,
@@ -2933,26 +3033,14 @@ static bool ZonedDateTime_round(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // Step 24.
-  int64_t offsetNanoseconds;
-  if (!GetOffsetNanosecondsFor(cx, timeZone, instant, &offsetNanoseconds)) {
-    return false;
-  }
-  MOZ_ASSERT(std::abs(offsetNanoseconds) < ToNanoseconds(TemporalUnit::Day));
-
-  // Step 23. (Reordered to throw exceptions in correct order.)
-  //
-  // Per spec, out-of-range date values throw a RangeError when
-  // CreateTemporalDateTime in InterpretISODateTimeOffset is called. This
-  // implementation throws the RangeError in RoundISODateTime, therefore steps
-  // 23 and 24 have to be switched.
+  // Step 25.
   PlainDateTime roundResult;
   if (!RoundISODateTime(cx, temporalDateTime, roundingIncrement, smallestUnit,
                         roundingMode, dayLengthNs, &roundResult)) {
     return false;
   }
 
-  // Step 25.
+  // Step 26.
   Instant epochNanoseconds;
   if (!InterpretISODateTimeOffset(
           cx, roundResult, OffsetBehaviour::Option, offsetNanoseconds, timeZone,
@@ -2961,7 +3049,7 @@ static bool ZonedDateTime_round(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // Step 26.
+  // Step 27.
   auto* result =
       CreateTemporalZonedDateTime(cx, epochNanoseconds, timeZone, calendar);
   if (!result) {
@@ -3487,95 +3575,93 @@ static bool ZonedDateTime_getISOFields(JSContext* cx, const CallArgs& args) {
   // Step 6. (Reordered)
   Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
-  // Step 5.
-  Rooted<InstantObject*> instant(cx, CreateTemporalInstant(cx, epochInstant));
-  if (!instant) {
-    return false;
-  }
-
-  // Step 7.
-  PlainDateTime temporalDateTime;
-  if (!js::temporal::GetPlainDateTimeFor(cx, timeZone, instant,
-                                         &temporalDateTime)) {
+  // Steps 5 and 7.
+  int64_t offsetNanoseconds;
+  if (!GetOffsetNanosecondsFor(cx, timeZone, epochInstant,
+                               &offsetNanoseconds)) {
     return false;
   }
 
   // Step 8.
-  Rooted<JSString*> offset(cx, GetOffsetStringFor(cx, timeZone, instant));
+  auto temporalDateTime = GetPlainDateTimeFor(epochInstant, offsetNanoseconds);
+
+  // Step 9.
+  Rooted<JSString*> offset(cx,
+                           FormatUTCOffsetNanoseconds(cx, offsetNanoseconds));
   if (!offset) {
     return false;
   }
 
-  // Step 9.
+  // Step 10.
   if (!fields.emplaceBack(NameToId(cx->names().calendar), calendar.toValue())) {
     return false;
   }
 
-  // Step 10.
+  // Step 11.
   if (!fields.emplaceBack(NameToId(cx->names().isoDay),
                           Int32Value(temporalDateTime.date.day))) {
     return false;
   }
 
-  // Step 11.
+  // Step 12.
   if (!fields.emplaceBack(NameToId(cx->names().isoHour),
                           Int32Value(temporalDateTime.time.hour))) {
     return false;
   }
 
-  // Step 12.
+  // Step 13.
   if (!fields.emplaceBack(NameToId(cx->names().isoMicrosecond),
                           Int32Value(temporalDateTime.time.microsecond))) {
     return false;
   }
 
-  // Step 13.
+  // Step 14.
   if (!fields.emplaceBack(NameToId(cx->names().isoMillisecond),
                           Int32Value(temporalDateTime.time.millisecond))) {
     return false;
   }
 
-  // Step 14.
+  // Step 15.
   if (!fields.emplaceBack(NameToId(cx->names().isoMinute),
                           Int32Value(temporalDateTime.time.minute))) {
     return false;
   }
 
-  // Step 15.
+  // Step 16.
   if (!fields.emplaceBack(NameToId(cx->names().isoMonth),
                           Int32Value(temporalDateTime.date.month))) {
     return false;
   }
 
-  // Step 16.
+  // Step 17.
   if (!fields.emplaceBack(NameToId(cx->names().isoNanosecond),
                           Int32Value(temporalDateTime.time.nanosecond))) {
     return false;
   }
 
-  // Step 17.
+  // Step 18.
   if (!fields.emplaceBack(NameToId(cx->names().isoSecond),
                           Int32Value(temporalDateTime.time.second))) {
     return false;
   }
 
-  // Step 18.
+  // Step 19.
   if (!fields.emplaceBack(NameToId(cx->names().isoYear),
                           Int32Value(temporalDateTime.date.year))) {
     return false;
   }
 
-  // Step 19.
+  // Step 20.
   if (!fields.emplaceBack(NameToId(cx->names().offset), StringValue(offset))) {
     return false;
   }
 
-  // Step 20.
+  // Step 21.
   if (!fields.emplaceBack(NameToId(cx->names().timeZone), timeZone.toValue())) {
     return false;
   }
 
-  // Step 21.
+  // Step 22.
   auto* obj =
       NewPlainObjectWithUniqueNames(cx, fields.begin(), fields.length());
   if (!obj) {

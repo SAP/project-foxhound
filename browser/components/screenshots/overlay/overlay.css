@@ -4,62 +4,65 @@
 
 @import url("chrome://global/skin/in-content/common.css");
 
-#screenshots-component {
-  width: 100%;
-  height: 100%;
-  overflow: clip;
-  user-select: none;
-  pointer-events: auto;
-  touch-action: none;
-  font: message-box;
+:host {
+  display: contents;
 }
 
-#screenshots-overlay-container {
+[hidden] {
+  display: none !important;
+}
+
+#screenshots-component {
   position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 1;
+  inset: 0;
+  font: message-box;
+  user-select: none;
+  touch-action: none;
   pointer-events: auto;
   cursor: crosshair;
-}
 
-#preview-container {
-  background-color: rgba(0, 0, 0, 0.7);
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  &[dragging] {
+    cursor: grabbing;
+  }
 }
 
 #selection-container {
   overflow: clip;
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   pointer-events: none;
 }
 
-#screenshots-overlay-container[hidden] {
-  display: none;
-}
-
-#screenshots-overlay-container[dragging] {
-  cursor: grabbing;
+#preview-container {
+  overflow: clip;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.7);
 }
 
 #buttons-container {
   position: absolute;
   margin: 10px 0;
-  padding: 4px;
-  background-color: var(--in-content-page-background);
-  border-radius: 4px;
   cursor: auto;
 }
 
-.buttons-wrapper {
+#selection-size,
+#buttons-container {
+  padding: 4px;
+  background-color: var(--in-content-page-background);
+  color: var(--in-content-text-color);
+  border-radius: 4px;
+}
+
+.buttons-wrapper,
+#selection-size-container {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -67,6 +70,7 @@
 
 .screenshots-button {
   display: inline-flex;
+  align-items: center;
   cursor: pointer;
   text-align: center;
   user-select: none;
@@ -74,6 +78,12 @@
   z-index: 6;
   min-width: 32px;
   margin-inline: 4px;
+}
+
+#selection-size-container {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 #screenshots-cancel-button {
@@ -119,20 +129,6 @@
 #download > img,
 #copy > img {
   margin-inline-end: 5px;
-}
-
-.fixed-container {
-  align-items: center;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  justify-content: center;
-  inset-inline-start: 0;
-  margin: 0;
-  padding: 0;
-  position: fixed;
-  top: 0;
-  width: 100%;
 }
 
 .face-container {
@@ -228,6 +224,8 @@
   position: absolute;
   overflow: clip;
   pointer-events: none;
+  /* FIXME(bug 1859421): This shouldn't be needed */
+  z-index: -1;
 }
 
 .highlight {

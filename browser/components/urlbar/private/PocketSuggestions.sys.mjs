@@ -8,10 +8,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
-  QuickSuggestRemoteSettings:
-    "resource:///modules/urlbar/private/QuickSuggestRemoteSettings.sys.mjs",
-  SuggestionsMap:
-    "resource:///modules/urlbar/private/QuickSuggestRemoteSettings.sys.mjs",
+  SuggestionsMap: "resource:///modules/urlbar/private/SuggestBackendJs.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
@@ -36,7 +33,6 @@ export class PocketSuggestions extends BaseFeature {
 
   get shouldEnable() {
     return (
-      lazy.UrlbarPrefs.get("quickSuggestRemoteSettingsEnabled") &&
       lazy.UrlbarPrefs.get("pocketFeatureGate") &&
       lazy.UrlbarPrefs.get("suggest.pocket") &&
       lazy.UrlbarPrefs.get("suggest.quicksuggest.nonsponsored")
@@ -51,6 +47,10 @@ export class PocketSuggestions extends BaseFeature {
     return "pocket";
   }
 
+  get rustSuggestionTypes() {
+    return ["Pocket"];
+  }
+
   get showLessFrequentlyCount() {
     let count = lazy.UrlbarPrefs.get("pocket.showLessFrequentlyCount") || 0;
     return Math.max(count, 0);
@@ -59,16 +59,16 @@ export class PocketSuggestions extends BaseFeature {
   get canShowLessFrequently() {
     let cap =
       lazy.UrlbarPrefs.get("pocketShowLessFrequentlyCap") ||
-      lazy.QuickSuggestRemoteSettings.config.show_less_frequently_cap ||
+      lazy.QuickSuggest.jsBackend.config.show_less_frequently_cap ||
       0;
     return !cap || this.showLessFrequentlyCount < cap;
   }
 
   enable(enabled) {
     if (enabled) {
-      lazy.QuickSuggestRemoteSettings.register(this);
+      lazy.QuickSuggest.jsBackend.register(this);
     } else {
-      lazy.QuickSuggestRemoteSettings.unregister(this);
+      lazy.QuickSuggest.jsBackend.unregister(this);
       this.#lowConfidenceSuggestionsMap.clear();
       this.#highConfidenceSuggestionsMap.clear();
     }
@@ -166,10 +166,15 @@ export class PocketSuggestions extends BaseFeature {
       }
     }
 
-    let isBestMatch =
-      suggestion.is_top_pick &&
-      lazy.UrlbarPrefs.get("bestMatchEnabled") &&
-      lazy.UrlbarPrefs.get("suggest.bestmatch");
+    if (suggestion.source == "rust") {
+      suggestion.is_top_pick = suggestion.isTopPick;
+      delete suggestion.isTopPick;
+
+      // The Rust component doesn't implement these properties. For now we use
+      // dummy values. See issue #5878 in application-services.
+      suggestion.description = suggestion.title;
+      suggestion.full_keyword = searchString;
+    }
 
     let url = new URL(suggestion.url);
     url.searchParams.set("utm_medium", "firefox-desktop");
@@ -188,10 +193,10 @@ export class PocketSuggestions extends BaseFeature {
           url: url.href,
           originalUrl: suggestion.url,
           title: [suggestion.title, lazy.UrlbarUtils.HIGHLIGHT.TYPED],
-          description: isBestMatch ? suggestion.description : "",
+          description: suggestion.is_top_pick ? suggestion.description : "",
           // Use the favicon for non-best matches so the icon exactly matches
           // the Pocket favicon in the user's history and tabs.
-          icon: isBestMatch
+          icon: suggestion.is_top_pick
             ? "chrome://global/skin/icons/pocket.svg"
             : "chrome://global/skin/icons/pocket-favicon.ico",
           shouldShowUrl: true,
@@ -209,7 +214,7 @@ export class PocketSuggestions extends BaseFeature {
       ),
       {
         isRichSuggestion: true,
-        richSuggestionIconSize: isBestMatch ? 24 : 16,
+        richSuggestionIconSize: suggestion.is_top_pick ? 24 : 16,
         showFeedbackMenu: true,
       }
     );

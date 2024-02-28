@@ -70,9 +70,12 @@ class WebAuthnTransaction {
   // bits, as they are used in javascript. We use a random value if possible,
   // otherwise a counter.
   static uint64_t NextId() {
-    static uint64_t id = 0;
+    static uint64_t counter = 0;
     Maybe<uint64_t> rand = mozilla::RandomUint64();
-    return rand.valueOr(++id) & UINT64_C(0x1fffffffffffff);  // 2^53 - 1
+    uint64_t id =
+        rand.valueOr(++counter) & UINT64_C(0x1fffffffffffff);  // 2^53 - 1
+    // The transaction ID 0 is reserved.
+    return id ? id : 1;
   }
 };
 
@@ -95,6 +98,8 @@ class WebAuthnManager final : public WebAuthnManagerBase, public AbortFollower {
   already_AddRefed<Promise> Store(const Credential& aCredential,
                                   ErrorResult& aError);
 
+  already_AddRefed<Promise> IsUVPAA(GlobalObject& aGlobal, ErrorResult& aError);
+
   // WebAuthnManagerBase
 
   void FinishMakeCredential(
@@ -112,17 +117,33 @@ class WebAuthnManager final : public WebAuthnManagerBase, public AbortFollower {
   void RunAbortAlgorithm() override;
 
  protected:
-  // Cancels the current transaction (by sending a Cancel message to the
-  // parent) and rejects it by calling RejectTransaction().
-  void CancelTransaction(const nsresult& aError);
   // Upon a visibility change, makes note of it in the current transaction.
   void HandleVisibilityChange() override;
 
  private:
   virtual ~WebAuthnManager();
 
-  // Rejects the current transaction and calls ClearTransaction().
-  void RejectTransaction(const nsresult& aError);
+  // Send a Cancel message to the parent, reject the promise with the given
+  // reason (an nsresult or JS::Handle<JS::Value>), and clear the transaction.
+  template <typename T>
+  void CancelTransaction(const T& aReason) {
+    CancelParent();
+    RejectTransaction(aReason);
+  }
+
+  // Reject the promise with the given reason (an nsresult or JS::Value), and
+  // clear the transaction.
+  template <typename T>
+  void RejectTransaction(const T& aReason) {
+    if (!NS_WARN_IF(mTransaction.isNothing())) {
+      mTransaction.ref().mPromise->MaybeReject(aReason);
+    }
+
+    ClearTransaction();
+  }
+
+  // Send a Cancel message to the parent.
+  void CancelParent();
 
   // Clears all information we have about the current transaction.
   void ClearTransaction();

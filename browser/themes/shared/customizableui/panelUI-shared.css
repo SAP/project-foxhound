@@ -229,40 +229,45 @@ toolbarseparator + .panel-subview-body {
 
 /* Tweaks for menupopups hanging off toolbar buttons to make them feel like panels */
 
-.toolbar-menupopup,
-.toolbar-menupopup menupopup {
-  appearance: none;
-  border: none;
-  font: menu;
-  background-color: transparent;
-  --panel-background: var(--arrowpanel-background);
-  --panel-color: var(--arrowpanel-color);
-  --panel-border-color: var(--arrowpanel-border-color);
-  --panel-border-radius: var(--arrowpanel-border-radius);
-  --panel-padding: var(--panel-subview-body-padding);
-}
+.toolbar-menupopup {
+  &,
+  menupopup {
+    appearance: none;
+    border: none;
+    font: menu;
+    background-color: transparent;
+    --panel-background: var(--arrowpanel-background);
+    --panel-color: var(--arrowpanel-color);
+    --panel-border-color: var(--arrowpanel-border-color);
+    --panel-border-radius: var(--arrowpanel-border-radius);
+    --panel-padding: var(--panel-subview-body-padding);
+  }
 
-.toolbar-menupopup menupopup {
-  /* Align non top-level menupopup's first menuitem with the menuitem that opened it.
-   * The 1px is for the menupopup's border. */
-  margin-top: calc(-1 * (var(--panel-subview-body-padding-block) + var(--panel-shadow-margin) + 1px));
-}
+  menupopup {
+    /* Align non top-level menupopup's first menuitem with the menuitem that opened it.
+     * The 1px is for the menupopup's border. */
+    margin-top: calc(-1 * (var(--panel-subview-body-padding-block) + var(--panel-shadow-margin) + 1px));
+  }
 
-.toolbar-menupopup :is(menu, menuitem)[disabled] {
-  color: var(--panel-disabled-color);
-}
+  menuitem::before,
+  menuitem::after {
+    content: none; /* Reset's macOS' checkmark spacing */
+  }
 
-.toolbar-menupopup :is(menu, menuitem):not([disabled])[_moz-menuactive] {
-  color: inherit;
-  background-color: var(--panel-item-hover-bgcolor);
-}
+  :is(menu, menuitem)[disabled] {
+    color: var(--panel-disabled-color);
+  }
 
-.toolbar-menupopup :is(menu, menuitem):not([disabled])[_moz-menuactive]:active {
-  color: inherit;
-  background-color: var(--panel-item-active-bgcolor);
-}
+  :is(menu, menuitem):not([disabled])[_moz-menuactive] {
+    color: inherit;
+    background-color: var(--panel-item-hover-bgcolor);
 
-.toolbar-menupopup :is(
+    &:active {
+      color: inherit;
+      background-color: var(--panel-item-active-bgcolor);
+    }
+  }
+
   .menu-text,
   .menu-iconic-text,
   .menu-iconic-icon,
@@ -270,39 +275,39 @@ toolbarseparator + .panel-subview-body {
   .menu-iconic-accel,
   .menu-accel-container,
   .menu-accel,
-  .menu-right
-) {
-  /* Reset every spacing and appearance set by the platforms' menu.css
-   * and set the ones we need in the following rules. */
-  margin: 0 !important;
-  padding: 0 !important;
-  appearance: none !important;
-}
+  .menu-right {
+    /* Reset every spacing and appearance set by the platforms' menu.css
+     * and set the ones we need in the following rules. */
+    margin: 0;
+    padding: 0;
+    appearance: none;
+  }
 
-.toolbar-menupopup :is(.menu-iconic, .menuitem-iconic) > .menu-iconic-left {
-  margin-inline-end: 8px !important;
-}
+  :is(.menu-iconic, .menuitem-iconic) > .menu-iconic-left {
+    margin-inline-end: 8px;
+  }
 
-.toolbar-menupopup .menu-accel-container > :is(.menu-accel, .menu-iconic-accel) {
-  margin-inline-start: 16px !important;
-  color: var(--panel-shortcut-color);
-}
+  .menu-accel,
+  .menu-iconic-accel {
+    margin-inline-start: 16px;
+  }
 
-.toolbar-menupopup menu > .menu-right {
-  list-style-image: url(chrome://global/skin/icons/arrow-right.svg);
-  -moz-context-properties: fill, fill-opacity;
-  fill: currentColor;
-  fill-opacity: 0.6;
-  width: unset;
-  height: unset;
-}
+  menu > .menu-right {
+    list-style-image: url(chrome://global/skin/icons/arrow-right.svg);
+    -moz-context-properties: fill, fill-opacity;
+    fill: currentColor;
+    fill-opacity: 0.6;
+    width: unset;
+    height: unset;
 
-.toolbar-menupopup menu > .menu-right:-moz-locale-dir(rtl) {
-  list-style-image: url(chrome://global/skin/icons/arrow-left.svg);
-}
+    &:-moz-locale-dir(rtl) {
+      list-style-image: url(chrome://global/skin/icons/arrow-left.svg);
+    }
+  }
 
-.toolbar-menupopup menuseparator {
-  padding: var(--panel-separator-margin);
+  menuseparator {
+    padding: var(--panel-separator-margin);
+  }
 }
 
 #BMB_bookmarksPopup {
@@ -310,7 +315,7 @@ toolbarseparator + .panel-subview-body {
 }
 
 :is(.toolbar-menupopup, .toolbar-menupopup menupopup)[emptyplacesresult] > menuitem > .menu-accel-container > .menu-accel {
-  margin: 0 !important;
+  margin: 0;
 }
 
 #confirmation-hint {
@@ -425,16 +430,22 @@ panelview[id^=PanelUI-webext-] {
 }
 
 #appMenu-popup panelview,
+/* The Report Broken Site panel can be opened from the Help menu
+ * in the menubar, which isn't a descendant of #appMenu-popup.
+ * Target it specifically in this rule to make it the same width
+ * as if it was a standard panelview opened from the app menu.
+ * This hack should probably be removed once bug 1864957 is fixed. */
+#report-broken-site-popup-mainView[mainview],
 #PanelUI-fxa {
   width: 22.5em;
 }
 
-#customizationui-widget-multiview panelview:not([extension]) {
+:where(#customizationui-widget-multiview) panelview:not([extension]) {
   min-width: var(--menu-panel-width);
   max-width: 35em;
 }
 
-#customizationui-widget-multiview #appMenu-libraryView,
+#appMenu-libraryView,
 #pageActionPanel panelview,
 #widget-overflow panelview {
   min-width: var(--menu-panel-width-wide);
@@ -701,7 +712,8 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
   display: none;
 }
 
-@supports not -moz-bool-pref("identity.fxaccounts.toolbar.defaultVisible") {
+/* stylelint-disable-next-line media-query-no-invalid */
+@media not (-moz-bool-pref: "identity.fxaccounts.toolbar.defaultVisible") {
   /* Hide the FxA toolbar button when its in the nav-bar, until in use */
   :root[fxastatus="not_configured"] #widget-overflow-list > #fxa-toolbar-menu-button,
   :root[fxastatus="not_configured"] #nav-bar-customization-target > #fxa-toolbar-menu-button {
@@ -1097,7 +1109,12 @@ panelview .toolbarbutton-1,
 .subviewbutton[shortcut]::after {
   content: attr(shortcut);
   display: flex;
-  color: var(--panel-shortcut-color);
+}
+
+@media not (prefers-contrast) {
+  .subviewbutton[shortcut]:not([disabled])::after {
+    color: var(--panel-disabled-color);
+  }
 }
 
 #protections-popup-mainView .subviewbutton-nav:not(.notFound)::after,
@@ -1558,15 +1575,23 @@ radiogroup:focus-visible > .subviewradio[focused="true"] > .radio-label-box {
   margin-inline-start: var(--arrowpanel-header-info-icon-full-width);
 }
 
-.panel-header:not(.panel-header-with-info-button) > .subviewbutton-back + h1 {
-  /* Add the size of the back button to center properly. */
-  margin-inline-end: var(--arrowpanel-header-back-icon-full-width);
-}
-
 .panel-header.panel-header-with-info-button > .subviewbutton-back + h1 {
   margin-inline-start: 0;
   margin-inline-end: calc(var(--arrowpanel-header-back-icon-full-width)
                           - var(--arrowpanel-header-info-icon-full-width));
+}
+
+.panel-header:not(.panel-header-with-additional-element) > .subviewbutton-back + h1 {
+  /* Add the size of the back button to center properly. */
+  margin-inline-end: var(--arrowpanel-header-back-icon-full-width);
+}
+
+.panel-header.panel-header-with-additional-element > .additional-element-on-inline-start + h1 {
+  /* This is for panels where the extra element is on the inline-start side like
+   * the Report Broken Site panel.
+   * The var needs to be set manually via CSS on the .panel-header element as we
+   * can't predict what icon (and thus its size) may be in use. */
+  margin-inline-end: var(--arrowpanel-header-additional-element-width);
 }
 
 .panel-header > h1 > span {
@@ -1971,4 +1996,152 @@ panelview:not([mainview]) #PanelUI-whatsNew-title {
 
 .webextension-popup-stack {
   position: relative;
+}
+
+/* Reset/Restart Private Browsing Panel */
+
+#reset-pbm-panel {
+  max-width: var(--menu-panel-width-wide);
+}
+
+#reset-pbm-panel-container {
+  padding: 16px 16px 0;
+  gap: 8px;
+}
+
+#reset-pbm-panel-header > description {
+  margin-bottom: 0;
+}
+
+#reset-pbm-panel-header > description,
+#reset-pbm-panel-description,
+#reset-pbm-panel-footer {
+  margin-inline: 0;
+}
+
+#reset-pbm-panel-header > description {
+  font-weight: var(--font-weight-bold);
+}
+
+#reset-pbm-panel-checkbox {
+  margin-inline: 0 8px;
+}
+
+/* Report Broken Site panels */
+
+/* Hide the Report Broken Site menu item that
+ * is on the App Menu's Help sub-menu.
+ */
+#appMenu_help_reportBrokenSite {
+  display: none;
+}
+
+.report-broken-site-view {
+  description,
+  label,
+  menulist,
+  input,
+  textarea {
+    margin: 0;
+  }
+
+  p {
+    line-height: 1.5;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  input,
+  textarea {
+    appearance: none;
+    background-color: var(--panel-background);
+    padding: 0.25em;
+    border: 1px solid var(--panel-separator-color);
+    border-radius: 4px;
+
+    &:focus-visible {
+      border-color: transparent;
+      outline: var(--focus-outline);
+      outline-offset: -1px;
+    }
+  }
+
+  input:invalid,
+  menulist:has(+ input:invalid) {
+    border-color: transparent;
+    outline: 2px solid var(--color-error-outline);
+    outline-offset: -1px;
+  }
+
+  > .panel-subview-body > label {
+    margin-block: 1.5em 0.5em;
+
+    &.invalid-message {
+      margin-block: 0.5em 0;
+      background-image: url("chrome://global/skin/icons/error.svg");
+      background-position: left center;
+      background-repeat: no-repeat;
+      -moz-context-properties: fill;
+      fill: var(--icon-color-critical);
+      padding-inline-start: calc(16px + 0.25em);
+
+      &:-moz-locale-dir(rtl) {
+        background-position-x: right;
+      }
+
+      input:valid + & {
+        display: none;
+      }
+    }
+  }
+
+  &.main-view {
+    p {
+      margin-block: 0;
+    }
+
+    a {
+      margin-top: 1.5em;
+    }
+  }
+
+  &.sent-view {
+    @media not (prefers-contrast) {
+      background-color: var(--color-background-success);
+    }
+
+    > .panel-header {
+      --arrowpanel-header-additional-element-width: 16px;
+
+      > .checkmark-icon {
+        list-style-image: url(chrome://global/skin/icons/check-filled.svg);
+        -moz-context-properties: fill;
+        fill: #2ac3a2;
+      }
+    }
+
+    > .panel-subview-body {
+      /* Don't let the footer appear way down in the panel while there's
+       * almost no content above. */
+      flex: 0 auto;
+
+      > .subview-subheader {
+        font-size: inherit;
+      }
+    }
+  }
+}
+
+#report-broken-site-panel-container {
+  padding: 8px 16px 16px;
+}
+
+/* <menulist> does not support :invalid, so we use setCustomValidity
+ * on a "helper" input. We must hide it with CSS, as using the HTML
+ * "hidden" attribute will also keep it from working with :invalid.
+ */
+#report-broken-site-popup-missing-reason-validation-helper {
+  display: none;
 }

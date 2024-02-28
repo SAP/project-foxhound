@@ -22,6 +22,7 @@ use crate::{Atom, Zero};
 use cssparser::Parser;
 use selectors::parser::SelectorParseErrorKind;
 use servo_arc::Arc;
+use std::collections::hash_map::Entry;
 use std::fmt::{self, Write};
 use style_traits::values::specified::AllowedNumericType;
 use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
@@ -369,13 +370,14 @@ impl Side for VerticalPositionKeyword {
     }
 }
 
+/// Controls how the auto-placement algorithm works specifying exactly how auto-placed items
+/// get flowed into the grid.
+#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
+#[value_info(other_values = "row,column,dense")]
+#[repr(C)]
+pub struct GridAutoFlow(u8);
 bitflags! {
-    /// Controls how the auto-placement algorithm works specifying exactly how auto-placed items
-    /// get flowed into the grid.
-    #[derive(MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
-    #[value_info(other_values = "row,column,dense")]
-    #[repr(C)]
-    pub struct GridAutoFlow: u8 {
+    impl GridAutoFlow: u8 {
         /// 'row' - mutually exclusive with 'column'
         const ROW = 1 << 0;
         /// 'column' - mutually exclusive with 'row'
@@ -607,7 +609,10 @@ pub struct TemplateAreas {
     /// `named area` containing for each template area
     #[css(skip)]
     pub areas: crate::OwnedSlice<NamedArea>,
-    /// The original CSS string value of each template area
+    /// The simplified CSS strings for serialization purpose.
+    /// https://drafts.csswg.org/css-grid/#serialize-template
+    // Note: We also use the length of `strings` when computing the explicit grid end line number
+    // (i.e. row number).
     #[css(iterable)]
     pub strings: crate::OwnedSlice<crate::OwnedStr>,
     /// The number of columns of the grid.
@@ -615,106 +620,132 @@ pub struct TemplateAreas {
     pub width: u32,
 }
 
-impl TemplateAreas {
-    /// Transform `vector` of str into `template area`
-    pub fn from_vec(strings: Vec<crate::OwnedStr>) -> Result<Self, ()> {
-        if strings.is_empty() {
-            return Err(());
-        }
-        let mut areas: Vec<NamedArea> = vec![];
-        let mut width = 0;
-        {
-            let mut row = 0u32;
-            let mut area_indices = PrecomputedHashMap::<Atom, usize>::default();
-            for string in &strings {
-                let mut current_area_index: Option<usize> = None;
-                row += 1;
-                let mut column = 0u32;
-                for token in TemplateAreasTokenizer(string) {
-                    column += 1;
-                    let name = if let Some(token) = token? {
-                        Atom::from(token)
-                    } else {
-                        if let Some(index) = current_area_index.take() {
-                            if areas[index].columns.end != column {
-                                return Err(());
-                            }
-                        }
-                        continue;
-                    };
-                    if let Some(index) = current_area_index {
-                        if areas[index].name == name {
-                            if areas[index].rows.start == row {
-                                areas[index].columns.end += 1;
-                            }
-                            continue;
-                        }
-                        if areas[index].columns.end != column {
-                            return Err(());
-                        }
+/// Parser for grid template areas.
+#[derive(Default)]
+pub struct TemplateAreasParser {
+    areas: Vec<NamedArea>,
+    area_indices: PrecomputedHashMap<Atom, usize>,
+    strings: Vec<crate::OwnedStr>,
+    width: u32,
+    row: u32,
+}
+
+impl TemplateAreasParser {
+    /// Parse a single string.
+    pub fn try_parse_string<'i>(&mut self, input: &mut Parser<'i, '_>) -> Result<(), ParseError<'i>> {
+        input.try_parse(|input| {
+            self.parse_string(input.expect_string()?)
+                .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+        })
+    }
+
+    /// Parse a single string.
+    fn parse_string(&mut self, string: &str) -> Result<(), ()> {
+        self.row += 1;
+        let mut simplified_string = String::new();
+        let mut current_area_index: Option<usize> = None;
+        let mut column = 0u32;
+        for token in TemplateAreasTokenizer(string) {
+            column += 1;
+            if column > 1 {
+                simplified_string.push(' ');
+            }
+            let name = if let Some(token) = token? {
+                simplified_string.push_str(token);
+                Atom::from(token)
+            } else {
+                if let Some(index) = current_area_index.take() {
+                    if self.areas[index].columns.end != column {
+                        return Err(());
                     }
-                    if let Some(index) = area_indices.get(&name).cloned() {
-                        if areas[index].columns.start != column || areas[index].rows.end != row {
-                            return Err(());
-                        }
-                        areas[index].rows.end += 1;
-                        current_area_index = Some(index);
-                        continue;
+                }
+                simplified_string.push('.');
+                continue;
+            };
+            if let Some(index) = current_area_index {
+                if self.areas[index].name == name {
+                    if self.areas[index].rows.start == self.row {
+                        self.areas[index].columns.end += 1;
                     }
-                    let index = areas.len();
-                    assert!(area_indices.insert(name.clone(), index).is_none());
-                    areas.push(NamedArea {
+                    continue;
+                }
+                if self.areas[index].columns.end != column {
+                    return Err(());
+                }
+            }
+            match self.area_indices.entry(name) {
+                Entry::Occupied(ref e) => {
+                    let index = *e.get();
+                    if self.areas[index].columns.start != column || self.areas[index].rows.end != self.row {
+                        return Err(());
+                    }
+                    self.areas[index].rows.end += 1;
+                    current_area_index = Some(index);
+                }
+                Entry::Vacant(v) => {
+                    let index = self.areas.len();
+                    let name = v.key().clone();
+                    v.insert(index);
+                    self.areas.push(NamedArea {
                         name,
                         columns: UnsignedRange {
                             start: column,
                             end: column + 1,
                         },
                         rows: UnsignedRange {
-                            start: row,
-                            end: row + 1,
+                            start: self.row,
+                            end: self.row + 1,
                         },
                     });
                     current_area_index = Some(index);
                 }
-                if column == 0 {
-                    // Each string must produce a valid token.
-                    // https://github.com/w3c/csswg-drafts/issues/5110
-                    return Err(());
-                }
-                if let Some(index) = current_area_index {
-                    if areas[index].columns.end != column + 1 {
-                        assert_ne!(areas[index].rows.start, row);
-                        return Err(());
-                    }
-                }
-                if row == 1 {
-                    width = column;
-                } else if width != column {
-                    return Err(());
-                }
             }
         }
+        if column == 0 {
+            // Each string must produce a valid token.
+            // https://github.com/w3c/csswg-drafts/issues/5110
+            return Err(());
+        }
+        if let Some(index) = current_area_index {
+            if self.areas[index].columns.end != column + 1 {
+                debug_assert_ne!(self.areas[index].rows.start, self.row);
+                return Err(());
+            }
+        }
+        if self.row == 1 {
+            self.width = column;
+        } else if self.width != column {
+            return Err(());
+        }
+
+        self.strings.push(simplified_string.into());
+        Ok(())
+    }
+
+    /// Return the parsed template areas.
+    pub fn finish(self) -> Result<TemplateAreas, ()> {
+        if self.strings.is_empty() {
+            return Err(())
+        }
         Ok(TemplateAreas {
-            areas: areas.into(),
-            strings: strings.into(),
-            width,
+            areas: self.areas.into(),
+            strings: self.strings.into(),
+            width: self.width,
         })
     }
 }
 
-impl Parse for TemplateAreas {
-    fn parse<'i, 't>(
-        _context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        let mut strings = vec![];
-        while let Ok(string) =
-            input.try_parse(|i| i.expect_string().map(|s| s.as_ref().to_owned().into()))
-        {
-            strings.push(string);
-        }
+impl TemplateAreas {
+    fn parse_internal(input: &mut Parser) -> Result<Self, ()> {
+        let mut parser = TemplateAreasParser::default();
+        while parser.try_parse_string(input).is_ok() {}
+        parser.finish()
+    }
+}
 
-        TemplateAreas::from_vec(strings)
+impl Parse for TemplateAreas {
+    fn parse<'i, 't>(_: &ParserContext, input: &mut Parser<'i, 't>,) -> Result<Self, ParseError<'i>> {
+        Self::parse_internal(input)
             .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
     }
 }

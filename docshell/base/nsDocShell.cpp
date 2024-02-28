@@ -30,7 +30,6 @@
 #include "mozilla/LoadInfo.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MediaFeatureChange.h"
-#include "mozilla/ObservedDocShell.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ResultExtensions.h"
@@ -70,7 +69,6 @@
 #include "mozilla/dom/PerformanceNavigation.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/PopupBlocker.h"
-#include "mozilla/dom/ProfileTimelineMarkerBinding.h"
 #include "mozilla/dom/ScreenOrientation.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ServiceWorkerInterceptController.h"
@@ -243,7 +241,6 @@
 #include "mozpkix/pkix.h"
 #include "NSSErrorsService.h"
 
-#include "timeline/JavascriptTimelineMarker.h"
 #include "nsDocShellTelemetryUtils.h"
 
 #ifdef MOZ_PLACES
@@ -335,7 +332,6 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext,
       mAppType(nsIDocShell::APP_TYPE_UNKNOWN),
       mLoadType(0),
       mFailedLoadType(0),
-      mJSRunToCompletionDepth(0),
       mMetaViewportOverride(nsIDocShell::META_VIEWPORT_OVERRIDE_NONE),
       mChannelToDisconnectOnPageHide(0),
       mCreatingDocument(false),
@@ -388,8 +384,6 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext,
 }
 
 nsDocShell::~nsDocShell() {
-  MOZ_ASSERT(!mObserved);
-
   // Avoid notifying observers while we're in the dtor.
   mIsBeingDestroyed = true;
 
@@ -1373,29 +1367,21 @@ void nsDocShell::FirePageHideShowNonRecursive(bool aShow) {
   }
 }
 
-nsresult nsDocShell::Dispatch(TaskCategory aCategory,
-                              already_AddRefed<nsIRunnable>&& aRunnable) {
+nsresult nsDocShell::Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) {
   nsCOMPtr<nsIRunnable> runnable(aRunnable);
-  nsCOMPtr<nsPIDOMWindowOuter> win = GetWindow();
-  if (NS_WARN_IF(!win)) {
+  if (NS_WARN_IF(!GetWindow())) {
     // Window should only be unavailable after destroyed.
     MOZ_ASSERT(mIsBeingDestroyed);
     return NS_ERROR_FAILURE;
   }
-
-  if (win->GetDocGroup()) {
-    return win->GetDocGroup()->Dispatch(aCategory, runnable.forget());
-  }
-
-  return SchedulerGroup::Dispatch(aCategory, runnable.forget());
+  return SchedulerGroup::Dispatch(runnable.forget());
 }
 
 NS_IMETHODIMP
 nsDocShell::DispatchLocationChangeEvent() {
-  return Dispatch(
-      TaskCategory::Other,
-      NewRunnableMethod("nsDocShell::FireDummyOnLocationChange", this,
-                        &nsDocShell::FireDummyOnLocationChange));
+  return Dispatch(NewRunnableMethod("nsDocShell::FireDummyOnLocationChange",
+                                    this,
+                                    &nsDocShell::FireDummyOnLocationChange));
 }
 
 NS_IMETHODIMP
@@ -2246,49 +2232,6 @@ nsresult nsDocShell::HistoryEntryRemoved(int32_t aIndex) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDocShell::SetRecordProfileTimelineMarkers(bool aValue) {
-  bool currentValue = nsIDocShell::GetRecordProfileTimelineMarkers();
-  if (currentValue == aValue) {
-    return NS_OK;
-  }
-
-  if (aValue) {
-    MOZ_ASSERT(!TimelineConsumers::HasConsumer(this));
-    TimelineConsumers::AddConsumer(this);
-    MOZ_ASSERT(TimelineConsumers::HasConsumer(this));
-    UseEntryScriptProfiling();
-  } else {
-    MOZ_ASSERT(TimelineConsumers::HasConsumer(this));
-    TimelineConsumers::RemoveConsumer(this);
-    MOZ_ASSERT(!TimelineConsumers::HasConsumer(this));
-    UnuseEntryScriptProfiling();
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDocShell::GetRecordProfileTimelineMarkers(bool* aValue) {
-  *aValue = !!mObserved;
-  return NS_OK;
-}
-
-nsresult nsDocShell::PopProfileTimelineMarkers(
-    JSContext* aCx, JS::MutableHandle<JS::Value> aOut) {
-  nsTArray<dom::ProfileTimelineMarker> store;
-  SequenceRooter<dom::ProfileTimelineMarker> rooter(aCx, &store);
-
-  TimelineConsumers::PopMarkers(this, aCx, store);
-
-  if (!ToJSValue(aCx, store, aOut)) {
-    JS_ClearPendingException(aCx);
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  return NS_OK;
-}
-
 nsresult nsDocShell::Now(DOMHighResTimeStamp* aWhen) {
   *aWhen = (TimeStamp::Now() - TimeStamp::ProcessCreation()).ToMilliseconds();
   return NS_OK;
@@ -2579,7 +2522,7 @@ void nsDocShell::MaybeCreateInitialClientSource(nsIPrincipal* aPrincipal) {
   }
 
   mInitialClientSource = ClientManager::CreateSource(
-      ClientType::Window, win->EventTargetFor(TaskCategory::Other), principal);
+      ClientType::Window, GetMainThreadSerialEventTarget(), principal);
   MOZ_DIAGNOSTIC_ASSERT(mInitialClientSource);
 
   // Mark the initial client as execution ready, but owned by the docshell.
@@ -4535,9 +4478,6 @@ nsDocShell::Destroy() {
   // Brak the cycle with the initial client, if present.
   mInitialClientSource.reset();
 
-  // Make sure we don't record profile timeline markers anymore
-  SetRecordProfileTimelineMarkers(false);
-
   // Make sure to blow away our mLoadingURI just in case.  No loads
   // from inside this pagehide.
   mLoadingURI = nullptr;
@@ -6055,7 +5995,8 @@ already_AddRefed<nsIURI> nsDocShell::AttemptURIFixup(
     nsIChannel* aChannel, nsresult aStatus,
     const mozilla::Maybe<nsCString>& aOriginalURIString, uint32_t aLoadType,
     bool aIsTopFrame, bool aAllowKeywordFixup, bool aUsePrivateBrowsing,
-    bool aNotifyKeywordSearchLoading, nsIInputStream** aNewPostData) {
+    bool aNotifyKeywordSearchLoading, nsIInputStream** aNewPostData,
+    bool* outWasSchemelessInput) {
   if (aStatus != NS_ERROR_UNKNOWN_HOST && aStatus != NS_ERROR_NET_RESET &&
       aStatus != NS_ERROR_CONNECTION_REFUSED &&
       aStatus !=
@@ -6149,6 +6090,7 @@ already_AddRefed<nsIURI> nsDocShell::AttemptURIFixup(
         }
         if (info) {
           info->GetPreferredURI(getter_AddRefs(newURI));
+          info->GetWasSchemelessInput(outWasSchemelessInput);
           if (newURI) {
             info->GetKeywordAsSent(keywordAsSent);
             info->GetKeywordProviderName(keywordProviderName);
@@ -7260,7 +7202,7 @@ nsresult nsDocShell::RestorePresentation(nsISHEntry* aSHEntry,
   mRestorePresentationEvent.Revoke();
 
   RefPtr<RestorePresentationEvent> evt = new RestorePresentationEvent(this);
-  nsresult rv = Dispatch(TaskCategory::Other, do_AddRef(evt));
+  nsresult rv = Dispatch(do_AddRef(evt));
   if (NS_SUCCEEDED(rv)) {
     mRestorePresentationEvent = evt.get();
     // The rest of the restore processing will happen on our event
@@ -7895,7 +7837,7 @@ nsresult nsDocShell::CreateContentViewer(const nsACString& aContentType,
     if (failedURI) {
       errorOnLocationChangeNeeded =
           OnNewURI(failedURI, failedChannel, triggeringPrincipal, nullptr,
-                   nullptr, nullptr, false, false, false);
+                   nullptr, nullptr, false, false);
     }
 
     // Be sure to have a correct mLSHE, it may have been cleared by
@@ -7922,9 +7864,8 @@ nsresult nsDocShell::CreateContentViewer(const nsACString& aContentType,
   bool onLocationChangeNeeded = false;
   if (finalURI) {
     // Pass false for aCloneSHChildren, since we're loading a new page here.
-    onLocationChangeNeeded =
-        OnNewURI(finalURI, aOpenedChannel, nullptr, nullptr, nullptr, nullptr,
-                 false, true, false);
+    onLocationChangeNeeded = OnNewURI(finalURI, aOpenedChannel, nullptr,
+                                      nullptr, nullptr, nullptr, true, false);
   }
 
   // let's try resetting the load group if we need to...
@@ -8917,7 +8858,7 @@ nsresult nsDocShell::HandleSameDocumentNavigation(
   // 1668126)
   bool locationChangeNeeded = OnNewURI(
       newURI, nullptr, newURITriggeringPrincipal, newURIPrincipalToInherit,
-      newURIPartitionedPrincipalToInherit, newCsp, false, true, true);
+      newURIPartitionedPrincipalToInherit, newCsp, true, true);
 
   nsCOMPtr<nsIInputStream> postData;
   uint32_t cacheKey = 0;
@@ -9348,7 +9289,7 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
 
       // Do this asynchronously
       nsCOMPtr<nsIRunnable> ev = new InternalLoadEvent(this, aLoadState);
-      return Dispatch(TaskCategory::Other, ev.forget());
+      return Dispatch(ev.forget());
     }
 
     // Just ignore this load attempt
@@ -10512,7 +10453,9 @@ nsresult nsDocShell::DoURILoad(nsDocShellLoadState* aLoadState,
     if (context->HasValidTransientUserGestureActivation()) {
       aLoadState->SetHasValidUserGestureActivation(true);
     }
-    aLoadState->SetTriggeringWindowId(context->Id());
+    if (!aLoadState->TriggeringWindowId()) {
+      aLoadState->SetTriggeringWindowId(context->Id());
+    }
     if (!aLoadState->TriggeringStorageAccess()) {
       Document* contextDoc = context->GetExtantDoc();
       if (contextDoc) {
@@ -10754,13 +10697,13 @@ nsresult nsDocShell::OpenInitializedChannel(nsIChannel* aChannel,
     // When using DocumentChannel, all redirect handling is done in the parent,
     // so we just need the child variant to watch for the internal redirect
     // to the final channel.
-    rv = AddClientChannelHelperInChild(
-        aChannel, win->EventTargetFor(TaskCategory::Other));
+    rv = AddClientChannelHelperInChild(aChannel,
+                                       GetMainThreadSerialEventTarget());
     docChannel->SetInitialClientInfo(GetInitialClientInfo());
   } else {
     rv = AddClientChannelHelper(aChannel, std::move(noReservedClient),
                                 GetInitialClientInfo(),
-                                win->EventTargetFor(TaskCategory::Other));
+                                GetMainThreadSerialEventTarget());
   }
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -10805,8 +10748,7 @@ nsresult nsDocShell::OpenRedirectedChannel(nsDocShellLoadState* aLoadState) {
 
   // If we did a process switch, then we should have an existing allocated
   // ClientInfo, so we just need to allocate a corresponding ClientSource.
-  CreateReservedSourceIfNeeded(channel,
-                               win->EventTargetFor(TaskCategory::Other));
+  CreateReservedSourceIfNeeded(channel, GetMainThreadSerialEventTarget());
 
   RefPtr<nsDocumentOpenInfo> loader =
       new nsDocumentOpenInfo(this, nsIURILoader::DONT_RETARGET, nullptr);
@@ -10953,8 +10895,7 @@ bool nsDocShell::OnNewURI(nsIURI* aURI, nsIChannel* aChannel,
                           nsIPrincipal* aPrincipalToInherit,
                           nsIPrincipal* aPartitionedPrincipalToInherit,
                           nsIContentSecurityPolicy* aCsp,
-                          bool aFireOnLocationChange, bool aAddToGlobalHistory,
-                          bool aCloneSHChildren) {
+                          bool aAddToGlobalHistory, bool aCloneSHChildren) {
   MOZ_ASSERT(aURI, "uri is null");
   MOZ_ASSERT(!aChannel || !aTriggeringPrincipal, "Shouldn't have both set");
 
@@ -11169,7 +11110,7 @@ bool nsDocShell::OnNewURI(nsIURI* aURI, nsIChannel* aChannel,
       aCloneSHChildren ? uint32_t(LOCATION_CHANGE_SAME_DOCUMENT) : 0;
 
   bool onLocationChangeNeeded =
-      SetCurrentURI(aURI, aChannel, aFireOnLocationChange,
+      SetCurrentURI(aURI, aChannel, false,
                     /* aIsInitialAboutBlank */ false, locationFlags);
   // Make sure to store the referrer from the channel, if any
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(aChannel));
@@ -12911,7 +12852,7 @@ nsresult nsDocShell::OnLinkClick(
   nsCOMPtr<nsIRunnable> ev =
       new OnLinkClickEvent(this, aContent, loadState, noOpenerImplied,
                            aIsTrusted, aTriggeringPrincipal);
-  return Dispatch(TaskCategory::UI, ev.forget());
+  return Dispatch(ev.forget());
 }
 
 bool nsDocShell::ShouldOpenInBlankTarget(const nsAString& aOriginalTarget,
@@ -13490,34 +13431,6 @@ void nsDocShell::UpdateGlobalHistoryTitle(nsIURI* aURI) {
 bool nsDocShell::IsInvisible() { return mInvisible; }
 
 void nsDocShell::SetInvisible(bool aInvisible) { mInvisible = aInvisible; }
-
-// The caller owns |aAsyncCause| here.
-void nsDocShell::NotifyJSRunToCompletionStart(const char* aReason,
-                                              const nsAString& aFunctionName,
-                                              const nsAString& aFilename,
-                                              const uint32_t aLineNumber,
-                                              JS::Handle<JS::Value> aAsyncStack,
-                                              const char* aAsyncCause) {
-  // If first start, mark interval start.
-  if (mJSRunToCompletionDepth == 0 && TimelineConsumers::HasConsumer(this)) {
-    TimelineConsumers::AddMarkerForDocShell(
-        this, mozilla::MakeUnique<JavascriptTimelineMarker>(
-                  aReason, aFunctionName, aFilename, aLineNumber,
-                  MarkerTracingType::START, aAsyncStack, aAsyncCause));
-  }
-
-  mJSRunToCompletionDepth++;
-}
-
-void nsDocShell::NotifyJSRunToCompletionStop() {
-  mJSRunToCompletionDepth--;
-
-  // If last stop, mark interval end.
-  if (mJSRunToCompletionDepth == 0 && TimelineConsumers::HasConsumer(this)) {
-    TimelineConsumers::AddMarkerForDocShell(this, "Javascript",
-                                            MarkerTracingType::END);
-  }
-}
 
 /* static */
 void nsDocShell::MaybeNotifyKeywordSearchLoading(const nsString& aProvider,

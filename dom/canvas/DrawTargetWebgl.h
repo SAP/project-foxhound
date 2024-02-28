@@ -7,6 +7,8 @@
 #ifndef _MOZILLA_GFX_DRAWTARGETWEBGL_H
 #define _MOZILLA_GFX_DRAWTARGETWEBGL_H
 
+#include "GLTypes.h"
+#include "mozilla/Array.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathSkia.h"
 #include "mozilla/LinkedList.h"
@@ -17,7 +19,8 @@
 
 namespace WGR {
 struct OutputVertex;
-}
+struct PathBuilder;
+}  // namespace WGR
 
 namespace mozilla {
 
@@ -180,12 +183,6 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     RefPtr<WebGLProgramJS> mLastProgram;
     RefPtr<WebGLTextureJS> mLastTexture;
     RefPtr<WebGLTextureJS> mLastClipMask;
-    // Whether the shader viewport state requires updating.
-    bool mDirtyViewport = true;
-    // Whether the shader anti-aliasing state requires updating.
-    bool mDirtyAA = true;
-    // Whether the shader clip AA bounds require updating.
-    bool mDirtyClip = true;
 
     // WebGL shader resources
     RefPtr<WebGLBufferJS> mPathVertexBuffer;
@@ -200,8 +197,11 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     bool mPathAAStroke = true;
     // Whether to accelerate stroked paths with WGR.
     bool mPathWGRStroke = false;
+
+    WGR::PathBuilder* mWGRPathBuilder = nullptr;
     // Temporary buffer for generating WGR output into.
     UniquePtr<WGR::OutputVertex[]> mWGROutputBuffer;
+
     RefPtr<WebGLProgramJS> mSolidProgram;
     RefPtr<WebGLUniformLocationJS> mSolidProgramViewport;
     RefPtr<WebGLUniformLocationJS> mSolidProgramAA;
@@ -220,6 +220,25 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     RefPtr<WebGLUniformLocationJS> mImageProgramSampler;
     RefPtr<WebGLUniformLocationJS> mImageProgramClipMask;
     RefPtr<WebGLUniformLocationJS> mImageProgramClipBounds;
+
+    struct SolidProgramUniformState {
+      Maybe<Array<float, 2>> mViewport;
+      Maybe<Array<float, 1>> mAA;
+      Maybe<Array<float, 6>> mTransform;
+      Maybe<Array<float, 4>> mColor;
+      Maybe<Array<float, 4>> mClipBounds;
+    } mSolidProgramUniformState;
+
+    struct ImageProgramUniformState {
+      Maybe<Array<float, 2>> mViewport;
+      Maybe<Array<float, 1>> mAA;
+      Maybe<Array<float, 6>> mTransform;
+      Maybe<Array<float, 6>> mTexMatrix;
+      Maybe<Array<float, 4>> mTexBounds;
+      Maybe<Array<float, 4>> mColor;
+      Maybe<Array<float, 1>> mSwizzle;
+      Maybe<Array<float, 4>> mClipBounds;
+    } mImageProgramUniformState;
 
     // Scratch framebuffer used to wrap textures for miscellaneous utility ops.
     RefPtr<WebGLFramebufferJS> mScratchFramebuffer;
@@ -292,6 +311,13 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     bool HasClipMask() const {
       return mLastClipMask && mLastClipMask != mNoClipMask;
     }
+
+    // Avoids redundant UniformData calls by caching the previously set value.
+    template <class T, size_t N>
+    void MaybeUniformData(GLenum aFuncElemType,
+                          const WebGLUniformLocationJS* const aLoc,
+                          const Array<T, N>& aData,
+                          Maybe<Array<T, N>>& aCached);
 
     bool IsCurrentTarget(DrawTargetWebgl* aDT) const {
       return aDT == mCurrentTarget;

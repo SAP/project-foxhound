@@ -22,6 +22,7 @@ __all__ = [
     "extract",
     "is_url",
     "load",
+    "load_source",
     "copy_contents",
     "match",
     "move",
@@ -305,7 +306,7 @@ def remove(path):
         _call_with_windows_retry(shutil.rmtree, (path,))
 
 
-def copy_contents(srcdir, dstdir):
+def copy_contents(srcdir, dstdir, ignore_dangling_symlinks=False):
     """
     Copy the contents of the srcdir into the dstdir, preserving
     subdirectories.
@@ -346,7 +347,12 @@ def copy_contents(srcdir, dstdir):
         if errors:
             raise Exception(errors)
     else:
-        shutil.copytree(srcdir, dstdir, dirs_exist_ok=True)
+        shutil.copytree(
+            srcdir,
+            dstdir,
+            dirs_exist_ok=True,
+            ignore_dangling_symlinks=ignore_dangling_symlinks,
+        )
 
 
 def move(src, dst):
@@ -625,6 +631,19 @@ def load(resource):
         return open(resource)
 
     return urllib.request.urlopen(resource)
+
+
+# see https://docs.python.org/3/whatsnew/3.12.html#imp
+def load_source(modname, filename):
+    import importlib.machinery
+    import importlib.util
+
+    loader = importlib.machinery.SourceFileLoader(modname, filename)
+    spec = importlib.util.spec_from_file_location(modname, filename, loader=loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module.__name__] = module
+    loader.exec_module(module)
+    return module
 
 
 # We can't depend on mozpack.path here, so copy the 'match' function over.

@@ -98,10 +98,7 @@ exports.waitForPendingPaints = waitForPendingPaints;
  * becomes available
  */
 exports.waitForDOMElement = async function (target, selector) {
-  await waitForDOMPredicate(
-    target,
-    () => target.querySelector(selector) !== null
-  );
+  return waitForDOMPredicate(target, () => target.querySelector(selector));
 };
 
 /*
@@ -112,14 +109,16 @@ function waitForDOMPredicate(
   predicate,
   options = { attributes: true, childList: true, subtree: true }
 ) {
+  let rv = predicate();
+  if (rv) {
+    return Promise.resolve(rv);
+  }
   return new Promise(resolve => {
     const observer = new target.ownerGlobal.MutationObserver(mutations => {
-      for (const mutation of mutations) {
-        if (predicate(mutation.target)) {
-          resolve();
-          observer.disconnect();
-          break;
-        }
+      rv = predicate();
+      if (rv) {
+        resolve(rv);
+        observer.disconnect();
       }
     });
 

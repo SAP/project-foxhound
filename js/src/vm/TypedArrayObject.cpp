@@ -210,18 +210,12 @@ size_t TypedArrayObject::objectMoved(JSObject* obj, JSObject* old) {
   }
 
   Nursery& nursery = obj->runtimeFromMainThread()->gc.nursery();
-  if (!nursery.isInside(buf)) {
-    nursery.removeMallocedBufferDuringMinorGC(buf);
-    size_t nbytes = RoundUp(newObj->byteLength(), sizeof(Value));
-    AddCellMemory(newObj, nbytes, MemoryUse::TypedArrayElements);
-    return 0;
-  }
 
   // Determine if we can use inline data for the target array. If this is
   // possible, the nursery will have picked an allocation size that is large
   // enough.
   size_t nbytes = oldObj->byteLength();
-  MOZ_ASSERT(nbytes <= Nursery::MaxNurseryBufferSize);
+  bool canUseDirectForward = nbytes >= sizeof(uintptr_t);
 
   constexpr size_t headerSize = dataOffset() + sizeof(HeapSlot);
 
@@ -230,7 +224,8 @@ size_t TypedArrayObject::objectMoved(JSObject* obj, JSObject* old) {
   MOZ_ASSERT_IF(nbytes == 0,
                 headerSize + sizeof(uint8_t) <= GetGCKindBytes(newAllocKind));
 
-  if (headerSize + nbytes <= GetGCKindBytes(newAllocKind)) {
+  if (nursery.isInside(buf) &&
+      headerSize + nbytes <= GetGCKindBytes(newAllocKind)) {
     MOZ_ASSERT(oldObj->hasInlineElements());
 #ifdef DEBUG
     if (nbytes == 0) {
@@ -239,31 +234,34 @@ size_t TypedArrayObject::objectMoved(JSObject* obj, JSObject* old) {
     }
 #endif
     newObj->setInlineElements();
-  } else {
-    MOZ_ASSERT(!oldObj->hasInlineElements());
+    mozilla::PodCopy(newObj->elements(), oldObj->elements(), nbytes);
 
-    AutoEnterOOMUnsafeRegion oomUnsafe;
-    nbytes = RoundUp(nbytes, sizeof(Value));
-    void* data = newObj->zone()->pod_arena_malloc<uint8_t>(
-        js::ArrayBufferContentsArena, nbytes);
-    if (!data) {
-      oomUnsafe.crash(
-          "Failed to allocate typed array elements while tenuring.");
-    }
-    MOZ_ASSERT(!nursery.isInside(data));
-    newObj->setReservedSlot(DATA_SLOT, PrivateValue(data));
-    AddCellMemory(newObj, nbytes, MemoryUse::TypedArrayElements);
+    // Set a forwarding pointer for the element buffers in case they were
+    // preserved on the stack by Ion.
+    nursery.setForwardingPointerWhileTenuring(
+        oldObj->elements(), newObj->elements(), canUseDirectForward);
+
+    return 0;
   }
 
-  mozilla::PodCopy(newObj->elements(), oldObj->elements(), nbytes);
+  // Non-inline allocations are rounded up.
+  nbytes = RoundUp(nbytes, sizeof(Value));
 
-  // Set a forwarding pointer for the element buffers in case they were
-  // preserved on the stack by Ion.
-  nursery.setForwardingPointerWhileTenuring(
-      oldObj->elements(), newObj->elements(),
-      /* direct = */ nbytes >= sizeof(uintptr_t));
+  Nursery::WasBufferMoved result = nursery.maybeMoveBufferOnPromotion(
+      &buf, newObj, nbytes, MemoryUse::TypedArrayElements,
+      ArrayBufferContentsArena);
+  if (result == Nursery::BufferMoved) {
+    newObj->setReservedSlot(DATA_SLOT, PrivateValue(buf));
 
-  return newObj->hasInlineElements() ? 0 : nbytes;
+    // Set a forwarding pointer for the element buffers in case they were
+    // preserved on the stack by Ion.
+    nursery.setForwardingPointerWhileTenuring(
+        oldObj->elements(), newObj->elements(), canUseDirectForward);
+
+    return nbytes;
+  }
+
+  return 0;
 }
 
 bool TypedArrayObject::hasInlineElements() const {
@@ -339,12 +337,7 @@ static TypedArrayObject* NewTypedArrayObject(JSContext* cx,
     return nullptr;
   }
 
-  NativeObject* obj = NativeObject::create(cx, allocKind, heap, shape);
-  if (!obj) {
-    return nullptr;
-  }
-
-  return &obj->as<TypedArrayObject>();
+  return NativeObject::create<TypedArrayObject>(cx, allocKind, heap, shape);
 }
 
 template <typename NativeType>
@@ -2847,8 +2840,11 @@ bool js::intrinsic_TypedArrayNativeSort(JSContext* cx, unsigned argc,
     if (!tarr) {                                                              \
       return nullptr;                                                         \
     }                                                                         \
-    return JS::TypedArray<JS::Scalar::Name>::fromObject(tarr)                 \
-        .getLengthAndData(length, isSharedMemory, nogc);                      \
+    mozilla::Span<ExternalType> span =                                        \
+        JS::TypedArray<JS::Scalar::Name>::fromObject(tarr).getData(           \
+            isSharedMemory, nogc);                                            \
+    *length = span.Length();                                                  \
+    return span.data();                                                       \
   }                                                                           \
                                                                               \
   JS_PUBLIC_API ExternalType* JS_Get##Name##ArrayData(                        \
@@ -2966,21 +2962,21 @@ JS::TypedArray_base JS::TypedArray_base::fromObject(JSObject* unwrapped) {
   return TypedArray_base(nullptr);
 }
 
-// Template getLengthAndData function for TypedArrays, implemented here because
+// Template getData function for TypedArrays, implemented here because
 // it requires internal APIs.
 template <JS::Scalar::Type EType>
-typename TypedArray<EType>::DataType* TypedArray<EType>::getLengthAndData(
-    size_t* length, bool* isSharedMemory, const AutoRequireNoGC&) {
+typename mozilla::Span<typename TypedArray<EType>::DataType>
+TypedArray<EType>::getData(bool* isSharedMemory, const AutoRequireNoGC&) {
   using ExternalType = TypedArray<EType>::DataType;
   if (!obj) {
     return nullptr;
   }
   TypedArrayObject* tarr = &obj->as<TypedArrayObject>();
   MOZ_ASSERT(tarr);
-  *length = tarr->length();
   *isSharedMemory = tarr->isSharedMemory();
-  return static_cast<ExternalType*>(
-      tarr->dataPointerEither().unwrap(/*safe - caller sees isShared*/));
+  return {static_cast<ExternalType*>(tarr->dataPointerEither().unwrap(
+              /*safe - caller sees isShared*/)),
+          tarr->length()};
 };
 
 // Force the method defined above to actually be instantianted in this
@@ -2989,10 +2985,10 @@ typename TypedArray<EType>::DataType* TypedArray<EType>::getLengthAndData(
 // satisfied by the linker. (This happens with opt gtest, at least. In a DEBUG
 // build, the header contains a call to this function so it will always be
 // emitted.)
-#define INSTANTIATE_GET_DATA(a, b, Name)                    \
-  template typename TypedArray<JS::Scalar::Name>::DataType* \
-  TypedArray<JS::Scalar::Name>::getLengthAndData(           \
-      size_t* length, bool* isSharedMemory, const AutoRequireNoGC&);
+#define INSTANTIATE_GET_DATA(a, b, Name)                                  \
+  template mozilla::Span<typename TypedArray<JS::Scalar::Name>::DataType> \
+  TypedArray<JS::Scalar::Name>::getData(bool* isSharedMemory,             \
+                                        const AutoRequireNoGC&);
 JS_FOR_EACH_TYPED_ARRAY(INSTANTIATE_GET_DATA)
 #undef INSTANTIATE_GET_DATA
 

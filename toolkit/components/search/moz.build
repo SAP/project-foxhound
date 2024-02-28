@@ -19,10 +19,12 @@ XPIDL_MODULE = "toolkit_search"
 
 EXTRA_JS_MODULES += [
     "AddonSearchEngine.sys.mjs",
+    "AppProvidedSearchEngine.sys.mjs",
     "OpenSearchEngine.sys.mjs",
     "PolicySearchEngine.sys.mjs",
     "SearchEngine.sys.mjs",
     "SearchEngineSelector.sys.mjs",
+    "SearchEngineSelectorOld.sys.mjs",
     "SearchService.sys.mjs",
     "SearchSettings.sys.mjs",
     "SearchStaticData.sys.mjs",

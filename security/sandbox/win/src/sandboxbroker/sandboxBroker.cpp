@@ -507,10 +507,8 @@ static sandbox::ResultCode AllowProxyLoadFromBinDir(
       if (NS_IsMainThread()) {
         setClearOnShutdown();
       } else {
-        SchedulerGroup::Dispatch(
-            TaskCategory::Other,
-            NS_NewRunnableFunction("InitSignedPolicyRulesToBypassCig",
-                                   std::move(setClearOnShutdown)));
+        SchedulerGroup::Dispatch(NS_NewRunnableFunction(
+            "InitSignedPolicyRulesToBypassCig", std::move(setClearOnShutdown)));
       }
     }
 
@@ -600,6 +598,8 @@ static sandbox::MitigationFlags DynamicCodeFlagForSystemMediaLibraries() {
   return dynamicCodeFlag;
 }
 
+// Process fails to start in LPAC with ASan build
+#if !defined(MOZ_ASAN)
 static void HexEncode(const Span<const uint8_t>& aBytes, nsACString& aEncoded) {
   static const char kHexChars[] = "0123456789abcdef";
 
@@ -617,6 +617,12 @@ static void HexEncode(const Span<const uint8_t>& aBytes, nsACString& aEncoded) {
 // reason and yet the LPAC permission is already granted. So returning success
 // or failure isn't really that useful.
 static void EnsureLpacPermsissionsOnBinDir() {
+  // For MSIX packages we get access through the packageContents capability and
+  // we probably won't have access to add the permission either way.
+  if (widget::WinUtils::HasPackageIdentity()) {
+    return;
+  }
+
   BYTE sidBytes[SECURITY_MAX_SID_SIZE];
   PSID lpacFirefoxInstallFilesSid = static_cast<PSID>(sidBytes);
   if (!sBrokerService->DeriveCapabilitySidFromName(kLpacFirefoxInstallFiles,
@@ -781,6 +787,7 @@ static sandbox::ResultCode AddAndConfigureAppContainerProfile(
 
   return sandbox::SBOX_ALL_OK;
 }
+#endif
 
 void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
                                                       bool aIsFileProcess) {
@@ -1486,6 +1493,11 @@ struct UtilityMfMediaEngineCdmSandboxProps : public UtilitySandboxProps {
           kLpacFirefoxInstallFiles,
           L"lpacDeviceAccess",
       };
+
+      // For MSIX packages we need access to the package contents.
+      if (widget::WinUtils::HasPackageIdentity()) {
+        mNamedCapabilites.AppendElement(L"packageContents");
+      }
     }
     mUseWin32kLockdown = false;
     mDelayedMitigations = sandbox::MITIGATION_DLL_SEARCH_ORDER;
@@ -1635,6 +1647,8 @@ bool BuildUtilitySandbox(sandbox::TargetPolicy* policy,
     SANDBOX_ENSURE_SUCCESS(result, "Failed to initialize signed policy rules.");
   }
 
+  // Process fails to start in LPAC with ASan build
+#if !defined(MOZ_ASAN)
   if (!us.mPackagePrefix.IsEmpty()) {
     MOZ_ASSERT(us.mInitialIntegrityLevel == sandbox::INTEGRITY_LEVEL_LAST,
                "Initial integrity level cannot be specified if using an LPAC.");
@@ -1644,6 +1658,8 @@ bool BuildUtilitySandbox(sandbox::TargetPolicy* policy,
                                                 us.mNamedCapabilites);
     SANDBOX_ENSURE_SUCCESS(result, "Failed to configure AppContainer profile.");
   }
+#endif
+
   // Add the policy for the client side of a pipe. It is just a file
   // in the \pipe\ namespace. We restrict it to pipes that start with
   // "chrome." so the sandboxed process cannot connect to system services.
@@ -1684,6 +1700,11 @@ bool SandboxBroker::SetSecurityLevelForUtilityProcess(
 #endif
     case mozilla::ipc::SandboxingKind::WINDOWS_UTILS:
       return BuildUtilitySandbox(mPolicy, WindowsUtilitySandboxProps());
+    case mozilla::ipc::SandboxingKind::WINDOWS_FILE_DIALOG:
+      // This process type is not sandboxed. (See commentary in
+      // `ipc::IsUtilitySandboxEnabled()`.)
+      MOZ_ASSERT_UNREACHABLE("No sandboxing for this process type");
+      return false;
     default:
       MOZ_ASSERT_UNREACHABLE("Unknown sandboxing value");
       return false;

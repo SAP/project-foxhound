@@ -140,6 +140,23 @@ bool isRecentCorruptFile(const nsCOMPtr<nsIFile>& aCorruptFile) {
 }
 
 /**
+ * Removes a file, optionally adding a suffix to the file name.
+ */
+void RemoveFileSwallowsErrors(const nsCOMPtr<nsIFile>& aFile,
+                              const nsString& aSuffix = u""_ns) {
+  nsCOMPtr<nsIFile> file;
+  MOZ_ALWAYS_SUCCEEDS(aFile->Clone(getter_AddRefs(file)));
+  if (!aSuffix.IsEmpty()) {
+    nsAutoString newFileName;
+    file->GetLeafName(newFileName);
+    newFileName.Append(aSuffix);
+    MOZ_ALWAYS_SUCCEEDS(file->SetLeafName(newFileName));
+  }
+  DebugOnly<nsresult> rv = file->Remove(false);
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to remove file.");
+}
+
+/**
  * Sets the connection journal mode to one of the JOURNAL_* types.
  *
  * @param aDBConn
@@ -445,10 +462,14 @@ nsresult Database::Init() {
         GetProfileChangeTeardownPhase();
     MOZ_ASSERT(shutdownPhase);
     if (shutdownPhase) {
-      DebugOnly<nsresult> rv = shutdownPhase->AddBlocker(
+      nsresult rv = shutdownPhase->AddBlocker(
           static_cast<nsIAsyncShutdownBlocker*>(mClientsShutdown.get()),
           NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__, u""_ns);
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
+      if (NS_FAILED(rv)) {
+        // Might occur if we're already shutting down, see bug#1753165
+        PlacesShutdownBlocker::sIsStarted = true;
+        NS_WARNING("Cannot add shutdown blocker for profile-change-teardown");
+      }
     }
   }
 
@@ -458,10 +479,14 @@ nsresult Database::Init() {
         GetProfileBeforeChangePhase();
     MOZ_ASSERT(shutdownPhase);
     if (shutdownPhase) {
-      DebugOnly<nsresult> rv = shutdownPhase->AddBlocker(
+      nsresult rv = shutdownPhase->AddBlocker(
           static_cast<nsIAsyncShutdownBlocker*>(mConnectionShutdown.get()),
           NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__, u""_ns);
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
+      if (NS_FAILED(rv)) {
+        // Might occur if we're already shutting down, see bug#1753165
+        PlacesShutdownBlocker::sIsStarted = true;
+        NS_WARNING("Cannot add shutdown blocker for profile-before-change");
+      }
     }
   }
 
@@ -791,12 +816,9 @@ nsresult Database::BackupAndReplaceDatabaseFile(
     };
     eCorruptDBReplaceStage stage = stage_closing;
     auto guard = MakeScopeExit([&]() {
-      if (stage != stage_replaced) {
-        // Reaching this point means the database is corrupt and we failed to
-        // replace it.  For this session part of the application related to
-        // bookmarks and history will misbehave.  The frontend may show a
-        // "locked" notification to the user though.
-        // Set up a pref to try replacing the database at the next startup.
+      // In case we failed to close the connection or remove the database file,
+      // we want to try again at the next startup.
+      if (stage == stage_closing || stage == stage_removing) {
         Preferences::SetString(PREF_FORCE_DATABASE_REPLACEMENT, aDbFilename);
       }
       // Report the corruption through telemetry.
@@ -882,7 +904,7 @@ nsresult Database::TryToCloneTablesFromCorruptDatabase(
     if (conn) {
       Unused << conn->Close();
     }
-    Unused << recoverFile->Remove(false);
+    RemoveFileSwallowsErrors(recoverFile);
   });
 
   rv = aStorage->OpenUnsharedDatabase(recoverFile,
@@ -957,11 +979,14 @@ nsresult Database::TryToCloneTablesFromCorruptDatabase(
   rv = transaction.Commit();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  Unused << conn->Close();
+  MOZ_ALWAYS_SUCCEEDS(conn->Close());
   conn = nullptr;
   rv = recoverFile->RenameTo(nullptr, filename);
   NS_ENSURE_SUCCESS(rv, rv);
-  Unused << corruptFile->Remove(false);
+
+  RemoveFileSwallowsErrors(corruptFile);
+  RemoveFileSwallowsErrors(corruptFile, u"-wal"_ns);
+  RemoveFileSwallowsErrors(corruptFile, u"-shm"_ns);
 
   guard.release();
   return NS_OK;
@@ -1593,6 +1618,8 @@ nsresult Database::InitFunctions() {
   rv = MD5HexFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
   rv = SetShouldStartFrecencyRecalculationFunction::create(mMainConn);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = TargetFolderGuidFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (StaticPrefs::places_frecency_pages_alternative_featureGate_AtStartup()) {

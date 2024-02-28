@@ -9,41 +9,61 @@ requestLongerTimeout(5);
 
 // Test pausing with mapScopes enabled and disabled
 add_task(async function () {
+  await pushPref("devtools.debugger.map-scopes-enabled", true);
   const dbg = await initDebugger("doc-sourcemapped.html");
 
   info("1. Pause on line 20");
   const url = "webpack3-babel6://./esmodules-cjs/input.js";
   await waitForSources(dbg, url);
+
   const source = findSource(dbg, url);
   await selectSource(dbg, source);
-  await addBreakpoint(dbg, source, 20, 2);
+  await addBreakpoint(dbg, source, 20, 3);
+
   invokeInTab("webpack3Babel6EsmodulesCjs");
   await waitForPaused(dbg);
 
-  info("2. Hover on a token with mapScopes enabled");
-  await toggleMapScopes(dbg);
-  await waitForLoadedScopes(dbg);
   ok(getOriginalScope(dbg) != null, "Scopes are now mapped");
 
-  await assertPreviewTextValue(dbg, 20, 16, {
+  ok(!findFooterNotificationMessage(dbg), "No footer notification message");
+  await assertPreviewTextValue(dbg, 20, 20, {
     result: '"a-default"',
     expression: "aDefault",
   });
 
-  info("3. Hover on a token with mapScopes disabled");
+  info("3. Disable original variable mapping");
   await toggleMapScopes(dbg);
-  await assertPreviewTextValue(dbg, 21, 16, {
-    result: "undefined",
-    expression: "anAliased",
-  });
+
+  const notificationMessage = DEBUGGER_L10N.getFormatStr(
+    "editorNotificationFooter.noOriginalScopes",
+    DEBUGGER_L10N.getStr("scopes.showOriginalScopes")
+  );
+
+  info(
+    "Assert that previews are disabled and the footer notification is visible"
+  );
+  await hoverAtPos(dbg, { line: 20, column: 17 });
+  await assertNoTooltip(dbg);
+  is(
+    findFooterNotificationMessage(dbg),
+    notificationMessage,
+    "The Original variable mapping warning is displayed"
+  );
 
   info("4. StepOver with mapScopes disabled");
-  await stepOver(dbg);
-  await assertPreviewTextValue(dbg, 20, 16, {
-    result: "undefined",
-    expression: "aDefault",
-  });
-  ok(getOriginalScope(dbg) == null, "Scopes are not mapped");
+  await stepOver(dbg, { shouldWaitForLoadedScopes: false });
+
+  info(
+    "Assert that previews are still disabled and the footer notification is visible"
+  );
+  await hoverAtPos(dbg, { line: 20, column: 17 });
+  await assertNoTooltip(dbg);
+
+  is(
+    findFooterNotificationMessage(dbg),
+    notificationMessage,
+    "The Original variable mapping warning is displayed"
+  );
 });
 
 function getOriginalScope(dbg) {
@@ -52,8 +72,7 @@ function getOriginalScope(dbg) {
   );
 }
 
-async function toggleMapScopes(dbg) {
-  const onDispatch = waitForDispatch(dbg.store, "TOGGLE_MAP_SCOPES");
-  clickElement(dbg, "mapScopesCheckbox");
-  return onDispatch;
+function findFooterNotificationMessage(dbg) {
+  return dbg.win.document.querySelector(".editor-notification-footer")
+    ?.innerText;
 }

@@ -14,11 +14,14 @@
 #include "MainThreadUtils.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/NotNull.h"
+#include "mozilla/ReentrantMonitor.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Span.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCharsetSource.h"
 #include "nsCOMPtr.h"
@@ -211,8 +214,14 @@ class nsHtml5StreamParser final : public nsISupports {
 
   nsresult OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStream,
                            uint64_t aSourceOffset, uint32_t aLength);
-
-  nsresult OnStopRequest(nsIRequest* aRequest, nsresult status);
+  /**
+   * ReentrantMonitorAutoEnter is used for protecting access to
+   * nsHtml5StreamParser::mOnStopCalled and should be obtained from
+   * nsHtml5StreamListener::mDelegateMonitor
+   */
+  nsresult OnStopRequest(
+      nsIRequest* aRequest, nsresult status,
+      const mozilla::ReentrantMonitorAutoEnter& aProofOfLock);
 
   // EncodingDeclarationHandler
   // https://hg.mozilla.org/projects/htmlparser/file/tip/src/nu/validator/htmlparser/common/EncodingDeclarationHandler.java
@@ -609,11 +618,6 @@ class nsHtml5StreamParser final : public nsISupports {
   nsHtml5TreeOpExecutor* mExecutor;
 
   /**
-   * Network event target for mExecutor->mDocument
-   */
-  nsCOMPtr<nsISerialEventTarget> mNetworkEventTarget;
-
-  /**
    * The HTML5 tree builder
    */
   mozilla::UniquePtr<nsHtml5TreeBuilder> mTreeBuilder;
@@ -776,6 +780,20 @@ class nsHtml5StreamParser final : public nsISupports {
    * If content is being sent to the devtools, an encoded UUID for the parser.
    */
   nsString mUUIDForDevtools;
+
+  /**
+   * prevent multiple calls to OnStopRequest
+   * This field can be called from multiple threads and is protected by
+   * nsHtml5StreamListener::mDelegateMonitor passed in the OnStopRequest
+   */
+  bool mOnStopCalled{false};
+
+  /*
+   * Used for telemetry about OnStopRequest vs OnDataFinished
+   */
+  // guarded by nsHtml5StreamListener::mDelegateMonitor
+  mozilla::TimeStamp mOnStopRequestTime;
+  mozilla::TimeStamp mOnDataFinishedTime;
 };
 
 #endif  // nsHtml5StreamParser_h

@@ -144,9 +144,7 @@ class MOZ_STACK_CLASS AutoSetCurrentTransaction final {
   AutoSetCurrentTransaction& operator=(AutoSetCurrentTransaction&&) = delete;
 
   explicit AutoSetCurrentTransaction(Maybe<IDBTransaction&> aTransaction)
-      : mTransaction(aTransaction),
-        mPreviousTransaction(),
-        mThreadLocal(nullptr) {
+      : mTransaction(aTransaction), mThreadLocal(nullptr) {
     if (aTransaction) {
       BackgroundChildImpl::ThreadLocal* threadLocal =
           BackgroundChildImpl::GetThreadLocalForCurrentThread();
@@ -1700,6 +1698,12 @@ void BackgroundRequestChild::HandleResponse(
     SerializedStructuredCloneReadInfo&& aResponse) {
   AssertIsOnOwningThread();
 
+  if (!mTransaction->Database()->GetOwnerGlobal()) {
+    // Ignore the response, since we have already been disconnected from the
+    // global.
+    return;
+  }
+
   auto cloneReadInfo = DeserializeStructuredCloneReadInfo(
       std::move(aResponse), mTransaction->Database(),
       [this] { return std::move(*GetNextCloneData()); });
@@ -1711,6 +1715,12 @@ void BackgroundRequestChild::HandleResponse(
 void BackgroundRequestChild::HandleResponse(
     nsTArray<SerializedStructuredCloneReadInfo>&& aResponse) {
   AssertIsOnOwningThread();
+
+  if (!mTransaction->Database()->GetOwnerGlobal()) {
+    // Ignore the response, since we have already been disconnected from the
+    // global.
+    return;
+  }
 
   nsTArray<StructuredCloneReadInfoChild> cloneReadInfos;
 

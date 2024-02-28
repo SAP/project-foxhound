@@ -356,39 +356,43 @@
         </vbox>
       </radiogroup>
     </vbox>
-    <vbox id="nonTechnicalPrivacyBox">
-      <hbox id="globalPrivacyControlBox" flex="1" align="center" hidden="true">
-        <checkbox id="globalPrivacyControlCheckbox"
-                class="tail-with-learn-more"
-                preference="privacy.globalprivacycontrol.enabled"
-                data-l10n-id="global-privacy-control-description" />
-        <html:a is="moz-support-link"
-            id="globalPrivacyControlLearnMoreLink"
-            support-page="global-privacy-control" />
-      </hbox>
-      <vbox id="legacyDoNotTrackBox">
-        <label>
-          <label class="tail-with-learn-more" data-l10n-id="do-not-track-description" id="doNotTrackDesc"></label>
-        <html:a is="moz-support-link"
-                class="learnMore"
-                support-page="how-do-i-turn-do-not-track-feature"
-        />
-        </label>
-        <radiogroup id="doNotTrackRadioGroup" aria-labelledby="doNotTrackDesc" preference="privacy.donottrackheader.enabled">
-          <radio value="true" data-l10n-id="do-not-track-option-always"/>
-          <radio value="false" data-l10n-id="do-not-track-option-default-content-blocking-known"/>
-        </radiogroup>
-      </vbox>
-      <hbox id="doNotTrackBox" flex="1" align="center">
-        <checkbox id="doNotTrackCheckbox"
-                class="tail-with-learn-more"
-                preference="privacy.donottrackheader.enabled"
-                data-l10n-id="do-not-track-description2" />
-        <html:a is="moz-support-link"
-            id="doNotTrackLearnMoreLink"
-            support-page="how-do-i-turn-do-not-track-feature" />
-      </hbox>
+  </vbox>
+</groupbox>
+<groupbox id="nonTechnicalPrivacyGroup" data-category="panePrivacy" data-subcategory="nontechnicalprivacy" hidden="true">
+  <label id="nonTechnicalPrivacyHeader"><html:h2 data-l10n-id="non-technical-privacy-header"/></label>
+  <vbox id="nonTechnicalPrivacyBox">
+    <hbox id="globalPrivacyControlBox" flex="1" align="center" hidden="true">
+      <checkbox id="globalPrivacyControlCheckbox"
+              class="tail-with-learn-more"
+              preference="privacy.globalprivacycontrol.enabled"
+              data-l10n-id="global-privacy-control-description"
+              search-l10n-ids="global-privacy-control-search" />
+      <html:a is="moz-support-link"
+          id="globalPrivacyControlLearnMoreLink"
+          support-page="global-privacy-control" />
+    </hbox>
+    <vbox id="legacyDoNotTrackBox">
+      <label>
+        <label class="tail-with-learn-more" data-l10n-id="do-not-track-description" id="doNotTrackDesc"></label>
+      <html:a is="moz-support-link"
+              class="learnMore"
+              support-page="how-do-i-turn-do-not-track-feature"
+      />
+      </label>
+      <radiogroup id="doNotTrackRadioGroup" aria-labelledby="doNotTrackDesc" preference="privacy.donottrackheader.enabled">
+        <radio value="true" data-l10n-id="do-not-track-option-always"/>
+        <radio value="false" data-l10n-id="do-not-track-option-default-content-blocking-known"/>
+      </radiogroup>
     </vbox>
+    <hbox id="doNotTrackBox" flex="1" align="center">
+      <checkbox id="doNotTrackCheckbox"
+              class="tail-with-learn-more"
+              preference="privacy.donottrackheader.enabled"
+              data-l10n-id="do-not-track-description2" />
+      <html:a is="moz-support-link"
+          id="doNotTrackLearnMoreLink"
+          support-page="how-do-i-turn-do-not-track-feature" />
+    </hbox>
   </vbox>
 </groupbox>
 
@@ -399,7 +403,7 @@
   <hbox data-subcategory="sitedata" align="baseline">
     <vbox flex="1">
       <description class="description-with-side-element" flex="1">
-        <html:span id="totalSiteDataSize" class="tail-with-learn-more"></html:span>
+        <html:span id="totalSiteDataSize" class="tail-with-learn-more section-description"></html:span>
         <html:a is="moz-support-link"
                 id="siteDataLearnMoreLink"
                 data-l10n-id="sitedata-learn-more"
@@ -456,18 +460,18 @@
 
 <!-- Cookie Banner Handling -->
 <groupbox id="cookieBannerHandlingGroup" data-category="panePrivacy" data-subcategory="cookiebanner" hidden="true">
-  <label><html:h2 data-l10n-id="cookie-banner-handling-header" /></label>
+  <label><html:h2 data-l10n-id="cookie-banner-blocker-header" /></label>
   <vbox flex="1">
     <hbox>
       <description>
-        <html:span id="cookieBannerReductionExplanation" class="tail-with-learn-more" data-l10n-id="cookie-banner-handling-description" ></html:span>
+        <html:span id="cookieBannerReductionExplanation" class="tail-with-learn-more section-description" data-l10n-id="cookie-banner-blocker-description" ></html:span>
         <html:a is="moz-support-link" id="cookieBannerHandlingLearnMore" class="learnMore"  data-l10n-id="cookie-banner-learn-more" support-page="cookie-banner-reduction"/>
       </description>
     </hbox>
     <hbox>
       <checkbox id="handleCookieBanners"
-                preference="cookiebanners.service.mode"
-                data-l10n-id="forms-handle-cookie-banners"
+                preference="cookiebanners.service.mode.privateBrowsing"
+                data-l10n-id="cookie-banner-blocker-checkbox-label"
                 flex="1" />
     </hbox>
   </vbox>
@@ -507,7 +511,6 @@
         <hbox class="indent" id="generatePasswordsBox" flex="1">
           <checkbox id="generatePasswords"
                     data-l10n-id="forms-generate-passwords"
-                    search-l10n-ids="forms-generate-passwords.label"
                     preference="signon.generation.enabled"
                     flex="1" />
         </hbox>
@@ -527,15 +530,13 @@
                 is="highlightable-button"
                 class="accessory-button"
                 data-l10n-id="forms-saved-logins"
-                search-l10n-ids="forms-saved-logins.label"
                 preference="pref.privacy.disable_button.view_passwords"/>
       </vbox>
     </hbox>
     <hbox class="indent" id="relayIntegrationBox" flex="1" align="center">
       <checkbox id="relayIntegration"
                 class="tail-with-learn-more"
-                data-l10n-id="preferences-relay-integration-checkbox"
-                search-l10n-ids="preferences-relay-integration-checkbox.label" />
+                data-l10n-id="preferences-relay-integration-checkbox"/>
       <html:a id="relayIntegrationLearnMoreLink" class="learnMore"
              data-l10n-id="relay-integration-learn-more-link"/>
     </hbox>
@@ -543,7 +544,6 @@
       <checkbox id="breachAlerts"
                 class="tail-with-learn-more"
                 data-l10n-id="forms-breach-alerts"
-                search-l10n-ids="breach-alerts.label"
                 preference="signon.management.page.breach-alerts.enabled"/>
       <html:a is="moz-support-link"
               id="breachAlertsLearnMoreLink"
@@ -703,7 +703,7 @@
           hidden="true"
           data-subcategory="locationBar">
   <label><html:h2 id="locationBarGroupHeader" data-l10n-id="addressbar-header"/></label>
-  <label id="locationBarSuggestionLabel" data-l10n-id="addressbar-suggest"/>
+  <label id="locationBarSuggestionLabel" class="section-description" data-l10n-id="addressbar-suggest"/>
   <checkbox id="historySuggestion" data-l10n-id="addressbar-locbar-history-option"
             preference="browser.urlbar.suggest.history"/>
   <checkbox id="bookmarkSuggestion" data-l10n-id="addressbar-locbar-bookmarks-option"
@@ -717,18 +717,6 @@
             preference="browser.urlbar.suggest.topsites"/>
   <checkbox id="enginesSuggestion" data-l10n-id="addressbar-locbar-engines-option"
             preference="browser.urlbar.suggest.engines"/>
-  <hbox id="firefoxSuggestBestMatchContainer" align="center" hidden="true">
-    <checkbox id="firefoxSuggestBestMatch"
-              class="tail-with-learn-more"
-              data-l10n-id="addressbar-firefox-suggest-best-match-option"
-              preference="browser.urlbar.suggest.bestmatch"/>
-    <html:a is="moz-support-link"
-            id="firefoxSuggestBestMatchLearnMore"
-            class="learnMore"
-            data-l10n-id="addressbar-best-match-learn-more"
-            support-page="firefox-suggest"
-    />
-  </hbox>
   <hbox id="quickActionsBox" align="center" hidden="true">
     <checkbox id="enableQuickActions"
               class="tail-with-learn-more"
@@ -741,18 +729,20 @@
     />
   </hbox>
   <vbox id="firefoxSuggestContainer" hidden="true">
-    <vbox class="firefoxSuggestOptionBox">
-      <html:moz-toggle id="firefoxSuggestNonsponsoredToggle"
-                       preference="browser.urlbar.suggest.quicksuggest.nonsponsored"
-                       data-l10n-id="addressbar-firefox-suggest-nonsponsored"
-                       data-l10n-attrs="label, description" />
-    </vbox>
-    <vbox class="firefoxSuggestOptionBox">
-      <html:moz-toggle id="firefoxSuggestSponsoredToggle"
-                       preference="browser.urlbar.suggest.quicksuggest.sponsored"
-                       data-l10n-id="addressbar-firefox-suggest-sponsored"
-                       data-l10n-attrs="label, description" />
-    </vbox>
+    <checkbox id="firefoxSuggestNonsponsored"
+              data-l10n-id="addressbar-firefox-suggest-nonsponsored"
+              preference="browser.urlbar.suggest.quicksuggest.nonsponsored"
+    />
+    <description class="indent tip-caption"
+                  data-l10n-id="addressbar-firefox-suggest-nonsponsored-desc"
+    />
+    <checkbox id="firefoxSuggestSponsored"
+              data-l10n-id="addressbar-firefox-suggest-sponsored"
+              preference="browser.urlbar.suggest.quicksuggest.sponsored"
+    />
+    <description class="indent tip-caption"
+                  data-l10n-id="addressbar-firefox-suggest-sponsored-desc"
+    />
     <vbox class="firefoxSuggestOptionBox">
       <html:moz-toggle id="firefoxSuggestDataCollectionToggle"
                        preference="browser.urlbar.quicksuggest.dataCollection.enabled"
@@ -1027,7 +1017,7 @@
   <label class="search-header" hidden="true"><html:h2 data-l10n-id="collection-header2" data-l10n-attrs="searchkeywords"/></label>
 
   <description>
-    <label class="tail-with-learn-more" data-l10n-id="collection-description"/>
+    <label class="tail-with-learn-more section-description" data-l10n-id="collection-description"/>
     <html:a id="dataCollectionPrivacyNotice"
            class="learnMore"
            data-l10n-id="collection-privacy-notice"/>
@@ -1193,13 +1183,25 @@
               "/>
     </vbox>
   </hbox>
+
+  <hbox id="certEnableThirdPartyToggleBox" align="center">
+    <checkbox id="certEnableThirdPartyToggle"
+              data-l10n-id="certs-thirdparty-toggle"
+              preference="security.enterprise_roots.enabled"
+              class="tail-with-learn-more"
+    />
+    <html:a is="moz-support-link"
+            class="learnMore"
+            support-page="automatically-trust-third-party-certificates"
+    />
+  </hbox>
 </groupbox>
 
 <!-- HTTPS-ONLY Mode -->
 <groupbox id="httpsOnlyBox" data-category="panePrivacy" hidden="true">
   <label><html:h2 data-l10n-id="httpsonly-header"/></label>
   <vbox data-subcategory="httpsonly" flex="1">
-    <label id="httpsOnlyDescription" data-l10n-id="httpsonly-description"/>
+    <label id="httpsOnlyDescription" class="section-description" data-l10n-id="httpsonly-description"/>
     <html:a is="moz-support-link"
             id="httpsOnlyLearnMore"
             class="learnMore"

@@ -20,9 +20,8 @@ add_setup(function () {
 async function navigateToOpenTabs(browser) {
   const document = browser.contentDocument;
   if (document.querySelector("named-deck").selectedViewName != "opentabs") {
-    navigateToCategory(document, "opentabs");
+    await navigateToCategoryAndWait(browser.contentDocument, "opentabs");
   }
-  await TestUtils.waitForTick();
 }
 
 function getOpenTabsComponent(browser) {
@@ -58,7 +57,8 @@ async function cleanup() {
   );
 }
 
-function getRowsForCard(card) {
+async function getRowsForCard(card) {
+  await TestUtils.waitForCondition(() => card.tabList.rowEls.length);
   return card.tabList.rowEls;
 }
 
@@ -71,15 +71,21 @@ add_task(async function open_tab_same_window() {
 
     const cards = getCards(browser);
     is(cards.length, 1, "There is one window.");
-    let tabItems = getRowsForCard(cards[0]);
+    let tabItems = await getRowsForCard(cards[0]);
     is(tabItems.length, 1, "There is one items.");
     is(
       tabItems[0].url,
       gBrowser.visibleTabs[0].linkedBrowser.currentURI.spec,
       "The first item represents the first visible tab"
     );
+    let promiseHidden = BrowserTestUtils.waitForEvent(
+      browser.contentDocument,
+      "visibilitychange"
+    );
+    await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
+    await promiseHidden;
   });
-  await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
+
   const [originalTab, newTab] = gBrowser.visibleTabs;
 
   await openFirefoxViewTab(window).then(async viewTab => {
@@ -87,11 +93,16 @@ add_task(async function open_tab_same_window() {
     await TestUtils.waitForTick();
     const cards = getCards(browser);
     is(cards.length, 1, "There is one window.");
-    let tabItems = getRowsForCard(cards[0]);
+    let tabItems = await getRowsForCard(cards[0]);
     is(tabItems.length, 2, "There are two items.");
     is(tabItems[1].url, TEST_URL, "The newly opened tab appears last.");
 
+    let promiseHidden = BrowserTestUtils.waitForEvent(
+      browser.contentDocument,
+      "visibilitychange"
+    );
     tabItems[0].mainEl.click();
+    await promiseHidden;
   });
 
   await BrowserTestUtils.waitForCondition(
@@ -102,8 +113,15 @@ add_task(async function open_tab_same_window() {
   await openFirefoxViewTab(window).then(async viewTab => {
     const browser = viewTab.linkedBrowser;
     const cards = getCards(browser);
-    let tabItems = getRowsForCard(cards[0]);
+    let tabItems = await getRowsForCard(cards[0]);
+
+    let promiseHidden = BrowserTestUtils.waitForEvent(
+      browser.contentDocument,
+      "visibilitychange"
+    );
+
     tabItems[1].mainEl.click();
+    await promiseHidden;
   });
 
   await BrowserTestUtils.waitForCondition(
@@ -122,22 +140,19 @@ add_task(async function open_tab_same_window() {
     await BrowserTestUtils.waitForMutationCondition(
       cards[0].shadowRoot,
       { childList: true, subtree: true },
-      () => {
-        tabItems = getRowsForCard(cards[0]);
+      async () => {
+        tabItems = await getRowsForCard(cards[0]);
         return tabItems[0].url === TEST_URL;
       }
     );
-  });
+    await BrowserTestUtils.removeTab(newTab);
 
-  await BrowserTestUtils.removeTab(newTab);
-  await openFirefoxViewTab(window).then(async viewTab => {
-    const browser = viewTab.linkedBrowser;
     const [card] = getCards(browser);
     await TestUtils.waitForCondition(
-      () => getRowsForCard(card).length === 1,
+      async () => (await getRowsForCard(card)).length === 1,
       "There is one tab left after closing the new one."
     );
-    const [row] = getRowsForCard(card);
+    const [row] = await getRowsForCard(card);
     ok(
       !row.shadowRoot.getElementById("fxview-tab-row-url").hidden,
       "The URL is displayed, since we have one window."
@@ -165,7 +180,8 @@ add_task(async function open_tab_new_window() {
 
     const cards = getCards(browser);
     is(cards.length, 2, "There are two windows.");
-    const [newWinRows, originalWinRows] = Array.from(cards).map(getRowsForCard);
+    const newWinRows = await getRowsForCard(cards[0]);
+    const originalWinRows = await getRowsForCard(cards[1]);
     is(
       originalWinRows.length,
       1,
@@ -198,7 +214,7 @@ add_task(async function open_tab_new_window() {
 
     const cards = getCards(browser);
     is(cards.length, 2, "There are two windows.");
-    const newWinRows = getRowsForCard(cards[1]);
+    const newWinRows = await getRowsForCard(cards[1]);
 
     info("Select a tab from the new window.");
     winFocused = BrowserTestUtils.waitForEvent(win, "focus", true);
@@ -298,18 +314,18 @@ add_task(async function toggle_show_more_link() {
     is(cards.length, NUMBER_OF_WINDOWS, "There are four windows.");
     lastCard = cards[NUMBER_OF_WINDOWS - 1];
     lastWindow = windows[NUMBER_OF_WINDOWS - 2];
-  });
 
-  for (let i = 0; i < NUMBER_OF_TABS - 1; i++) {
-    await BrowserTestUtils.openNewForegroundTab(lastWindow.gBrowser);
-  }
+    for (let i = 0; i < NUMBER_OF_TABS - 1; i++) {
+      await BrowserTestUtils.openNewForegroundTab(lastWindow.gBrowser);
+    }
+  });
 
   await openFirefoxViewTab(window).then(async viewTab => {
     const browser = viewTab.linkedBrowser;
     const openTabs = getOpenTabsComponent(browser);
     await openTabs.getUpdateComplete();
     ok(
-      getRowsForCard(lastCard).length < NUMBER_OF_TABS,
+      (await getRowsForCard(lastCard)).length < NUMBER_OF_TABS,
       "Not all tabs are shown yet."
     );
     info("Toggle the Show More link.");
@@ -317,7 +333,7 @@ add_task(async function toggle_show_more_link() {
     await BrowserTestUtils.waitForMutationCondition(
       lastCard.shadowRoot,
       { childList: true, subtree: true },
-      () => getRowsForCard(lastCard).length === NUMBER_OF_TABS
+      async () => (await getRowsForCard(lastCard)).length === NUMBER_OF_TABS
     );
 
     info("Toggle the Show Less link.");
@@ -325,7 +341,7 @@ add_task(async function toggle_show_more_link() {
     await BrowserTestUtils.waitForMutationCondition(
       lastCard.shadowRoot,
       { childList: true, subtree: true },
-      () => getRowsForCard(lastCard).length < NUMBER_OF_TABS
+      async () => (await getRowsForCard(lastCard)).length < NUMBER_OF_TABS
     );
 
     // Setting this pref allows the test to run as expected with a keyboard on MacOS
@@ -343,7 +359,7 @@ add_task(async function toggle_show_more_link() {
     await BrowserTestUtils.waitForMutationCondition(
       lastCard.shadowRoot,
       { childList: true, subtree: true },
-      () => getRowsForCard(lastCard).length === NUMBER_OF_TABS
+      async () => (await getRowsForCard(lastCard)).length === NUMBER_OF_TABS
     );
 
     info("Toggle the Show Less link with keyboard.");
@@ -356,7 +372,7 @@ add_task(async function toggle_show_more_link() {
     await BrowserTestUtils.waitForMutationCondition(
       lastCard.shadowRoot,
       { childList: true, subtree: true },
-      () => getRowsForCard(lastCard).length < NUMBER_OF_TABS
+      async () => (await getRowsForCard(lastCard)).length < NUMBER_OF_TABS
     );
 
     await SpecialPowers.popPrefEnv();

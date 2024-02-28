@@ -9,6 +9,8 @@
 
 #include <cstdint>
 
+#include "mozilla/dom/quota/Client.h"
+#include "mozilla/dom/quota/PersistenceType.h"
 #include "nsTArrayForwardDeclare.h"
 
 template <class T>
@@ -16,8 +18,11 @@ class RefPtr;
 
 namespace mozilla {
 
+template <class T>
+class Maybe;
 template <typename T>
 class MovingNotNull;
+class OriginAttributesPattern;
 
 namespace dom::quota {
 
@@ -82,6 +87,17 @@ RefPtr<QuotaRequestBase> CreateInitializeTemporaryOriginOp(
     MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
     const RequestParams& aParams);
 
+RefPtr<ResolvableNormalOriginOp<bool>> CreateInitializePersistentClientOp(
+    MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
+    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
+    const Client::Type aClientType);
+
+RefPtr<ResolvableNormalOriginOp<bool>> CreateInitializeTemporaryClientOp(
+    MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
+    const PersistenceType aPersistenceType,
+    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
+    const Client::Type aClientType);
+
 RefPtr<QuotaRequestBase> CreateGetFullOriginMetadataOp(
     MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
     const GetFullOriginMetadataParams& aParams);
@@ -89,13 +105,20 @@ RefPtr<QuotaRequestBase> CreateGetFullOriginMetadataOp(
 RefPtr<ResolvableNormalOriginOp<bool>> CreateClearStorageOp(
     MovingNotNull<RefPtr<QuotaManager>> aQuotaManager);
 
-RefPtr<QuotaRequestBase> CreateClearOriginOp(
+RefPtr<ResolvableNormalOriginOp<bool>> CreateClearOriginOp(
     MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
-    const RequestParams& aParams);
+    const Maybe<PersistenceType>& aPersistenceType,
+    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
+    const Maybe<Client::Type>& aClientType);
 
-RefPtr<QuotaRequestBase> CreateClearDataOp(
+RefPtr<ResolvableNormalOriginOp<bool>> CreateClearStoragesForOriginPrefixOp(
     MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
-    const RequestParams& aParams);
+    const Maybe<PersistenceType>& aPersistenceType,
+    const mozilla::ipc::PrincipalInfo& aPrincipalInfo);
+
+RefPtr<ResolvableNormalOriginOp<bool>> CreateClearDataOp(
+    MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
+    const OriginAttributesPattern& aPattern);
 
 RefPtr<QuotaRequestBase> CreateResetOriginOp(
     MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,

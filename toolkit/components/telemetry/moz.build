@@ -40,7 +40,7 @@ XPCSHELL_TESTS_MANIFESTS += [
     "dap/tests/xpcshell/xpcshell.ini",
     "tests/unit/xpcshell.ini",
 ]
-BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
 
 XPIDL_SOURCES += [
     "core/nsITelemetry.idl",
@@ -114,6 +114,7 @@ EXTRA_JS_MODULES += [
     "app/TelemetryTimestamps.sys.mjs",
     "app/TelemetryUtils.sys.mjs",
     "dap/DAPTelemetrySender.sys.mjs",
+    "dap/DAPVisitCounter.sys.mjs",
     "pings/CoveragePing.sys.mjs",
     "pings/EventPing.sys.mjs",
     "pings/HealthPing.sys.mjs",

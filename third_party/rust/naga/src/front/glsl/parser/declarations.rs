@@ -13,8 +13,8 @@ use crate::{
         Error, ErrorKind, Frontend, Span,
     },
     proc::Alignment,
-    AddressSpace, Expression, FunctionResult, Handle, ScalarKind, Statement, StructMember, Type,
-    TypeInner,
+    AddressSpace, Expression, FunctionResult, Handle, Scalar, ScalarKind, Statement, StructMember,
+    Type, TypeInner,
 };
 
 use super::{DeclarationContext, ParsingContext, Result};
@@ -34,10 +34,10 @@ fn element_or_member_type(
 ) -> Handle<Type> {
     match types[ty].inner {
         // The child type of a vector is a scalar of the same kind and width
-        TypeInner::Vector { kind, width, .. } => types.insert(
+        TypeInner::Vector { scalar, .. } => types.insert(
             Type {
                 name: None,
-                inner: TypeInner::Scalar { kind, width },
+                inner: TypeInner::Scalar(scalar),
             },
             Default::default(),
         ),
@@ -48,8 +48,7 @@ fn element_or_member_type(
                 name: None,
                 inner: TypeInner::Vector {
                     size: rows,
-                    kind: ScalarKind::Float,
-                    width,
+                    scalar: Scalar::float(width),
                 },
             },
             Default::default(),
@@ -75,7 +74,7 @@ impl<'source> ParsingContext<'source> {
         global_ctx: &mut Context,
     ) -> Result<()> {
         if self
-            .parse_declaration(frontend, global_ctx, true)?
+            .parse_declaration(frontend, global_ctx, true, false)?
             .is_none()
         {
             let token = self.bump(frontend)?;
@@ -156,8 +155,8 @@ impl<'source> ParsingContext<'source> {
             let (mut init, init_meta) = ctx.lower_expect(stmt, frontend, expr, ExprPos::Rhs)?;
 
             let scalar_components = scalar_components(&ctx.module.types[ty].inner);
-            if let Some((kind, width)) = scalar_components {
-                ctx.implicit_conversion(&mut init, init_meta, kind, width)?;
+            if let Some(scalar) = scalar_components {
+                ctx.implicit_conversion(&mut init, init_meta, scalar)?;
             }
 
             Ok((init, init_meta))
@@ -221,43 +220,55 @@ impl<'source> ParsingContext<'source> {
             // returns Ok(None) rather than an error if there is not one
             self.parse_array_specifier(frontend, ctx.ctx, &mut meta, &mut ty)?;
 
+            let is_global_const =
+                ctx.qualifiers.storage.0 == StorageQualifier::Const && ctx.external;
+
             let init = self
                 .bump_if(frontend, TokenValue::Assign)
                 .map::<Result<_>, _>(|_| {
+                    let prev_const = ctx.ctx.is_const;
+                    ctx.ctx.is_const = is_global_const;
+
                     let (mut expr, init_meta) = self.parse_initializer(frontend, ty, ctx.ctx)?;
 
                     let scalar_components = scalar_components(&ctx.ctx.module.types[ty].inner);
-                    if let Some((kind, width)) = scalar_components {
-                        ctx.ctx
-                            .implicit_conversion(&mut expr, init_meta, kind, width)?;
+                    if let Some(scalar) = scalar_components {
+                        ctx.ctx.implicit_conversion(&mut expr, init_meta, scalar)?;
                     }
+
+                    ctx.ctx.is_const = prev_const;
 
                     meta.subsume(init_meta);
 
-                    Ok((expr, init_meta))
+                    Ok(expr)
                 })
                 .transpose()?;
 
-            let is_const = ctx.qualifiers.storage.0 == StorageQualifier::Const;
-            let maybe_const_expr = if ctx.external {
-                if let Some((root, meta)) = init {
-                    match ctx.ctx.solve_constant(root, meta) {
-                        Ok(res) => Some(res),
-                        // If the declaration is external (global scope) and is constant qualified
-                        // then the initializer must be a constant expression
-                        Err(err) if is_const => return Err(err),
-                        _ => None,
-                    }
+            let decl_initializer;
+            let late_initializer;
+            if is_global_const {
+                decl_initializer = init;
+                late_initializer = None;
+            } else if ctx.external {
+                decl_initializer =
+                    init.and_then(|expr| ctx.ctx.lift_up_const_expression(expr).ok());
+                late_initializer = None;
+            } else if let Some(init) = init {
+                if ctx.is_inside_loop || !ctx.ctx.expression_constness.is_const(init) {
+                    decl_initializer = None;
+                    late_initializer = Some(init);
                 } else {
-                    None
+                    decl_initializer = Some(init);
+                    late_initializer = None;
                 }
             } else {
-                None
+                decl_initializer = None;
+                late_initializer = None;
             };
 
-            let pointer = ctx.add_var(frontend, ty, name, maybe_const_expr, meta)?;
+            let pointer = ctx.add_var(frontend, ty, name, decl_initializer, meta)?;
 
-            if let Some((value, _)) = init.filter(|_| maybe_const_expr.is_none()) {
+            if let Some(value) = late_initializer {
                 ctx.ctx.emit_restart();
                 ctx.ctx.body.push(Statement::Store { pointer, value }, meta);
             }
@@ -287,6 +298,7 @@ impl<'source> ParsingContext<'source> {
         frontend: &mut Frontend,
         ctx: &mut Context,
         external: bool,
+        is_inside_loop: bool,
     ) -> Result<Option<Span>> {
         //declaration:
         //    function_prototype  SEMICOLON
@@ -317,7 +329,7 @@ impl<'source> ParsingContext<'source> {
 
                             let result = ty.map(|ty| FunctionResult { ty, binding: None });
 
-                            let mut context = Context::new(frontend, ctx.module)?;
+                            let mut context = Context::new(frontend, ctx.module, false)?;
 
                             self.parse_function_args(frontend, &mut context)?;
 
@@ -343,6 +355,7 @@ impl<'source> ParsingContext<'source> {
                                         frontend,
                                         &mut context,
                                         &mut None,
+                                        false,
                                     )?;
 
                                     frontend.add_function(context, name, result, meta);
@@ -385,6 +398,7 @@ impl<'source> ParsingContext<'source> {
                     let mut ctx = DeclarationContext {
                         qualifiers,
                         external,
+                        is_inside_loop,
                         ctx,
                     };
 
@@ -493,10 +507,10 @@ impl<'source> ParsingContext<'source> {
                     let (ty, meta) = self.parse_type_non_void(frontend, ctx)?;
 
                     match ctx.module.types[ty].inner {
-                        TypeInner::Scalar {
+                        TypeInner::Scalar(Scalar {
                             kind: ScalarKind::Float | ScalarKind::Sint,
                             ..
-                        } => {}
+                        }) => {}
                         _ => frontend.errors.push(Error {
                             kind: ErrorKind::SemanticError(
                                 "Precision statement can only work on floats and ints".into(),

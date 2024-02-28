@@ -46,7 +46,6 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
       mozilla::dom::FromParser aFromParser)
       : nsGenericHTMLElement(std::move(aNodeInfo)),
-        nsBrowserElement(),
         mSrcLoadHappened(false),
         mNetworkCreated(aFromParser == mozilla::dom::FROM_PARSER_NETWORK),
         mBrowserFrameListenersRegistered(false),
@@ -140,6 +139,13 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
   // FullscreenFlag() for details. It is placed here so that we
   // do not bloat any struct.
   bool mFullscreenFlag = false;
+
+  /**
+   * Represents the iframe is deferred loading until this element gets visible.
+   * We just do not load if set and leave specific elements to set it (see
+   * HTMLIFrameElement).
+   */
+  bool mLazyLoading = false;
 
  private:
   void GetManifestURL(nsAString& aOut);

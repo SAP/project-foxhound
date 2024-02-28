@@ -24,7 +24,7 @@ function isMemberExpression(node, object, member) {
 module.exports = {
   meta: {
     docs: {
-      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/reject-chromeutils-import.html",
+      url: "https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint-plugin-mozilla/rules/reject-chromeutils-import.html",
     },
     messages: {
       useImportESModule:
@@ -49,10 +49,7 @@ module.exports = {
         let { callee } = node;
 
         if (
-          (isMemberExpression(callee.object, "Components", "utils") ||
-            isIdentifier(callee.object, "Cu") ||
-            isMemberExpression(callee.object, "SpecialPowers", "Cu") ||
-            isIdentifier(callee.object, "ChromeUtils") ||
+          (isIdentifier(callee.object, "ChromeUtils") ||
             isMemberExpression(
               callee.object,
               "SpecialPowers",
@@ -70,7 +67,6 @@ module.exports = {
           (isMemberExpression(callee.object, "SpecialPowers", "ChromeUtils") &&
             isIdentifier(callee.property, "defineModuleGetter")) ||
           isMemberExpression(callee, "ChromeUtils", "defineModuleGetter") ||
-          isMemberExpression(callee, "XPCOMUtils", "defineLazyModuleGetter") ||
           isMemberExpression(callee, "XPCOMUtils", "defineLazyModuleGetters")
         ) {
           context.report({

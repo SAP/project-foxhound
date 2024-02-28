@@ -5,7 +5,13 @@ support-files = [
   "!/toolkit/components/translations/tests/browser/translations-test.mjs",
 ]
 
-["browser_manage_languages.js"]
+["browser_translations_about_preferences_manage_downloaded_languages.js"]
+
+["browser_translations_about_preferences_settings_always_translate_languages.js"]
+
+["browser_translations_about_preferences_settings_never_translate_languages.js"]
+
+["browser_translations_about_preferences_settings_never_translate_sites.js"]
 
 ["browser_translations_panel_a11y_focus.js"]
 
@@ -31,6 +37,10 @@ support-files = [
 
 ["browser_translations_panel_cancel.js"]
 
+["browser_translations_panel_engine_destroy.js"]
+
+["browser_translations_panel_engine_destroy_pending.js"]
+
 ["browser_translations_panel_engine_unsupported.js"]
 
 ["browser_translations_panel_engine_unsupported_lang.js"]
@@ -38,6 +48,9 @@ support-files = [
 ["browser_translations_panel_firstrun.js"]
 
 ["browser_translations_panel_firstrun_revisit.js"]
+
+["browser_translations_panel_fuzzing.js"]
+skip-if = true
 
 ["browser_translations_panel_gear.js"]
 
@@ -76,4 +89,3 @@ support-files = [
 ["browser_translations_telemetry_translation_failure.js"]
 
 ["browser_translations_telemetry_translation_request.js"]
-

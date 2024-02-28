@@ -53,7 +53,7 @@ nsImageRenderer::nsImageRenderer(nsIFrame* aForFrame, const StyleImage* aImage,
                                  uint32_t aFlags)
     : mForFrame(aForFrame),
       mImage(&aImage->FinalImage()),
-      mImageResolution(aImage->GetResolution()),
+      mImageResolution(aImage->GetResolution(*aForFrame->Style())),
       mType(mImage->tag),
       mImageContainer(nullptr),
       mGradientData(nullptr),
@@ -114,7 +114,7 @@ bool nsImageRenderer::PrepareImage() {
 
       bool canDrawPartial =
           (mFlags & nsImageRenderer::FLAG_DRAW_PARTIAL_FRAMES) &&
-          isImageRequest && mImage->IsSizeAvailable() && !mImage->IsRect();
+          isImageRequest && mImage->IsSizeAvailable();
 
       // If we are drawing a partial frame then we want to make sure there are
       // some pixels to draw, otherwise we waste effort pushing through to draw
@@ -153,24 +153,7 @@ bool nsImageRenderer::PrepareImage() {
       srcImage = nsLayoutUtils::OrientImage(srcImage, orientation);
     }
 
-    if (!mImage->IsRect()) {
-      mImageContainer.swap(srcImage);
-    } else {
-      auto croprect = mImage->ComputeActualCropRect();
-      if (!croprect || croprect->mRect.IsEmpty()) {
-        // The cropped image has zero size
-        mPrepareResult = ImgDrawResult::BAD_IMAGE;
-        return false;
-      }
-      if (croprect->mIsEntireImage) {
-        // The cropped image is identical to the source image
-        mImageContainer.swap(srcImage);
-      } else {
-        nsCOMPtr<imgIContainer> subImage =
-            ImageOps::Clip(srcImage, croprect->mRect, Nothing());
-        mImageContainer.swap(subImage);
-      }
-    }
+    mImageContainer.swap(srcImage);
     mPrepareResult = ImgDrawResult::SUCCESS;
   } else if (mImage->IsGradient()) {
     mGradientData = &*mImage->AsGradient();
@@ -220,7 +203,6 @@ CSSSizeOrRatio nsImageRenderer::ComputeIntrinsicSize() {
 
   CSSSizeOrRatio result;
   switch (mType) {
-    case StyleImage::Tag::Rect:
     case StyleImage::Tag::Url: {
       bool haveWidth, haveHeight;
       CSSIntSize imageIntSize;
@@ -237,11 +219,11 @@ CSSSizeOrRatio nsImageRenderer::ComputeIntrinsicSize() {
       // If we know the aspect ratio and one of the dimensions,
       // we can compute the other missing width or height.
       if (!haveHeight && haveWidth && result.mRatio) {
-        nscoord intrinsicHeight =
+        CSSIntCoord intrinsicHeight =
             result.mRatio.Inverted().ApplyTo(imageIntSize.width);
         result.SetHeight(nsPresContext::CSSPixelsToAppUnits(intrinsicHeight));
       } else if (haveHeight && !haveWidth && result.mRatio) {
-        nscoord intrinsicWidth = result.mRatio.ApplyTo(imageIntSize.height);
+        CSSIntCoord intrinsicWidth = result.mRatio.ApplyTo(imageIntSize.height);
         result.SetWidth(nsPresContext::CSSPixelsToAppUnits(intrinsicWidth));
       }
 
@@ -506,7 +488,6 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
   }
 
   switch (mType) {
-    case StyleImage::Tag::Rect:
     case StyleImage::Tag::Url: {
       result = nsLayoutUtils::DrawBackgroundImage(
           *ctx, mForFrame, aPresContext, mImageContainer, samplingFilter, aDest,
@@ -606,7 +587,6 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
                                           !aItem->BackfaceIsHidden(), aOpacity);
       break;
     }
-    case StyleImage::Tag::Rect:
     case StyleImage::Tag::Url: {
       ExtendMode extendMode = mExtendMode;
       if (aDest.Contains(aFill)) {
@@ -905,8 +885,7 @@ ImgDrawResult nsImageRenderer::DrawBorderImageComponent(
     return ImgDrawResult::SUCCESS;
   }
 
-  const bool isRequestBacked =
-      mType == StyleImage::Tag::Url || mType == StyleImage::Tag::Rect;
+  const bool isRequestBacked = mType == StyleImage::Tag::Url;
   MOZ_ASSERT(isRequestBacked == mImage->IsImageRequestType());
 
   if (isRequestBacked || mType == StyleImage::Tag::Element) {

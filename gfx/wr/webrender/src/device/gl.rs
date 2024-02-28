@@ -416,7 +416,7 @@ impl ExternalTexture {
 }
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Default, Debug, Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
     pub struct TextureFlags: u32 {
         /// This texture corresponds to one of the shared texture caches.
         const IS_SHARED_TEXTURE_CACHE = 1 << 0;
@@ -549,7 +549,6 @@ impl Drop for Texture {
 pub struct Program {
     id: gl::GLuint,
     u_transform: gl::GLint,
-    u_mode: gl::GLint,
     u_texture_size: gl::GLint,
     source_info: ProgramSourceInfo,
     is_initialized: bool,
@@ -1074,7 +1073,6 @@ pub struct Device {
     bound_vao: gl::GLuint,
     bound_read_fbo: (FBOId, DeviceIntPoint),
     bound_draw_fbo: FBOId,
-    program_mode_id: UniformLocation,
     default_read_fbo: FBOId,
     default_draw_fbo: FBOId,
 
@@ -1415,6 +1413,28 @@ fn parse_mali_version(version_string: &str) -> Option<(u32, u32, u32)> {
     Some((v, r, p))
 }
 
+/// Returns whether this GPU belongs to the Mali Midgard family
+fn is_mali_midgard(renderer_name: &str) -> bool {
+    renderer_name.starts_with("Mali-T")
+}
+
+/// Returns whether this GPU belongs to the Mali Bifrost family
+fn is_mali_bifrost(renderer_name: &str) -> bool {
+    renderer_name == "Mali-G31"
+        || renderer_name == "Mali-G51"
+        || renderer_name == "Mali-G71"
+        || renderer_name == "Mali-G52"
+        || renderer_name == "Mali-G72"
+        || renderer_name == "Mali-G76"
+}
+
+/// Returns whether this GPU belongs to the Mali Valhall family
+fn is_mali_valhall(renderer_name: &str) -> bool {
+    // As new Valhall GPUs may be released in the future we match all Mali-G models, apart from
+    // Bifrost models (of which we don't expect any new ones to be released)
+    renderer_name.starts_with("Mali-G") && !is_mali_bifrost(renderer_name)
+}
+
 impl Device {
     pub fn new(
         mut gl: Rc<dyn gl::Gl>,
@@ -1734,13 +1754,8 @@ impl Device {
         // variety of Mali GPUs. As a precaution avoid doing so on all Midgard and Bifrost GPUs.
         // Valhall (eg Mali-Gx7 onwards) appears to be unnaffected. See bug 1691955, bug 1558374,
         // and bug 1663355.
-        let supports_render_target_partial_update = !(renderer_name.starts_with("Mali-T")
-            || renderer_name == "Mali-G31"
-            || renderer_name == "Mali-G51"
-            || renderer_name == "Mali-G71"
-            || renderer_name == "Mali-G52"
-            || renderer_name == "Mali-G72"
-            || renderer_name == "Mali-G76");
+        let supports_render_target_partial_update =
+            !is_mali_midgard(&renderer_name) && !is_mali_bifrost(&renderer_name);
 
         let supports_shader_storage_object = match gl.get_type() {
             // see https://www.g-truc.net/post-0734.html
@@ -1793,7 +1808,7 @@ impl Device {
         // On Mali-Txxx devices we have observed crashes during draw calls when rendering
         // to an alpha target immediately after using glClear to clear regions of it.
         // Using a shader to clear the regions avoids the crash. See bug 1638593.
-        let supports_alpha_target_clears = !renderer_name.starts_with("Mali-T");
+        let supports_alpha_target_clears = !is_mali_midgard(&renderer_name);
 
         // On Adreno 4xx devices with older drivers we have seen render tasks to alpha targets have
         // no effect unless the target is fully cleared prior to rendering. See bug 1714227.
@@ -1820,10 +1835,7 @@ impl Device {
         // On Mali Valhall devices with a driver version v1.r36p0 we have seen that invalidating
         // render targets can result in image corruption, perhaps due to subsequent reuses of the
         // render target not correctly reinitializing them to a valid state. See bug 1787520.
-        if renderer_name.starts_with("Mali-G77")
-            || renderer_name.starts_with("Mali-G78")
-            || renderer_name.starts_with("Mali-G710")
-        {
+        if is_mali_valhall(&renderer_name) {
             match parse_mali_version(&version_string) {
                 Some(version) if version >= (1, 36, 0) => supports_render_target_invalidate = false,
                 _ => {}
@@ -1915,7 +1927,6 @@ impl Device {
             bound_vao: 0,
             bound_read_fbo: (FBOId(0), DeviceIntPoint::zero()),
             bound_draw_fbo: FBOId(0),
-            program_mode_id: UniformLocation::INVALID,
             default_read_fbo: FBOId(0),
             default_draw_fbo: FBOId(0),
 
@@ -2175,7 +2186,6 @@ impl Device {
 
         // Shader state
         self.bound_program = 0;
-        self.program_mode_id = UniformLocation::INVALID;
         self.gl.use_program(0);
 
         // Reset common state
@@ -2532,7 +2542,6 @@ impl Device {
         // If we get here, the link succeeded, so get the uniforms.
         program.is_initialized = true;
         program.u_transform = self.gl.get_uniform_location(program.id, "uTransform");
-        program.u_mode = self.gl.get_uniform_location(program.id, "uMode");
         program.u_texture_size = self.gl.get_uniform_location(program.id, "uTextureSize");
 
         Ok(())
@@ -2553,7 +2562,6 @@ impl Device {
             self.gl.use_program(program.id);
             self.bound_program = program.id;
             self.bound_program_name = program.source_info.full_name_cstr.clone();
-            self.program_mode_id = UniformLocation(program.u_mode);
         }
         true
     }
@@ -3044,7 +3052,6 @@ impl Device {
         let program = Program {
             id: pid,
             u_transform: 0,
-            u_mode: 0,
             u_texture_size: 0,
             source_info,
             is_initialized: false,
@@ -3102,14 +3109,6 @@ impl Device {
 
         self.gl
             .uniform_matrix_4fv(program.u_transform, false, &transform.to_array());
-    }
-
-    pub fn switch_mode(&self, mode: i32) {
-        debug_assert!(self.inside_frame);
-        #[cfg(debug_assertions)]
-        debug_assert!(self.shader_is_ready);
-
-        self.gl.uniform_1i(self.program_mode_id.0, mode);
     }
 
     /// Sets the uTextureSize uniform. Most shaders do not require this to be called
@@ -3931,24 +3930,6 @@ impl Device {
         self.set_blend_factors(
             (gl::ONE, gl::ONE),
             (gl::ONE, gl::ONE),
-        );
-    }
-    pub fn set_blend_mode_subpixel_with_bg_color_pass0(&mut self) {
-        self.set_blend_factors(
-            (gl::ZERO, gl::ONE_MINUS_SRC_COLOR),
-            (gl::ZERO, gl::ONE),
-        );
-    }
-    pub fn set_blend_mode_subpixel_with_bg_color_pass1(&mut self) {
-        self.set_blend_factors(
-            (gl::ONE_MINUS_DST_ALPHA, gl::ONE),
-            (gl::ZERO, gl::ONE),
-        );
-    }
-    pub fn set_blend_mode_subpixel_with_bg_color_pass2(&mut self) {
-        self.set_blend_factors(
-            (gl::ONE, gl::ONE),
-            (gl::ONE, gl::ONE_MINUS_SRC_ALPHA),
         );
     }
     pub fn set_blend_mode_subpixel_dual_source(&mut self) {

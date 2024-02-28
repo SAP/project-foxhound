@@ -63,8 +63,8 @@ static nsIFormAutoComplete* GetFormAutoComplete() {
 }
 
 NS_IMPL_CYCLE_COLLECTION(nsFormFillController, mController, mLoginManagerAC,
-                         mLoginReputationService, mFocusedPopup, mPopups,
-                         mLastListener, mLastFormAutoComplete)
+                         mFocusedPopup, mPopups, mLastListener,
+                         mLastFormAutoComplete)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsFormFillController)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIFormFillController)
@@ -90,7 +90,6 @@ nsFormFillController::nsFormFillController()
       mTimeout(50),
       mMinResultsForPopup(1),
       mMaxRows(0),
-      mLastRightClickTimeStamp(TimeStamp()),
       mDisableAutoComplete(false),
       mCompleteDefaultIndex(false),
       mCompleteSelectedIndex(false),
@@ -153,7 +152,7 @@ void nsFormFillController::AttributeChanged(mozilla::dom::Element* aElement,
         mozilla::NewRunnableMethod<RefPtr<HTMLInputElement>>(
             "nsFormFillController::MaybeStartControllingInput", this,
             &nsFormFillController::MaybeStartControllingInput, focusedInput);
-    aElement->OwnerDoc()->Dispatch(TaskCategory::Other, event.forget());
+    aElement->OwnerDoc()->Dispatch(event.forget());
   }
 
   if (mListNode && mListNode->Contains(aElement)) {
@@ -803,11 +802,6 @@ nsFormFillController::StopSearch() {
   return NS_OK;
 }
 
-nsresult nsFormFillController::StartQueryLoginReputation(
-    HTMLInputElement* aInput) {
-  return NS_OK;
-}
-
 ////////////////////////////////////////////////////////////////////////
 //// nsIFormAutoCompleteObserver
 
@@ -1025,14 +1019,6 @@ void nsFormFillController::MaybeStartControllingInput(
   if (isAutofillInput || isPwmgrInput || hasList || autocomplete) {
     StartControllingInput(aInput);
   }
-
-#ifdef NIGHTLY_BUILD
-  // Trigger an asynchronous login reputation query when user focuses on the
-  // password field.
-  if (aInput->HasBeenTypePassword()) {
-    StartQueryLoginReputation(aInput);
-  }
-#endif
 }
 
 nsresult nsFormFillController::HandleFocus(HTMLInputElement* aInput) {

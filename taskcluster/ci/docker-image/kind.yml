@@ -122,6 +122,10 @@ jobs:
     custom-car-linux:
         symbol: I(custom-car-linux)
         parent: debian12-base
+    # Chromium-as-Release Android
+    custom-car-android:
+        symbol: I(custom-car-android)
+        parent: debian12-base
     valgrind-build:
         symbol: I(vb)
         parent: debian12-amd64-build
@@ -235,7 +239,7 @@ jobs:
         symbol: I(flatpak)
     webrender:
         symbol: I(webrender)
-        parent: debian11-base
+        parent: debian12-base
     condprof:
         symbol: I(condprof)
         parent: ubuntu1804-test

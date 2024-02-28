@@ -205,6 +205,8 @@ test_description_schema = Schema(
             [str],
             {"active": [str], "skipped": [str]},
         ),
+        # flag to determine if this is a confirm failure task
+        Optional("confirm-failure"): bool,
         # The current chunk (if chunking is enabled).
         Optional("this-chunk"): int,
         # os user groups for test task workers; required scopes, will be
@@ -394,6 +396,7 @@ def run_remaining_transforms(config, tasks):
         ("raptor", lambda t: t["suite"] == "raptor"),
         ("other", None),
         ("worker", None),
+        ("confirm_failure", None),
         # These transforms should always run last as there is never any
         # difference in configuration from one chunk to another (other than
         # chunk number).
@@ -438,6 +441,9 @@ def make_job_description(config, tasks):
 
         if task["chunks"] > 1:
             label += "-{}".format(task["this-chunk"])
+
+        if task.get("confirm-failure", False):
+            label += "-cf"
 
         build_label = task["build-label"]
 

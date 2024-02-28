@@ -1,4 +1,5 @@
 import base64
+from enum import Enum
 from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Union
 
 from ._module import BidiModule, command
@@ -6,25 +7,27 @@ from ._module import BidiModule, command
 
 class ElementOptions(Dict[str, Any]):
     def __init__(
-        self, element: Mapping[str, Any], scroll_into_view: Optional[bool] = None
+        self, element: Mapping[str, Any]
     ):
         self["type"] = "element"
         self["element"] = element
 
-        if scroll_into_view is not None:
-            self["scrollIntoView"] = scroll_into_view
 
-
-class ViewportOptions(Dict[str, Any]):
+class BoxOptions(Dict[str, Any]):
     def __init__(self, x: float, y: float, width: float, height: float):
-        self["type"] = "viewport"
+        self["type"] = "box"
         self["x"] = x
         self["y"] = y
         self["width"] = width
         self["height"] = height
 
 
-ClipOptions = Union[ElementOptions, ViewportOptions]
+ClipOptions = Union[ElementOptions, BoxOptions]
+
+
+class OriginOptions(Enum):
+    DOCUMENT = "document"
+    VIEWPORT = "viewport"
 
 
 class BrowsingContext(BidiModule):
@@ -34,12 +37,18 @@ class BrowsingContext(BidiModule):
 
     @command
     def capture_screenshot(
-        self, context: str, clip: Optional[ClipOptions] = None
+        self,
+        context: str,
+        clip: Optional[ClipOptions] = None,
+        origin: Optional[OriginOptions] = None,
     ) -> Mapping[str, Any]:
         params: MutableMapping[str, Any] = {"context": context}
 
         if clip is not None:
             params["clip"] = clip
+
+        if origin is not None:
+            params["origin"] = origin
 
         return params
 
@@ -178,5 +187,18 @@ class BrowsingContext(BidiModule):
         return result["data"]
 
     @command
-    def set_viewport(self, context: str, viewport: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
-        return {"context": context, "viewport": viewport}
+    def set_viewport(self,
+                     context: str,
+                     viewport: Optional[Mapping[str, Any]] = None,
+                     device_pixel_ratio: Optional[float] = None) -> Mapping[str, Any]:
+        params: MutableMapping[str, Any] = {
+            "context": context,
+        }
+
+        if viewport is not None:
+            params["viewport"] = viewport
+
+        if device_pixel_ratio is not None:
+            params["devicePixelRatio"] = device_pixel_ratio
+
+        return params

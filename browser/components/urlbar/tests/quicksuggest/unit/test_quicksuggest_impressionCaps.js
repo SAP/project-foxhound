@@ -55,15 +55,11 @@ const EXPECTED_SPONSORED_URLBAR_RESULT = {
     descriptionL10n: { id: "urlbar-result-action-sponsored" },
     helpUrl: QuickSuggest.HELP_URL,
     helpL10n: {
-      id: UrlbarPrefs.get("resultMenu")
-        ? "urlbar-result-menu-learn-more-about-firefox-suggest"
-        : "firefox-suggest-urlbar-learn-more",
+      id: "urlbar-result-menu-learn-more-about-firefox-suggest",
     },
-    isBlockable: UrlbarPrefs.get("quickSuggestBlockingEnabled"),
+    isBlockable: true,
     blockL10n: {
-      id: UrlbarPrefs.get("resultMenu")
-        ? "urlbar-result-menu-dismiss-firefox-suggest"
-        : "firefox-suggest-urlbar-block",
+      id: "urlbar-result-menu-dismiss-firefox-suggest",
     },
     source: "remote-settings",
     provider: "AdmWikipedia",
@@ -90,15 +86,11 @@ const EXPECTED_NONSPONSORED_URLBAR_RESULT = {
     sponsoredIabCategory: "5 - Education",
     helpUrl: QuickSuggest.HELP_URL,
     helpL10n: {
-      id: UrlbarPrefs.get("resultMenu")
-        ? "urlbar-result-menu-learn-more-about-firefox-suggest"
-        : "firefox-suggest-urlbar-learn-more",
+      id: "urlbar-result-menu-learn-more-about-firefox-suggest",
     },
-    isBlockable: UrlbarPrefs.get("quickSuggestBlockingEnabled"),
+    isBlockable: true,
     blockL10n: {
-      id: UrlbarPrefs.get("resultMenu")
-        ? "urlbar-result-menu-dismiss-firefox-suggest"
-        : "firefox-suggest-urlbar-block",
+      id: "urlbar-result-menu-dismiss-firefox-suggest",
     },
     source: "remote-settings",
     provider: "AdmWikipedia",
@@ -110,22 +102,21 @@ let gDateNowStub;
 let gStartupDateMsStub;
 
 add_task(async function init() {
-  UrlbarPrefs.set("quicksuggest.enabled", true);
-  UrlbarPrefs.set("quicksuggest.impressionCaps.sponsoredEnabled", true);
-  UrlbarPrefs.set("quicksuggest.impressionCaps.nonSponsoredEnabled", true);
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  UrlbarPrefs.set("bestMatch.enabled", false);
-
   // Disable search suggestions so we don't hit the network.
   Services.prefs.setBoolPref("browser.search.suggest.enabled", false);
 
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
-    remoteSettingsResults: [
+    remoteSettingsRecords: [
       {
         type: "data",
         attachment: REMOTE_SETTINGS_RESULTS,
       },
+    ],
+    prefs: [
+      ["quicksuggest.impressionCaps.sponsoredEnabled", true],
+      ["quicksuggest.impressionCaps.nonSponsoredEnabled", true],
+      ["suggest.quicksuggest.nonsponsored", true],
+      ["suggest.quicksuggest.sponsored", true],
     ],
   });
 

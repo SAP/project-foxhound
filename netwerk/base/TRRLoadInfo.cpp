@@ -186,6 +186,12 @@ TRRLoadInfo::SetStoragePermission(
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+const Maybe<RFPTarget>& TRRLoadInfo::GetOverriddenFingerprintingSettings() {
+  return mOverriddenFingerprintingSettings;
+}
+
+void TRRLoadInfo::SetOverriddenFingerprintingSettings(RFPTarget aTargets) {}
+
 NS_IMETHODIMP
 TRRLoadInfo::GetIsMetaRefresh(bool* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -842,6 +848,16 @@ TRRLoadInfo::GetHasInjectedCookieForCookieBannerHandling(
 NS_IMETHODIMP
 TRRLoadInfo::SetHasInjectedCookieForCookieBannerHandling(
     bool aHasInjectedCookieForCookieBannerHandling) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetWasSchemelessInput(bool* aWasSchemelessInput) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetWasSchemelessInput(bool aWasSchemelessInput) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

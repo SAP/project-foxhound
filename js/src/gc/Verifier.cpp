@@ -393,7 +393,6 @@ void gc::GCRuntime::endVerifyPreBarriers() {
   }
 
   marker().reset();
-  marker().stop();
   resetDelayedMarking();
 
   js_delete(trc);
@@ -508,12 +507,15 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
     AutoLockGC lock(gc);
     for (auto chunk = gc->allNonEmptyChunks(lock); !chunk.done();
          chunk.next()) {
-      MarkBitmap* bitmap = &chunk->markBits;
-      auto entry = MakeUnique<MarkBitmap>();
-      if (!entry) {
+      // Bug 1842582: Allocate mark bit buffer in two stages to avoid alignment
+      // restriction which we currently can't support.
+      void* buffer = js_malloc(sizeof(MarkBitmap));
+      if (!buffer) {
         return;
       }
+      UniquePtr<MarkBitmap> entry(new (buffer) MarkBitmap);
 
+      MarkBitmap* bitmap = &chunk->markBits;
       memcpy((void*)entry->bitmap, (void*)bitmap->bitmap,
              sizeof(bitmap->bitmap));
 
@@ -586,7 +588,6 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
       }
 
       MOZ_ASSERT(gcmarker->isDrained());
-      gcmarker->reset();
 
       ClearMarkBits<GCZonesIter>(gc);
     }
@@ -1114,9 +1115,8 @@ bool js::gc::CheckWeakMapEntryMarking(const WeakMapBase* map, Cell* key,
 
 #endif  // defined(JS_GC_ZEAL) || defined(DEBUG)
 
-#ifdef DEBUG
 // Return whether an arbitrary pointer is within a cell with the given
-// traceKind. Only for assertions.
+// traceKind. Only for assertions and js::debug::* APIs.
 bool GCRuntime::isPointerWithinTenuredCell(void* ptr, JS::TraceKind traceKind) {
   AutoLockGC lock(this);
   for (auto chunk = allNonEmptyChunks(lock); !chunk.done(); chunk.next()) {
@@ -1127,10 +1127,10 @@ bool GCRuntime::isPointerWithinTenuredCell(void* ptr, JS::TraceKind traceKind) {
         return false;
       }
 
-      return MapAllocToTraceKind(arena->getAllocKind()) == traceKind;
+      return traceKind == JS::TraceKind::Null ||
+             MapAllocToTraceKind(arena->getAllocKind()) == traceKind;
     }
   }
 
   return false;
 }
-#endif  // DEBUG

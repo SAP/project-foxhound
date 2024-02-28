@@ -1418,8 +1418,13 @@ void nsHttpTransaction::Close(nsresult reason) {
   }
   mConnected = false;
 
+  // When mDoNotRemoveAltSvc is true, this means we want to keep the AltSvc in
+  // in the conncetion info. In this case, let's not apply HTTPS RR retry logic
+  // to make sure this transaction can be restarted with the same conncetion
+  // info.
   bool shouldRestartTransactionForHTTPSRR =
-      mOrigConnInfo && AllowedErrorForHTTPSRRFallback(reason);
+      mOrigConnInfo && AllowedErrorForHTTPSRRFallback(reason) &&
+      !mDoNotRemoveAltSvc;
 
   //
   // if the connection was reset or closed before we wrote any part of the
@@ -1853,9 +1858,11 @@ nsresult nsHttpTransaction::Restart() {
   // Use TRANSACTION_RESTART_OTHERS as a catch-all.
   SetRestartReason(TRANSACTION_RESTART_OTHERS);
 
-  // Reset the IP family preferences, so the new connection can try to use
-  // another IPv4 or IPv6 address.
-  gHttpHandler->ConnMgr()->ResetIPFamilyPreference(mConnInfo);
+  if (!mDoNotResetIPFamilyPreference) {
+    // Reset the IP family preferences, so the new connection can try to use
+    // another IPv4 or IPv6 address.
+    gHttpHandler->ConnMgr()->ResetIPFamilyPreference(mConnInfo);
+  }
 
   return gHttpHandler->InitiateTransaction(this, mPriority);
 }
@@ -3545,12 +3552,31 @@ void nsHttpTransaction::CollectTelemetryForUploads() {
     return;
   }
 
+  // We will briefly continue to collect HTTP_UPLOAD_BANDWIDTH_MBPS
+  // (a keyed histogram) while live experiments depend on it.
+  // Once complete, we can remove and use the glean probes,
+  // http_1/2/3_upload_throughput.
   nsAutoCString protocolVersion(nsHttp::GetProtocolVersion(mHttpVersion));
   TimeDuration sendTime = mTimings.responseStart - mTimings.requestStart;
   double megabits = static_cast<double>(mRequestSize) * 8.0 / 1000000.0;
   uint32_t mpbs = static_cast<uint32_t>(megabits / sendTime.ToSeconds());
   Telemetry::Accumulate(Telemetry::HTTP_UPLOAD_BANDWIDTH_MBPS, protocolVersion,
                         mpbs);
+
+  switch (mHttpVersion) {
+    case HttpVersion::v1_0:
+    case HttpVersion::v1_1:
+      glean::networking::http_1_upload_throughput.AccumulateSamples({mpbs});
+      break;
+    case HttpVersion::v2_0:
+      glean::networking::http_2_upload_throughput.AccumulateSamples({mpbs});
+      break;
+    case HttpVersion::v3_0:
+      glean::networking::http_3_upload_throughput.AccumulateSamples({mpbs});
+      break;
+    default:
+      break;
+  }
 
   if ((mHttpVersion == HttpVersion::v3_0) || mSupportsHTTP3) {
     nsAutoCString key((mHttpVersion == HttpVersion::v3_0) ? "uses_http3"

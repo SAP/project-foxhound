@@ -13,6 +13,9 @@
   font: message-box;
   font-size: var(--theme-body-font-size);
 
+  /* TODO(bug 1022557): Perhaps we want to allow forced colors in devtools */
+  forced-color-adjust: none;
+
   --tab-line-hover-color: rgba(0,0,0,.2);
   --tab-line-selected-color: var(--blue-50);
   --toggle-thumb-color: white;
@@ -239,35 +242,21 @@ button::selection {
 
 /* Keyboard focus highlight styles */
 
-:-moz-focusring {
+:focus-visible {
   outline: var(--theme-focus-outline);
-  outline-offset: -1px;
-}
+  outline-offset: var(--theme-outline-offset);
+  box-shadow: var(--theme-outline-box-shadow);
 
-textbox[focused="true"] {
-  border-color: var(--theme-focus-border-color-textbox);
-  box-shadow: var(--theme-focus-box-shadow-textbox);
-  transition: all 0.2s ease-in-out
-}
+  /* override properties set in global-shared.css for links  */
+  a& {
+    outline-color: var(--theme-focus-outline-color) !important;
+    outline-width: var(--theme-focus-outline-size) !important;
+  }
 
-textbox :-moz-focusring {
-  box-shadow: none;
-  outline: none;
-}
-
-/* Form fields should already have box-shadow hightlight */
-select:-moz-focusring,
-input[type="radio"]:-moz-focusring,
-input[type="checkbox"]:-moz-focusring,
-checkbox:-moz-focusring {
-  outline: none;
-}
-
-/* Tab and button of toolbox does not need to display outline */
-
-.devtools-button:-moz-focusring,
-.devtools-tab:-moz-focusring {
-  outline:none;
+  /* offset the outline for checkbox and radio buttons so it doesn't conflict with existing border */
+  :is(input[type="radio"], input[type="checkbox"], checkbox)& {
+    outline-offset: 2px;
+  }
 }
 
 /* Toolbar buttons */
@@ -290,6 +279,8 @@ checkbox:-moz-focusring {
 
 .devtools-togglebutton {
   padding: 1px 6px;
+  /* Separate the outline from the button as it might have a similar background color (after Bug 1590432) */
+  outline-offset: 2px;
 }
 
 /* Remove system form border from devtools-button. */
@@ -339,10 +330,6 @@ checkbox:-moz-focusring {
 .devtools-button:disabled {
   pointer-events: none;
   opacity: 0.5 !important;
-}
-
-.devtools-button:focus {
-  background-color: var(--theme-toolbar-hover);
 }
 
 .devtools-button:empty:not([aria-expanded="true"]):hover {
@@ -494,20 +481,27 @@ checkbox:-moz-focusring {
 
 .devtools-searchbox > .devtools-searchinput,
 .devtools-searchbox > .devtools-filterinput {
-  /* Let .devtools-searchbox handle the background and border */
+  /* Those classes can be applied on <input>, which have a default styling.
+     We want .devtools-searchbox to handle the background, border and outline, so we
+     need to reset them here */
   background-color: transparent;
   border: none;
+  outline: none;
+  box-shadow: none;
   flex-grow: 1;
   min-width: 0;
   width: 100%;
 }
 
-.devtools-searchbox:focus-within,
-.devtools-textinput:focus,
-.devtools-searchinput:focus,
-.devtools-filterinput:focus {
-  border-color: var(--blue-50);
-  outline: none;
+/* Display an outline on the container when the child input is focused. If another element
+   is focused (e.g. a button), we only want the outline on that element */
+.devtools-searchbox:focus-within:has(input:focus-visible) {
+  outline: var(--theme-focus-outline);
+  outline-offset: -2px;
+
+  &.devtools-searchbox-no-match {
+    outline-color: var(--searchbox-no-match-stroke-color);
+  }
 }
 
 .devtools-searchbox-no-match {
@@ -593,12 +587,11 @@ checkbox:-moz-focusring {
   fill: var(--theme-selection-color);
 }
 
-.theme-twisty:-moz-focusring {
-  outline-style: none;
-}
-
-.theme-twisty[open],
-.theme-twisty.open {
+.theme-twisty:is(
+  .open,
+  [open],
+  [aria-expanded="true"]
+) {
   transform: none;
 }
 
@@ -649,6 +642,8 @@ checkbox:-moz-focusring {
   background-position: center;
   -moz-context-properties: fill;
   fill: var(--theme-icon-color);
+  /* The button is often displayed next to the window edge, so adjust the layout to make the offset visible */
+  outline-offset: -2px;
 }
 
 .all-tabs-menu:hover {
@@ -733,14 +728,6 @@ checkbox:-moz-focusring {
 /* For right-to-left layout, the toggle thumb goes in the opposite direction. */
 html[dir="rtl"] .devtools-checkbox-toggle {
   --x-pos: -.15em;
-}
-
-.devtools-checkbox-toggle:not(:checked):focus {
-  border-color: var(--blue-55);
-}
-
-.devtools-checkbox-toggle:checked:focus {
-  background-color: var(--blue-40);
 }
 
 .devtools-checkbox-toggle:checked {

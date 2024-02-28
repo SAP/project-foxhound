@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 @import 'chrome://global/skin/design-system/tokens-brand.css';
+/* stylelint-disable max-nesting-depth */
 #feature-callout {
   --fc-background: var(--fc-background-light, #fff);
   --fc-color: var(--fc-color-light, rgb(21, 20, 26));
@@ -692,6 +693,7 @@ panel#feature-callout[arrow-position=inline-start-bottom] {
   outline: 2px solid var(--fc-accent-color);
 }
 
+/* stylelint-disable max-nesting-depth */
 .onboardingContainer.shopping {
   height: auto;
 }
@@ -846,6 +848,7 @@ panel#feature-callout[arrow-position=inline-start-bottom] {
   font: menu;
 }
 
+/* stylelint-disable max-nesting-depth */
 html {
   height: 100%;
 }
@@ -1499,7 +1502,7 @@ html {
   margin: 25px 0;
   padding-bottom: 30px;
 }
-@media only screen and (max-width: 800px) {
+@media only screen and (width <= 800px) {
   .onboardingContainer .screen[pos=split] .section-secondary .hero-image img {
     padding-bottom: unset;
   }
@@ -1507,14 +1510,16 @@ html {
 .onboardingContainer .screen[pos=split] .multi-select-container {
   margin-inline: 0 10px;
 }
-@media only screen and (max-width: 800px) {
+@media only screen and (width <= 800px) {
   .onboardingContainer .screen[pos=split] .multi-select-container {
-    flex-direction: row;
-    align-self: stretch;
-    align-items: center;
+    flex-direction: column;
+    align-self: center;
+    align-items: start;
     justify-content: center;
+    width: 240px;
     padding: 0 30px;
     margin-inline: 0;
+    box-sizing: content-box;
   }
 }
 .onboardingContainer .screen[pos=split] .tiles-theme-container {
@@ -1540,12 +1545,12 @@ html {
     background-color: #2B2A33;
   }
 }
-@media only screen and (min-width: 800px) {
+@media only screen and (width >= 800px) {
   .onboardingContainer .screen[pos=split] .tiles-theme-section {
     margin-inline-start: -10px;
   }
 }
-@media only screen and (max-width: 800px) {
+@media only screen and (width <= 800px) {
   .onboardingContainer .screen[pos=split] {
     flex-direction: column;
     min-height: 550px;
@@ -1648,6 +1653,7 @@ html {
   .onboardingContainer .screen[pos=split] .section-main .main-content .primary,
 .onboardingContainer .screen[pos=split] .section-main .main-content .secondary {
     min-width: 240px;
+    margin-inline: 0;
   }
   .onboardingContainer .screen[pos=split] .section-main .main-content .colorway-text {
     text-align: center;
@@ -1673,12 +1679,12 @@ html {
     border-radius: 0 0 8px 8px;
   }
 }
-@media only screen and (max-height: 650px) and (min-width: 800px) and (max-width: 990px) {
+@media only screen and (height <= 650px) and (800px <= width <= 990px) {
   .onboardingContainer .screen[pos=split] .section-main .secondary-cta.top {
     display: none;
   }
 }
-@media only screen and (max-height: 650px) and (max-width: 620px) {
+@media only screen and (height <= 650px) and (width <= 620px) {
   .onboardingContainer .screen[pos=split] .section-main .secondary-cta.top {
     position: absolute;
     padding: 0;
@@ -1712,7 +1718,7 @@ html {
 .onboardingContainer .rtamo-icon {
   text-align: start;
 }
-@media only screen and (max-width: 800px) {
+@media only screen and (width <= 800px) {
   .onboardingContainer .rtamo-icon {
     text-align: center;
   }

@@ -263,7 +263,6 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
     "browser.urlbar.suggest.quicksuggest.sponsored",
     { what: RECORD_DEFAULTPREF_VALUE },
   ],
-  ["browser.urlbar.suggest.bestmatch", { what: RECORD_DEFAULTPREF_VALUE }],
   ["browser.urlbar.suggest.searches", { what: RECORD_PREF_VALUE }],
   ["devtools.chrome.enabled", { what: RECORD_PREF_VALUE }],
   ["devtools.debugger.enabled", { what: RECORD_PREF_VALUE }],
@@ -271,6 +270,7 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["doh-rollout.doorhanger-decision", { what: RECORD_PREF_VALUE }],
   ["dom.ipc.processCount", { what: RECORD_PREF_VALUE }],
   ["dom.max_script_run_time", { what: RECORD_PREF_VALUE }],
+  ["dom.popup_allowed_events", { what: RECORD_PREF_VALUE }],
   ["editor.truncate_user_pastes", { what: RECORD_PREF_VALUE }],
   ["extensions.InstallTrigger.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.InstallTriggerImpl.enabled", { what: RECORD_PREF_VALUE }],
@@ -362,6 +362,13 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["xpinstall.signatures.required", { what: RECORD_PREF_VALUE }],
   ["nimbus.debug", { what: RECORD_PREF_VALUE }],
 ]);
+
+if (AppConstants.platform == "linux" || AppConstants.platform == "macosx") {
+  DEFAULT_ENVIRONMENT_PREFS.set(
+    "intl.ime.use_composition_events_for_insert_text",
+    { what: RECORD_PREF_VALUE }
+  );
+}
 
 const LOGGER_NAME = "Toolkit.Telemetry";
 
@@ -2081,13 +2088,9 @@ EnvironmentCache.prototype = {
         data = { winPackageFamilyName, ...data };
       }
       data = { ...this._getProcessData(), ...data };
+      data.sec = this._getSecurityAppData();
     } else if (AppConstants.platform == "android") {
       data.device = this._getDeviceData();
-    }
-
-    // Windows 8+
-    if (AppConstants.isPlatformAndVersionAtLeast("win", "6.2")) {
-      data.sec = this._getSecurityAppData();
     }
 
     return data;
