@@ -2382,11 +2382,12 @@ JS_PUBLIC_API JSString* js::ToStringSlow(JSContext* cx, HandleValue v) {
 
 /* static */
 void JSString::sweepAfterMinorGC(JS::GCContext* gcx, JSString* str) {
-  if (str) {
-    bool wasInsideNursery = IsInsideNursery(str);
-    if (wasInsideNursery && !IsForwarded(str) && str->taint()) {
-      str->clearTaint();
-    }
+  if (!str) {
+    return;
+  }
+
+  if (IsInsideNursery(str) && !IsForwarded(str) && str->isTainted()) {
+    str->clearTaint();
   }
 }
 

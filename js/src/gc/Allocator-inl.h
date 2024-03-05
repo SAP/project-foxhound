@@ -69,14 +69,6 @@ T* CellAllocator::NewString(JSContext* cx, gc::Heap heap, Args&&... args) {
     return nullptr;
   }
 
-  // Foxhound: Add to the list of strings in the nursery
-  JSString* str = static_cast<JSString*>(ptr);
-  bool insideNursery = IsInsideNursery(str);
-  if (insideNursery && !cx->nursery().addStringWithNurseryMemory(str)) {
-    ReportOutOfMemory(cx);
-    return nullptr;
-  }
-
   return new (mozilla::KnownNotNull, ptr) T(std::forward<Args>(args)...);
 }
 
