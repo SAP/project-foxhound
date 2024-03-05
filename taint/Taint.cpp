@@ -178,14 +178,14 @@ void TaintNode::addref()
         MOZ_CRASH("TaintNode refcount overflow");
     }
 
-    refcount_++;
+    ++refcount_;
 }
 
 void TaintNode::release()
 {
     MOZ_ASSERT(refcount_ > 0);
 
-    refcount_--;
+    --refcount_;
     if (refcount_ == 0) {
         delete this;
     }

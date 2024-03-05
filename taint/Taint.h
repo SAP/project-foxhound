@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <atomic>
 #include <string_view>
 
 // It appears that source_location is not supported as standard and
@@ -221,7 +222,7 @@ class TaintNode
     // A node takes care of correctly addref()ing and release()ing its parent node.
     TaintNode* parent_;
 
-    uint32_t refcount_;
+    std::atomic_int32_t refcount_;
 
     // The operation that led to the creation of this node.
     TaintOperation operation_;
