@@ -2392,10 +2392,15 @@ void JSString::sweepAfterMinorGC(JS::GCContext* gcx, JSString* str) {
 
 /* static */
 void JSString::registerNurseryString(JSContext* cx, JSString* str) {
-  bool insideNursery = IsInsideNursery(str);
-  if (insideNursery) {
-    if (!cx->nursery().addStringWithNurseryMemory(str)) {
-      ReportOutOfMemory(cx);
-    }
+  if (!str) {
+    return;
+  }
+
+  if (!IsInsideNursery(str)) {
+    return;
+  }
+
+  if (!cx->nursery().addStringWithNurseryMemory(str)) {
+    ReportOutOfMemory(cx);
   }
 }
