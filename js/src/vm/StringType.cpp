@@ -21,6 +21,7 @@
 #include "mozilla/Vector.h"
 
 #include <algorithm>    // std::{all_of,copy_n,enable_if,is_const,move}
+#include <cstdint>
 #include <iterator>     // std::size
 #include <type_traits>  // std::is_same, std::is_unsigned
 
@@ -956,10 +957,6 @@ JSString* js::ConcatStringsQuiet(
                           ? JSInlineString::lengthFits<Latin1Char>(wholeLength)
                           : JSInlineString::lengthFits<char16_t>(wholeLength);
   if (canUseInline) {
-    // Taintfox: compute the taint here
-    SafeStringTaint newTaint = left->taint().safeCopy();
-    newTaint.concat(right->taint(), left->length());
-
     Latin1Char* latin1Buf = nullptr;  // initialize to silence GCC warning
     char16_t* twoByteBuf = nullptr;   // initialize to silence GCC warning
     JSInlineString* str =
@@ -971,6 +968,11 @@ JSString* js::ConcatStringsQuiet(
     }
 
     AutoCheckCannotGC nogc;
+
+    // Taintfox: compute the taint here
+    SafeStringTaint newTaint = left->taint().safeCopy();
+    newTaint.concat(right->taint(), left->length());
+
     JSLinearString* leftLinear = EnsureLinear<allowGC>(cx, left);
     if (!leftLinear) {
       return nullptr;
@@ -2381,10 +2383,19 @@ JS_PUBLIC_API JSString* js::ToStringSlow(JSContext* cx, HandleValue v) {
 /* static */
 void JSString::sweepAfterMinorGC(JS::GCContext* gcx, JSString* str) {
   if (str) {
-    str->dumpRepresentation();
     bool wasInsideNursery = IsInsideNursery(str);
-    if (wasInsideNursery && !IsForwarded(str)) {
+    if (wasInsideNursery && !IsForwarded(str) && str->taint()) {
       str->clearTaint();
+    }
+  }
+}
+
+/* static */
+void JSString::registerNurseryString(JSContext* cx, JSString* str) {
+  bool insideNursery = IsInsideNursery(str);
+  if (insideNursery) {
+    if (!cx->nursery().addStringWithNurseryMemory(str)) {
+      ReportOutOfMemory(cx);
     }
   }
 }

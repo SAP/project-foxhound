@@ -1709,7 +1709,6 @@ void js::Nursery::sweep() {
 
   // Taintfox: clean up strings (mostly taint)
   sweepStrings();
-  printf("Done string sweep\n");
   runtime()->caches().sweepAfterMinorGC(&trc);
 }
 
@@ -2090,7 +2089,6 @@ void js::Nursery::sweepMapAndSetObjects() {
 
 void js::Nursery::sweepStrings() {
   auto* gcx = runtime()->gcContext();
-
   for (auto* str : stringsWithNurseryMemory_) {
     JSString::sweepAfterMinorGC(gcx, str);
   }

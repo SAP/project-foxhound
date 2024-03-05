@@ -124,11 +124,6 @@ class Nursery {
   // Nursery is full.
   void* allocateCell(gc::AllocSite* site, size_t size, JS::TraceKind kind);
 
-  void* allocateString(gc::AllocSite* site, size_t size) {
-    MOZ_ASSERT(canAllocateStrings());
-    return allocateCell(site, size, JS::TraceKind::String);
-  }
-
   // Allocate and return a pointer to a new GC thing. Returns nullptr if the
   // handleAllocationFailure() needs to be called before retrying.
   inline void* tryAllocateCell(gc::AllocSite* site, size_t size,

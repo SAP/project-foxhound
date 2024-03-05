@@ -94,6 +94,9 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
     return nullptr;
   }
 
+  // TaintFox: Init taint information.
+  str->initTaint();
+
   if (JSThinInlineString::lengthFits<CharT>(len)) {
     constexpr size_t MaxLength = std::is_same_v<CharT, Latin1Char>
                                      ? JSThinInlineString::MAX_LENGTH_LATIN1
@@ -145,6 +148,9 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
     return nullptr;
   }
 
+  JS::AutoCheckCannotGC nogc;
+  mozilla::PodCopy(chars, base->chars<CharT>(nogc) + start, length);
+
   // TaintFox: Copy taint information.
   s->initTaint();
   if (optTaint != nullptr) {
@@ -154,8 +160,6 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
     s->setTaint(newTaint);
   }
 
-  JS::AutoCheckCannotGC nogc;
-  mozilla::PodCopy(chars, base->chars<CharT>(nogc) + start, length);
   return s;
 }
 
@@ -258,7 +262,9 @@ MOZ_ALWAYS_INLINE JSRope* JSRope::new_(
   if (MOZ_UNLIKELY(!validateLengthInternal<allowGC>(cx, length))) {
     return nullptr;
   }
-  return cx->newCell<JSRope, allowGC>(heap, left, right, length);
+  JSRope* str = cx->newCell<JSRope, allowGC>(heap, left, right, length);
+  registerNurseryString(cx, str);
+  return str;
 }
 
 inline JSDependentString::JSDependentString(JSLinearString* base, size_t start,
@@ -312,11 +318,14 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
   JSDependentString* str =
       cx->newCell<JSDependentString, js::NoGC>(heap, baseArg, start, length, &taint);
   if (str) {
+    registerNurseryString(cx, str);
     return str;
   }
 
   JS::Rooted<JSLinearString*> base(cx, baseArg);
-  return cx->newCell<JSDependentString>(heap, base, start, length, &taint);
+  str = cx->newCell<JSDependentString>(heap, base, start, length, &taint);
+  registerNurseryString(cx, str);
+  return str;
 }
 
 inline JSLinearString::JSLinearString(const char16_t* chars, size_t length) {
@@ -353,7 +362,9 @@ MOZ_ALWAYS_INLINE JSLinearString* JSLinearString::new_(
     return nullptr;
   }
 
-  return newValidLength<allowGC>(cx, std::move(chars), length, heap);
+  JSLinearString* str = newValidLength<allowGC>(cx, std::move(chars), length, heap);
+  registerNurseryString(cx, str);
+  return str;
 }
 
 template <js::AllowGC allowGC, typename CharT>
@@ -429,14 +440,18 @@ template <js::AllowGC allowGC>
 MOZ_ALWAYS_INLINE JSThinInlineString* JSThinInlineString::new_(
     JSContext* cx, js::gc::Heap heap) {
   MOZ_ASSERT(!cx->zone()->isAtomsZone());
-  return cx->newCell<JSThinInlineString, allowGC>(heap);
+  JSThinInlineString* str = cx->newCell<JSThinInlineString, allowGC>(heap);
+  registerNurseryString(cx, str);
+  return str;
 }
 
 template <js::AllowGC allowGC>
 MOZ_ALWAYS_INLINE JSFatInlineString* JSFatInlineString::new_(
     JSContext* cx, js::gc::Heap heap) {
   MOZ_ASSERT(!cx->zone()->isAtomsZone());
-  return cx->newCell<JSFatInlineString, allowGC>(heap);
+  JSFatInlineString* str = cx->newCell<JSFatInlineString, allowGC>(heap);
+  registerNurseryString(cx, str);
+  return str;
 }
 
 inline JSThinInlineString::JSThinInlineString(size_t length,
@@ -508,6 +523,7 @@ MOZ_ALWAYS_INLINE JSExternalString* JSExternalString::new_(
   MOZ_ASSERT(str->isTenured());
   js::AddCellMemory(str, nbytes, js::MemoryUse::StringContents);
 
+  registerNurseryString(cx, str);
   return str;
 }
 

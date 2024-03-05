@@ -674,6 +674,9 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   /* Taintfox: enable cleanup of strings in nursery */
   static void sweepAfterMinorGC(JS::GCContext* gcx, JSString* str);
 
+  /* Taintfox: register string in nursery */
+  static void registerNurseryString(JSContext* cx, JSString* str);
+
  private:
   // To help avoid writing Spectre-unsafe code, we only allow MacroAssembler
   // to call the method below.

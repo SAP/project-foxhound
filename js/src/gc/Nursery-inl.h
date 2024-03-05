@@ -109,11 +109,6 @@ inline void* js::Nursery::tryAllocateCell(gc::AllocSite* site, size_t size,
         "Successful allocation cannot result in nullptr");
   }
 
-  // Foxhound: Add to the list of strings in the nursery
-  //if (kind == JS::TraceKind::String) {
-  //  addStringWithNurseryMemory(static_cast<JSString*>(cell));
-  // }
-
   // Update the allocation site. This code is also inlined in
   // MacroAssembler::updateAllocSite.
   uint32_t allocCount = site->incAllocCount();
