@@ -44,7 +44,7 @@ interface nsIIncrementalStreamLoaderObserver : nsISupports
                            in nsISupports ctxt,
                            in unsigned long dataLength,
                            [const,array,size_is(dataLength)] in octet data,
-                           in StringTaint taint,
+                           [const] inout StringTaint taint,
                            inout unsigned long consumedLength);
 
     /**
@@ -74,7 +74,7 @@ interface nsIIncrementalStreamLoaderObserver : nsISupports
                           in nsresult status,
                           in unsigned long resultLength,
                           [const,array,size_is(resultLength)] in octet result,
-                          in StringTaint taint);
+                          [const] inout StringTaint taint);
 };
 
 /**

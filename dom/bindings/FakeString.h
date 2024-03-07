@@ -46,6 +46,7 @@ struct FakeString {
       MOZ_ASSERT(mDataInitialized);
       nsStringBuffer::FromData(mData)->Release();
     }
+    mTaint.clear();
   }
 
   // Share aString's string buffer, if it has one; otherwise, make this string

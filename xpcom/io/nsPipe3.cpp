@@ -507,7 +507,7 @@ class MOZ_STACK_CLASS AutoReadSegment final {
     return mSegment + mOffset;
   }
 
-  StringTaint Taint() const
+  SafeStringTaint Taint() const
   {
     MOZ_ASSERT(NS_SUCCEEDED(mStatus));
     return mTaint.safeSubTaint(mOffset, mLength);

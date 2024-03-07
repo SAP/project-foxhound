@@ -345,7 +345,7 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
   auto src = reinterpret_cast<const unsigned_char_type*>(aPart);
 
   typename T::char_type tempBuffer[100];
-  StringTaint tempTaint;
+  SafeStringTaint tempTaint;
   unsigned int tempBufferPos = 0;
 
   for (size_t i = 0; i < aPartLen; ++i) {
@@ -649,7 +649,7 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTain
         destPtr[destPos] = u;
         // Taintfox: copy single taint from source
         if (aTaint.hasTaint()) {
-          StringTaint charTaint = aTaint.safeSubTaint(srcPos, srcPos + 3);
+          SafeStringTaint charTaint = aTaint.safeSubTaint(srcPos, srcPos + 3);
           // Take the taintflow of the first tainted character
           aResult.Taint().set(destPos, charTaint.begin()->flow());
         }

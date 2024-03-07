@@ -309,7 +309,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
 
  protected:
   autoJArray<char16_t, int32_t> charBuffer;
-  StringTaint charTaint;
+  SafeStringTaint charTaint;
   int32_t charBufferLen;
 
  private:

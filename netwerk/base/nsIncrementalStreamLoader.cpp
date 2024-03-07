@@ -82,7 +82,7 @@ nsIncrementalStreamLoader::OnStopRequest(nsIRequest* request,
     size_t length = mData.length();
     uint8_t* elems = mData.extractOrCopyRawBuffer();
     nsresult rv =
-        mObserver->OnStreamComplete(this, mContext, aStatus, length, elems, mTaint);
+        mObserver->OnStreamComplete(this, mContext, aStatus, length, elems, &mTaint);
     if (rv != NS_SUCCESS_ADOPTED_DATA) {
       // The observer didn't take ownership of the extracted data buffer, so
       // put it back into mData.
@@ -109,7 +109,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
   if (self->mData.empty()) {
     // Shortcut when observer wants to keep the listener's buffer empty.
     rv = self->mObserver->OnIncrementalData(self, self->mContext, count, data,
-                                            taint, &consumedCount);
+                                            &taint, &consumedCount);
 
     if (rv != NS_OK) {
       return rv;
@@ -140,7 +140,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
     uint8_t* elems = self->mData.extractOrCopyRawBuffer();
 
     rv = self->mObserver->OnIncrementalData(self, self->mContext, reportCount,
-                                            elems, self->mTaint, &consumedCount);
+                                            elems, &self->mTaint, &consumedCount);
 
     // We still own elems, freeing its memory when exiting scope.
     if (rv != NS_OK) {

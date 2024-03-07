@@ -559,7 +559,7 @@ class nsAttrValue {
 
   // This is used to track the taint labels of atoms and other types.
   // For String attributes, the taint information is saved with the StringBuffer directly
-  StringTaint mTaint;
+  SafeStringTaint mTaint;
 };
 
 inline const nsAttrValue& nsAttrValue::operator=(const nsAttrValue& aOther) {

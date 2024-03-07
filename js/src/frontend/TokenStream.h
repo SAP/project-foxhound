@@ -1590,7 +1590,7 @@ class TokenStreamCharsShared {
   ParserAtomsTable* parserAtoms;
 
   // Taintfox: TODO: link this taint to the charBuffer
-  StringTaint _taint;
+  SafeStringTaint _taint;
 
  protected:
   explicit TokenStreamCharsShared(FrontendContext* fc,

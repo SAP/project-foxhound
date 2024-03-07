@@ -1631,11 +1631,11 @@ class nsHtml5DataAvailable : public Runnable {
  private:
   nsHtml5StreamParserPtr mStreamParser;
   Buffer<uint8_t> mData;
-  StringTaint mTaint;
+  SafeStringTaint mTaint;
 
  public:
   nsHtml5DataAvailable(nsHtml5StreamParser* aStreamParser,
-                       Buffer<uint8_t>&& aData, StringTaint aTaint)
+                       Buffer<uint8_t>&& aData, const StringTaint& aTaint)
       : Runnable("nsHtml5DataAvailable"),
         mStreamParser(aStreamParser),
         mData(std::move(aData)),

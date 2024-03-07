@@ -152,7 +152,7 @@ class nsHtml5String final {
   /**
    * Taint Information
    */
-  StringTaint mTaint;
+  SafeStringTaint mTaint;
 };
 
 #endif  // nsHtml5String_h

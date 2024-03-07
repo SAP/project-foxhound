@@ -211,14 +211,14 @@ class SourceText final : public TaintableString {
 
   [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Unit* units,
                                             size_t unitsLength,
-                                            const StringTaint &taint,
+                                            const StringTaint& taint,
                                             SourceOwnership ownership) {
     return initImpl(cx, units, unitsLength, taint, ownership);
   }
   [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JS::FrontendContext* fc,
                                             const Unit* units,
                                             size_t unitsLength,
-                                            const StringTaint &taint,
+                                            const StringTaint& taint,
                                             SourceOwnership ownership) {
     return initImpl(fc, units, unitsLength, taint, ownership);
   }

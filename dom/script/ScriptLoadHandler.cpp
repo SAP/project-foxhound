@@ -132,7 +132,7 @@ NS_IMETHODIMP
 ScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
                                      nsISupports* aContext,
                                      uint32_t aDataLength, const uint8_t* aData,
-                                     StringTaint aTaint,
+                                     const StringTaint* aTaint,
                                      uint32_t* aConsumedLength) {
   nsCOMPtr<nsIRequest> channelRequest;
   aLoader->GetRequest(getter_AddRefs(channelRequest));
@@ -358,7 +358,7 @@ ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
                                     nsISupports* aContext, nsresult aStatus,
                                     uint32_t aDataLength,
                                     const uint8_t* aData,
-                                    StringTaint aTaint) {
+                                    const StringTaint* aTaint) {
   nsresult rv = NS_OK;
   if (LOG_ENABLED()) {
     nsAutoCString url;

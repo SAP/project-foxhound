@@ -134,7 +134,7 @@ class MemoryBlobImpl final : public BaseBlobImpl {
 
     RefPtr<DataOwner> mDataOwner;
     Span<const char> mData;
-    StringTaint mTaint;
+    SafeStringTaint mTaint;
   };
 
  private:

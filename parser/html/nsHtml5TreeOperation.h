@@ -177,7 +177,7 @@ struct opAppendText {
   nsIContent** mParent;
   char16_t* mBuffer;
   int32_t mLength;
-  StringTaint mTaint;
+  SafeStringTaint mTaint;
 
   explicit opAppendText(nsIContentHandle* aParent, char16_t* aBuffer,
                         int32_t aLength, const StringTaint& aTaint)

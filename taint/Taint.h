@@ -222,7 +222,7 @@ class TaintNode
     // A node takes care of correctly addref()ing and release()ing its parent node.
     TaintNode* parent_;
 
-    std::atomic_int32_t refcount_;
+    std::atomic_uint32_t refcount_;
 
     // The operation that led to the creation of this node.
     TaintOperation operation_;

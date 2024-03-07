@@ -8998,7 +8998,7 @@ class BulkAppender {
  private:
   BulkWriteHandle<char16_t> mHandle;
   size_type mPosition;
-  StringTaint mTaint;
+  SafeStringTaint mTaint;
 };
 
 class StringBuilder {

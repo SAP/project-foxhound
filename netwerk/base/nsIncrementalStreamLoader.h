@@ -51,7 +51,7 @@ class nsIncrementalStreamLoader final : public nsIIncrementalStreamLoader {
   // Buffer to accumulate incoming data. We preallocate if contentSize is
   // available.
   mozilla::Vector<uint8_t, 0> mData;
-  StringTaint mTaint;
+  SafeStringTaint mTaint;
 
   // Number of bytes read, which may not match the number of bytes in mData at
   // all, as we incrementally remove from there.
