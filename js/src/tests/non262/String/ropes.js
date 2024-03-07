@@ -19,7 +19,7 @@ function createRopes() {
 
     function randomBalancedRope(height) {
         if (height == 0)
-            return "abcdefghij" + j;
+            return "abcdefghijklmnopqrstuvwxyz" + j;
 
         const left = randomBalancedRope(height - 1);
         advance();
@@ -32,10 +32,10 @@ function createRopes() {
     // chances of it all ending up tenured are higher.
     ropes.balanced = randomBalancedRope(10);
 
-    ropes.simple = newRope("abcdefghijklm", "nopqrstuvwxyz");
-    ropes.simple_tenured = newRope("abcdefghijklm", "nopqrstuvwxyz", {nursery:false});
-    ropes.tenured_nursery = newRope("a", newRope("bcdefghijklm", "nopqrstuvwxyz", {nursery:true}), {nursery:false});
-    ropes.nursery_tenured = newRope("a", newRope("bcdefghijklm", "nopqrstuvwxyz", {nursery:false}), {nursery:true});
+    ropes.simple = newRope("abcdefghijklmnopqrstuvwxyz", "nopqrstuvwxyz");
+    ropes.simple_tenured = newRope("abcdefghijklmnopqrstuvwxyz", "nopqrstuvwxyz", {nursery:false});
+    ropes.tenured_nursery = newRope("a", newRope("bcdefghijklmnopqrstuvwxyz", "nopqrstuvwxyz", {nursery:true}), {nursery:false});
+    ropes.nursery_tenured = newRope("a", newRope("bcdefghijklmnopqrstuvwxyz", "nopqrstuvwxyz", {nursery:false}), {nursery:true});
 
     return ropes;
 }

@@ -163,13 +163,13 @@ function checkUtf8Equal(first, second) {
 }
 
 concat.forEach(function(t) {
-  var filler = "012345678901234567890123456789";
+  var filler = "0123456789012345678901234567890123456789";
   var rope = newRope(t.head, newRope(t.tail, filler));
   checkUtf8Equal(rope, t.expected + filler);
 });
 
 {
-  var filler = "012345678901234567890123456789";
+  var filler = "0123456789012345678901234567890123456789";
 
   var a = newRope(filler, "a");
   var ab = newRope(a, "b");
@@ -183,16 +183,16 @@ concat.forEach(function(t) {
   var abcdefab = newRope(abcdef, ab);
   checkUtf8Equal(
     abcdefab,
-    "012345678901234567890123456789abcd012345678901234567890123456789ef012345678901234567890123456789ab"
+    "0123456789012345678901234567890123456789abcd0123456789012345678901234567890123456789ef0123456789012345678901234567890123456789ab"
   );
 }
 
 {
-  var filler = "012345678901234567890123456789";
+  var filler = "0123456789012345678901234567890123456789";
 
   var right = newRope("\ude0a", filler);
   var rope = newRope("\ud83d", right);
-  checkUtf8Equal(rope, "\ud83d\ude0a012345678901234567890123456789");
+  checkUtf8Equal(rope, "\ud83d\ude0a0123456789012345678901234567890123456789");
 }
 
 if (typeof reportCompare === "function")

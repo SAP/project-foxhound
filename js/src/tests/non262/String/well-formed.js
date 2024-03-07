@@ -78,7 +78,8 @@ function toRope(string) {
 
   // |newRope| fails if the input is too short. Add some characters to make
   // the input large enough.
-  let filler = "012345678901234567890123456789";
+  // Foxhound - due to the additional Tainting field, we allow for longer inline strings
+  let filler = "01234567890123456789012345678901234567890";
   let rope = newRope(string, filler);
   return {rope, filler};
 }
