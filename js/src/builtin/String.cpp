@@ -658,12 +658,10 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Save operation to avoid GC issues
-  SafeStringTaint taint(str->taint());
-  TaintOperation op = TaintOperationFromContext(cx, "unescape", true, str);
+  SafeStringTaint taint = str->taint();
 
   // Steps 2, 4-5.
   bool unescapeFailed = false;
-  SafeStringTaint newtaint;
   if (str->hasLatin1Chars()) {
     AutoCheckCannotGC nogc;
     unescapeFailed = !Unescape(sb, str->latin1Range(nogc), str->taint(), &newtaint);
@@ -673,6 +671,11 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
   if (unescapeFailed) {
     return false;
+  }
+
+  // Foxhound: add taint operation.
+  if(newtaint.hasTaint()) {
+    newtaint.extend(TaintOperationFromContext(cx, "unescape", true, str));
   }
 
   // Step 6.
@@ -688,7 +691,6 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
 
   // Foxhound: add taint operation.
   if(newtaint.hasTaint()) {
-    newtaint.extend(op);
     result->setTaint(cx, newtaint);
   }
 
