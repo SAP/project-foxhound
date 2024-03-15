@@ -367,6 +367,12 @@ void JSString::dumpRepresentation() const {
   out.putChar('\n');
 }
 
+void JSString::dumpRepresentationHeader() const {
+  js::Fprinter out(stderr);
+  dumpRepresentationHeader(out, 0);
+  out.putChar('\n');
+}
+
 void JSString::dumpRepresentation(js::GenericPrinter& out, int indent) const {
   if (isRope()) {
     asRope().dumpRepresentation(out, indent);
@@ -392,6 +398,7 @@ void JSString::dumpRepresentationHeader(js::GenericPrinter& out,
   // copy-and-paste into a debugger.
   out.printf("((%s*) %p) length: %zu  flags: 0x%x", subclass, this, length(),
              flags);
+  if (isForwarded()) out.put(" FORWARDED");
   if (flags & LINEAR_BIT) out.put(" LINEAR");
   if (flags & DEPENDENT_BIT) out.put(" DEPENDENT");
   if (flags & INLINE_CHARS_BIT) out.put(" INLINE_CHARS");
@@ -404,7 +411,7 @@ void JSString::dumpRepresentationHeader(js::GenericPrinter& out,
   if (!isAtom() && inStringToAtomCache()) out.put(" IN_STRING_TO_ATOM_CACHE");
   if (flags & INDEX_VALUE_BIT) out.printf(" INDEX_VALUE(%u)", getIndexValue());
   if (!isTenured()) out.put(" NURSERY");
-  if (!isTainted()) out.put(" TAINTED");
+  if (isTainted()) out.put(" TAINTED");
   out.putChar('\n');
 }
 
@@ -2387,21 +2394,24 @@ void JSString::sweepAfterMinorGC(JS::GCContext* gcx, JSString* str) {
   }
 
   if (IsInsideNursery(str) && !IsForwarded(str) && str->isTainted()) {
+#ifdef TAINT_DEBUG_NURSERY
+    printf("-----------------------------------------------------\n");
+    printf("Str: %p\n", str);
+    str->dumpRepresentationHeader();
+#endif
+    auto* ptr = reinterpret_cast<uint8_t*>(str) + offsetOfTaint();
+#ifdef TAINT_DEBUG_NURSERY
+    printf("Ptr: %p\n", ptr);
+    printf("Before: %p\n", *reinterpret_cast<void**>(ptr));
+#endif
     str->clearTaint();
-  }
-}
-
-/* static */
-void JSString::registerNurseryString(JSContext* cx, JSString* str) {
-  if (!str) {
-    return;
-  }
-
-  if (!IsInsideNursery(str)) {
-    return;
-  }
-
-  if (!cx->nursery().addStringWithNurseryMemory(str)) {
-    ReportOutOfMemory(cx);
+#ifdef TAINT_DEBUG_NURSERY
+    printf("After Clear: %p\n", *reinterpret_cast<void**>(ptr));
+#endif
+    AlwaysPoison(ptr, 0x7A, sizeof(StringTaint), MemCheckKind::MakeNoAccess);
+#ifdef TAINT_DEBUG_NURSERY
+    printf("After Poison: %p\n", *reinterpret_cast<void**>(ptr));
+    printf("-----------------------------------------------------\n");
+#endif
   }
 }

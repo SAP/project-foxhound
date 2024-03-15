@@ -69,6 +69,8 @@ T* CellAllocator::NewString(JSContext* cx, gc::Heap heap, Args&&... args) {
     return nullptr;
   }
 
+  JSString* str = reinterpret_cast<JSString*>(ptr);
+  JSString::registerNurseryString(cx, str);
   return new (mozilla::KnownNotNull, ptr) T(std::forward<Args>(args)...);
 }
 
