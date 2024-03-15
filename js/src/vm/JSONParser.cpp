@@ -690,7 +690,7 @@ JSString* JSONFullParseHandlerAnyChar::CurrentJsonPath(const Vector<StackEntry, 
       }
     }
   }
-  return builder.finishAtom();
+  return builder.finishString(gcHeap);
 }
 
 inline void JSONFullParseHandlerAnyChar::setNumberValue(double d) {
@@ -703,6 +703,14 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(CharPtr start,
                                                         size_t length,
                                                         const StringTaint& taint,
                                                         const ParserT* parser) {
+  TaintOperation op("JSON.parse");
+  // TaintFox: propagate taint.
+  if (ST != JSONStringType::PropertyName && taint.hasTaint()) {
+    JSString* path = parser->CurrentJsonPath();
+    RootedString jsonPath(cx, path);
+    op = TaintOperationFromContextJSString(cx, "JSON.parse", true, jsonPath);
+  }
+
   JSString* str;
   if constexpr (ST == JSONStringType::PropertyName) {
     str = AtomizeChars(cx, start.get(), length);
@@ -717,8 +725,6 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(CharPtr start,
   // TaintFox: propagate taint.
   if (ST != JSONStringType::PropertyName && taint.hasTaint()) {
     str->setTaint(cx, taint);
-    RootedString jsonPath(cx, parser->CurrentJsonPath());
-    TaintOperation op = TaintOperationFromContextJSString(cx, "JSON.parse", true, jsonPath);
     str->taint().extend(op);
   }
 
@@ -730,6 +736,15 @@ template <typename CharT>
 template <JSONStringType ST, typename ParserT>
 inline bool JSONFullParseHandler<CharT>::setStringValue(
     StringBuilder& builder, const ParserT* parser) {
+
+  TaintOperation op("JSON.parse");
+  // TaintFox: propagate taint.
+  if (ST != JSONStringType::PropertyName && builder.buffer.taint()) {
+    JSString* path = parser->CurrentJsonPath();
+    RootedString jsonPath(cx, path);
+    op = TaintOperationFromContextJSString(cx, "JSON.parse", true, jsonPath);
+  }
+
   JSString* str;
   if constexpr (ST == JSONStringType::PropertyName) {
     str = builder.buffer.finishAtom();
@@ -743,8 +758,6 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
 
   // TaintFox: Add taint operation.
   if (str->taint().hasTaint()) {
-    RootedString jsonPath(cx, parser->CurrentJsonPath());
-    TaintOperation op = TaintOperationFromContextJSString(cx, "JSON.parse", true, jsonPath);
     str->taint().extend(op);
   }
 

@@ -109,6 +109,9 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
     return false;
   }
 
+  Rooted<JSAtom*> src(cx, re->getSource());
+  RootedString srcStr(cx, EscapeRegExpPattern(cx, src));
+
   // Steps 28-29 and 33 a-d: Initialize the elements of the match result.
   // Store a Value for each match pair.
   for (size_t i = 0; i < numPairs; i++) {
@@ -125,10 +128,9 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
         return false;
       }
       // Taintfox: taint propagated by NewDependentString, just need
-      // to add the operation here
+      // to add the operation here. Do this after adding to the rooted
+      // array to avoid GC issues.
       if (str->taint().hasTaint()) {
-        Rooted<JSAtom*> src(cx, re->getSource());
-        JSString* srcStr = EscapeRegExpPattern(cx, src);
         str->taint().extend(
           TaintOperation("RegExp.prototype.exec", true, TaintLocationFromContext(cx),
                          { taintarg_jsstring_full(cx, srcStr), taintarg_jsstring(cx, str), taintarg(cx, i) }));

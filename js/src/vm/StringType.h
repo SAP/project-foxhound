@@ -675,7 +675,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   static void sweepAfterMinorGC(JS::GCContext* gcx, JSString* str);
 
   /* Taintfox: register string in nursery */
-  static void registerNurseryString(JSContext* cx, JSString* str);
+  static inline void registerNurseryString(JSContext* cx, JSString* str);
 
  private:
   // To help avoid writing Spectre-unsafe code, we only allow MacroAssembler
@@ -740,6 +740,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   void dumpRepresentation(js::GenericPrinter& out, int indent) const;
   void dumpRepresentationHeader(js::GenericPrinter& out,
                                 const char* subclass) const;
+  void dumpRepresentationHeader() const;
   void dumpCharsNoQuote(js::GenericPrinter& out);
 
   template <typename CharT>

@@ -262,9 +262,7 @@ MOZ_ALWAYS_INLINE JSRope* JSRope::new_(
   if (MOZ_UNLIKELY(!validateLengthInternal<allowGC>(cx, length))) {
     return nullptr;
   }
-  JSRope* str = cx->newCell<JSRope, allowGC>(heap, left, right, length);
-  registerNurseryString(cx, str);
-  return str;
+  return cx->newCell<JSRope, allowGC>(heap, left, right, length);
 }
 
 inline JSDependentString::JSDependentString(JSLinearString* base, size_t start,
@@ -318,14 +316,11 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
   JSDependentString* str =
       cx->newCell<JSDependentString, js::NoGC>(heap, baseArg, start, length, &taint);
   if (str) {
-    registerNurseryString(cx, str);
     return str;
   }
 
   JS::Rooted<JSLinearString*> base(cx, baseArg);
-  str = cx->newCell<JSDependentString>(heap, base, start, length, &taint);
-  registerNurseryString(cx, str);
-  return str;
+  return cx->newCell<JSDependentString>(heap, base, start, length, &taint);
 }
 
 inline JSLinearString::JSLinearString(const char16_t* chars, size_t length) {
@@ -362,9 +357,7 @@ MOZ_ALWAYS_INLINE JSLinearString* JSLinearString::new_(
     return nullptr;
   }
 
-  JSLinearString* str = newValidLength<allowGC>(cx, std::move(chars), length, heap);
-  registerNurseryString(cx, str);
-  return str;
+  return newValidLength<allowGC>(cx, std::move(chars), length, heap);
 }
 
 template <js::AllowGC allowGC, typename CharT>
@@ -440,18 +433,14 @@ template <js::AllowGC allowGC>
 MOZ_ALWAYS_INLINE JSThinInlineString* JSThinInlineString::new_(
     JSContext* cx, js::gc::Heap heap) {
   MOZ_ASSERT(!cx->zone()->isAtomsZone());
-  JSThinInlineString* str = cx->newCell<JSThinInlineString, allowGC>(heap);
-  registerNurseryString(cx, str);
-  return str;
+  return cx->newCell<JSThinInlineString, allowGC>(heap);
 }
 
 template <js::AllowGC allowGC>
 MOZ_ALWAYS_INLINE JSFatInlineString* JSFatInlineString::new_(
     JSContext* cx, js::gc::Heap heap) {
   MOZ_ASSERT(!cx->zone()->isAtomsZone());
-  JSFatInlineString* str = cx->newCell<JSFatInlineString, allowGC>(heap);
-  registerNurseryString(cx, str);
-  return str;
+  return cx->newCell<JSFatInlineString, allowGC>(heap);
 }
 
 inline JSThinInlineString::JSThinInlineString(size_t length,
@@ -523,7 +512,6 @@ MOZ_ALWAYS_INLINE JSExternalString* JSExternalString::new_(
   MOZ_ASSERT(str->isTenured());
   js::AddCellMemory(str, nbytes, js::MemoryUse::StringContents);
 
-  registerNurseryString(cx, str);
   return str;
 }
 
@@ -680,5 +668,24 @@ inline void JSExternalString::finalize(JS::GCContext* gcx) {
   // TaintFox
   clearTaint();
 }
+
+/* static */
+void JSString::registerNurseryString(JSContext* cx, JSString* str) {
+  if (!str) {
+    return;
+  }
+
+  if (!IsInsideNursery(str)) {
+    return;
+  }
+
+  if (!cx->nursery().addStringWithNurseryMemory(str)) {
+    ReportOutOfMemory(cx);
+    return;
+  }
+
+  return;
+}
+
 
 #endif /* vm_StringType_inl_h */
