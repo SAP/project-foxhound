@@ -80,6 +80,9 @@ function makeSuggestedIndexResult(suggestedIndex, resultSpan = 1) {
         url: "http://example.com/si",
         displayUrl: "http://example.com/si",
         title: "suggested index",
+        helpUrl: "http://example.com/",
+        isBlockable: true,
+        blockL10n: { id: "urlbar-result-menu-remove-from-history" },
       }
     ),
     { suggestedIndex, resultSpan }
@@ -156,6 +159,9 @@ function makeProviderResults({ count = 0, type = undefined, specs = [] }) {
                 url: "http://example.com/" + i,
                 displayUrl: "http://example.com/" + i,
                 title: str,
+                helpUrl: "http://example.com/",
+                isBlockable: true,
+                blockL10n: { id: "urlbar-result-menu-remove-from-history" },
               }
             )
           );
@@ -487,7 +493,7 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
 
       // visible
       Assert.equal(
-        BrowserTestUtils.is_visible(row),
+        BrowserTestUtils.isVisible(row),
         !rowState.hidden,
         `Visible at index ${rowIndex} during update`
       );

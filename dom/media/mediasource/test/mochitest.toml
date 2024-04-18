@@ -216,10 +216,6 @@ support-files = [
   "whitenoise-he-aac-5s.mp4",
 ]
 
-["test_BufferedSeek.html"]
-
-["test_BufferedSeek_mp4.html"]
-
 ["test_BufferingWait.html"]
 
 ["test_BufferingWait_mp4.html"]
@@ -235,9 +231,6 @@ support-files = [
 ["test_Eviction_mp4.html"]
 
 ["test_ExperimentalAsync.html"]
-
-["test_FrameSelection.html"]
-skip-if = ["os == 'android'"] # bug 1341519, bug 1401090
 
 ["test_FrameSelection_mp4.html"]
 skip-if = [

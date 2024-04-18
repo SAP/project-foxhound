@@ -104,7 +104,6 @@ bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
 
 /* static */ nsresult CSPService::ConsultCSP(nsIURI* aContentLocation,
                                              nsILoadInfo* aLoadInfo,
-                                             const nsACString& aMimeTypeGuess,
                                              int16_t* aDecision) {
   if (!aContentLocation) {
     return NS_ERROR_FAILURE;
@@ -204,13 +203,12 @@ bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
 /* nsIContentPolicy implementation */
 NS_IMETHODIMP
 CSPService::ShouldLoad(nsIURI* aContentLocation, nsILoadInfo* aLoadInfo,
-                       const nsACString& aMimeTypeGuess, int16_t* aDecision) {
-  return ConsultCSP(aContentLocation, aLoadInfo, aMimeTypeGuess, aDecision);
+                       int16_t* aDecision) {
+  return ConsultCSP(aContentLocation, aLoadInfo, aDecision);
 }
 
 NS_IMETHODIMP
 CSPService::ShouldProcess(nsIURI* aContentLocation, nsILoadInfo* aLoadInfo,
-                          const nsACString& aMimeTypeGuess,
                           int16_t* aDecision) {
   if (!aContentLocation) {
     return NS_ERROR_FAILURE;
@@ -236,7 +234,7 @@ CSPService::ShouldProcess(nsIURI* aContentLocation, nsILoadInfo* aLoadInfo,
     return NS_OK;
   }
 
-  return ShouldLoad(aContentLocation, aLoadInfo, aMimeTypeGuess, aDecision);
+  return ShouldLoad(aContentLocation, aLoadInfo, aDecision);
 }
 
 /* nsIChannelEventSink implementation */
@@ -310,25 +308,6 @@ nsresult CSPService::ConsultCSPForRedirect(nsIURI* aOriginalURI,
                                            nsIURI* aNewURI,
                                            nsILoadInfo* aLoadInfo,
                                            Maybe<nsresult>& aCancelCode) {
-  // Check CSP navigate-to
-  // We need to enforce the CSP of the document that initiated the load,
-  // which is the CSP to inherit.
-  nsCOMPtr<nsIContentSecurityPolicy> cspToInherit =
-      aLoadInfo->GetCspToInherit();
-  if (cspToInherit) {
-    bool allowsNavigateTo = false;
-    nsresult rv = cspToInherit->GetAllowsNavigateTo(
-        aNewURI, aLoadInfo->GetIsFormSubmission(), true, /* aWasRedirected */
-        false,                                           /* aEnforceAllowlist */
-        &allowsNavigateTo);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (!allowsNavigateTo) {
-      aCancelCode = Some(NS_ERROR_CSP_NAVIGATE_TO_VIOLATION);
-      return NS_OK;
-    }
-  }
-
   // No need to continue processing if CSP is disabled or if the protocol
   // is *not* subject to CSP.
   // Please note, the correct way to opt-out of CSP using a custom

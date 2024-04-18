@@ -191,6 +191,7 @@ class GlobalHelperThreadState {
                               const AutoLockHelperThreadState& lock) const;
 
   size_t maxIonCompilationThreads() const;
+  size_t maxIonFreeThreads() const;
   size_t maxWasmCompilationThreads() const;
   size_t maxWasmTier2GeneratorThreads() const;
   size_t maxPromiseHelperThreads() const;
@@ -411,7 +412,7 @@ class GlobalHelperThreadState {
  public:
   bool submitTask(wasm::UniqueTier2GeneratorTask task);
   bool submitTask(wasm::CompileTask* task, wasm::CompileMode mode);
-  bool submitTask(UniquePtr<jit::IonFreeTask> task,
+  bool submitTask(UniquePtr<jit::IonFreeTask>&& task,
                   const AutoLockHelperThreadState& lock);
   bool submitTask(jit::IonCompileTask* task,
                   const AutoLockHelperThreadState& locked);

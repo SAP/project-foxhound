@@ -91,6 +91,10 @@ var gIdentityHandler = {
     );
   },
 
+  get _isAssociatedIdentity() {
+    return this._state & Ci.nsIWebProgressListener.STATE_IDENTITY_ASSOCIATED;
+  },
+
   get _isMixedActiveContentLoaded() {
     return (
       this._state & Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT
@@ -504,15 +508,16 @@ var gIdentityHandler = {
    * -1 indicates a incompatible scheme on the current URI.
    */
   _getHttpsOnlyPermission() {
-    if (
-      !gBrowser.currentURI.schemeIs("http") &&
-      !gBrowser.currentURI.schemeIs("https")
-    ) {
+    let uri = gBrowser.currentURI;
+    if (uri instanceof Ci.nsINestedURI) {
+      uri = uri.QueryInterface(Ci.nsINestedURI).innermostURI;
+    }
+    if (!uri.schemeIs("http") && !uri.schemeIs("https")) {
       return -1;
     }
-    const httpURI = gBrowser.currentURI.mutate().setScheme("http").finalize();
+    uri = uri.mutate().setScheme("http").finalize();
     const principal = Services.scriptSecurityManager.createContentPrincipal(
-      httpURI,
+      uri,
       gBrowser.contentPrincipal.originAttributes
     );
     const { state } = SitePermissions.getForPrincipal(
@@ -557,7 +562,11 @@ var gIdentityHandler = {
     // We always want to set the exception for the HTTP version of the current URI,
     // since when we check wether we should upgrade a request, we are checking permissons
     // for the HTTP principal (Bug 1757297).
-    const newURI = gBrowser.currentURI.mutate().setScheme("http").finalize();
+    let newURI = gBrowser.currentURI;
+    if (newURI instanceof Ci.nsINestedURI) {
+      newURI = newURI.QueryInterface(Ci.nsINestedURI).innermostURI;
+    }
+    newURI = newURI.mutate().setScheme("http").finalize();
     const principal = Services.scriptSecurityManager.createContentPrincipal(
       newURI,
       gBrowser.contentPrincipal.originAttributes
@@ -783,13 +792,7 @@ var gIdentityHandler = {
    * built-in (returns false) or imported (returns true).
    */
   _hasCustomRoot() {
-    let issuerCert = null;
-    issuerCert =
-      this._secInfo.succeededCertChain[
-        this._secInfo.succeededCertChain.length - 1
-      ];
-
-    return !issuerCert.isBuiltInRoot;
+    return !this._secInfo.isBuiltCertChainRootBuiltInRoot;
   },
 
   /**
@@ -872,8 +875,13 @@ var gIdentityHandler = {
     } else if (this._isAboutHttpsOnlyErrorPage) {
       // We show a not secure lock icon for 'about:httpsonlyerror' page.
       this._identityBox.className = "httpsOnlyErrorPage";
-    } else if (this._isAboutNetErrorPage || this._isAboutBlockedPage) {
-      // Network errors and blocked pages get a more neutral icon
+    } else if (
+      this._isAboutNetErrorPage ||
+      this._isAboutBlockedPage ||
+      this._isAssociatedIdentity
+    ) {
+      // Network errors, blocked pages, and pages associated
+      // with another page get a more neutral icon
       this._identityBox.className = "unknownIdentity";
     } else if (this._isPotentiallyTrustworthy) {
       // This is a local resource (and shouldn't be marked insecure).
@@ -986,6 +994,8 @@ var gIdentityHandler = {
       connection = "not-secure";
     } else if (this._isAboutNetErrorPage) {
       connection = "net-error-page";
+    } else if (this._isAssociatedIdentity) {
+      connection = "associated";
     } else if (this._isPotentiallyTrustworthy) {
       connection = "file";
     }
@@ -1150,6 +1160,14 @@ var gIdentityHandler = {
       }
     );
 
+    document.l10n.setAttributes(
+      this._identityPopupMainViewHeaderLabel,
+      "identity-site-information",
+      {
+        host,
+      }
+    );
+
     this._identityPopupSecurityEVContentOwner.textContent =
       gNavigatorBundle.getFormattedString("identity.ev.contentOwner2", [owner]);
 
@@ -1159,8 +1177,8 @@ var gIdentityHandler = {
   },
 
   setURI(uri) {
-    if (uri.schemeIs("view-source")) {
-      uri = Services.io.newURI(uri.spec.replace(/^view-source:/i, ""));
+    if (uri instanceof Ci.nsINestedURI) {
+      uri = uri.QueryInterface(Ci.nsINestedURI).innermostURI;
     }
     this._uri = uri;
 
@@ -1171,7 +1189,7 @@ var gIdentityHandler = {
       this._uriHasHost = false;
     }
 
-    if (uri.schemeIs("about")) {
+    if (uri.schemeIs("about") || uri.schemeIs("moz-safe-about")) {
       let module = E10SUtils.getAboutModule(uri);
       if (module) {
         let flags = module.getURIFlags(uri);
@@ -1183,24 +1201,7 @@ var gIdentityHandler = {
       this._isSecureInternalUI = false;
     }
     this._pageExtensionPolicy = WebExtensionPolicy.getByURI(uri);
-
-    // Create a channel for the sole purpose of getting the resolved URI
-    // of the request to determine if it's loaded from the file system.
-    this._isURILoadedFromFile = false;
-    let chanOptions = { uri: this._uri, loadUsingSystemPrincipal: true };
-    let resolvedURI;
-    try {
-      resolvedURI = NetUtil.newChannel(chanOptions).URI;
-      if (resolvedURI.schemeIs("jar")) {
-        // Given a URI "jar:<jar-file-uri>!/<jar-entry>"
-        // create a new URI using <jar-file-uri>!/<jar-entry>
-        resolvedURI = NetUtil.newURI(resolvedURI.pathQueryRef);
-      }
-      // Check the URI again after resolving.
-      this._isURILoadedFromFile = resolvedURI.schemeIs("file");
-    } catch (ex) {
-      // NetUtil's methods will throw for malformed URIs and the like
-    }
+    this._isURILoadedFromFile = uri.schemeIs("file");
   },
 
   /**

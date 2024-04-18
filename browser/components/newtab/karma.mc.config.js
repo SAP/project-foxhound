@@ -97,13 +97,13 @@ module.exports = function (config) {
             "content-src/asrouter/asrouter-utils.js": {
               statements: 66,
               lines: 66,
-              functions: 78,
-              branches: 63,
+              functions: 76,
+              branches: 33,
             },
             "lib/TelemetryFeed.jsm": {
-              statements: 99,
+              statements: 98,
               lines: 99,
-              functions: 100,
+              functions: 98,
               branches: 95,
             },
             "lib/ASRouterParentProcessMessageHandler.jsm": {
@@ -124,6 +124,12 @@ module.exports = function (config) {
               functions: 100,
               branches: 83,
             },
+            "lib/DownloadsManager.jsm": {
+              statements: 100,
+              lines: 100,
+              functions: 100,
+              branches: 78,
+            },
             "lib/PlacesFeed.jsm": {
               statements: 98,
               lines: 98,
@@ -136,16 +142,44 @@ module.exports = function (config) {
               functions: 100,
               branches: 75,
             },
-            "lib/TopSitesFeed.jsm": {
-              statements: 70,
-              lines: 75,
-              functions: 80,
-              branches: 60,
-            },
             "lib/Screenshots.jsm": {
               statements: 94,
               lines: 94,
               functions: 75,
+              branches: 84,
+            },
+            /**
+             * Store.jsm is tested via an xpcshell test
+             */
+            "lib/Store.jsm": {
+              statements: 8,
+              lines: 8,
+              functions: 0,
+              branches: 0,
+            },
+            /**
+             * TopSitesFeed.jsm is tested via an xpcshell test
+             */
+            "lib/TopSitesFeed.jsm": {
+              statements: 9,
+              lines: 9,
+              functions: 5,
+              branches: 0,
+            },
+            /**
+             * TopStoresFeed.jsm is not tested in automation and is slated
+             * for eventual removal.
+             */
+            "lib/TopStoriesFeed.jsm": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            "lib/ToolbarPanelHub.jsm": {
+              statements: 88,
+              lines: 88,
+              functions: 94,
               branches: 84,
             },
             "lib/*.jsm": {
@@ -166,7 +200,7 @@ module.exports = function (config) {
               functions: 60,
               branches: 50,
             },
-            "content-src/components/ASRouterAdmin/*.jsx": {
+            "content-src/components/DiscoveryStreamAdmin/*.jsx": {
               statements: 0,
               lines: 0,
               functions: 0,
@@ -184,45 +218,11 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
-            "content-src/lib/aboutwelcome-utils.js": {
-              statements: 50,
-              lines: 50,
-              functions: 50,
-              branches: 0,
-            },
             "content-src/lib/link-menu-options.js": {
               statements: 96,
               lines: 96,
               functions: 96,
               branches: 70,
-            },
-            "content-src/aboutwelcome/components/LanguageSwitcher.jsx": {
-              // This file is covered by the mochitest: browser_aboutwelcome_multistage_languageSwitcher.js
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
-            "content-src/aboutwelcome/components/EmbeddedMigrationWizard.jsx": {
-              // This file is covered by the mochitest: browser_aboutwelcome_multistage_mr.js
-              // Can't be unit tested because it relies on the migration-wizard custom element
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
-            "content-src/aboutwelcome/components/AddonsPicker.jsx": {
-              // This file is covered by the mochitest: browser_aboutwelcome_multistage_addonspicker.js
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
-            "content-src/aboutwelcome/**/*.jsx": {
-              statements: 62,
-              lines: 60,
-              functions: 50,
-              branches: 50,
             },
             "content-src/components/**/*.jsx": {
               statements: 51.1,
@@ -290,9 +290,6 @@ module.exports = function (config) {
                         replace: true,
                       },
                     ],
-                    "@babel/plugin-proposal-nullish-coalescing-operator",
-                    "@babel/plugin-proposal-optional-chaining",
-                    "@babel/plugin-proposal-class-properties",
                   ],
                 },
               },
@@ -302,11 +299,6 @@ module.exports = function (config) {
             test: /\.js$/,
             exclude: [/node_modules\/(?!@fluent\/).*/, /test/],
             loader: "babel-loader",
-            options: {
-              // This is a workaround for bug 1787278. It can be removed once
-              // that bug is fixed.
-              plugins: ["@babel/plugin-proposal-optional-chaining"],
-            },
           },
           {
             test: /\.jsx$/,
@@ -314,10 +306,6 @@ module.exports = function (config) {
             loader: "babel-loader",
             options: {
               presets: ["@babel/preset-react"],
-              plugins: [
-                "@babel/plugin-proposal-nullish-coalescing-operator",
-                "@babel/plugin-proposal-optional-chaining",
-              ],
             },
           },
           {

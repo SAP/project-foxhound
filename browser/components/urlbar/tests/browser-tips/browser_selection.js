@@ -13,7 +13,12 @@ add_task(async function tipIsSecondResult() {
     new UrlbarResult(
       UrlbarUtils.RESULT_TYPE.URL,
       UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/a" }
+      {
+        url: "http://mozilla.org/a",
+        helpUrl: "http://example.com/",
+        isBlockable: true,
+        blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+      }
     ),
     makeTipResult({ buttonUrl: TIP_URL, helpUrl: HELP_URL }),
   ];
@@ -82,7 +87,7 @@ add_task(async function tipIsSecondResult() {
   await TestUtils.waitForCondition(() => {
     return (
       gURLBar.view.oneOffSearchButtons.buttons.firstElementChild &&
-      BrowserTestUtils.is_visible(
+      BrowserTestUtils.isVisible(
         gURLBar.view.oneOffSearchButtons.buttons.firstElementChild
       )
     );
@@ -183,7 +188,12 @@ add_task(async function tipHasNoHelpButton() {
     new UrlbarResult(
       UrlbarUtils.RESULT_TYPE.URL,
       UrlbarUtils.RESULT_SOURCE.HISTORY,
-      { url: "http://mozilla.org/a" }
+      {
+        url: "http://mozilla.org/a",
+        helpUrl: "http://example.com/",
+        isBlockable: true,
+        blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+      }
     ),
     makeTipResult({ buttonUrl: TIP_URL }),
   ];

@@ -10,6 +10,7 @@
 #include <new>
 #include <utility>
 #include <functional>
+#include "FontPaletteCache.h"
 #include "PLDHashTable.h"
 #include "ThebesRLBoxTypes.h"
 #include "gfxFontVariations.h"
@@ -761,6 +762,8 @@ class gfxShapedText {
       FLAG_BREAK_TYPE_NONE = 0,
       FLAG_BREAK_TYPE_NORMAL = 1,
       FLAG_BREAK_TYPE_HYPHEN = 2,
+      // Allow break before this position if needed to avoid overflow:
+      FLAG_BREAK_TYPE_EMERGENCY_WRAP = 3,
 
       FLAG_CHAR_IS_SPACE = 0x10000000U,
 
@@ -885,7 +888,7 @@ class gfxShapedText {
     }
     // Returns FLAGS_CAN_BREAK_BEFORE if the setting changed, 0 otherwise
     uint32_t SetCanBreakBefore(uint8_t aCanBreakBefore) {
-      MOZ_ASSERT(aCanBreakBefore <= 2, "Bogus break-before value!");
+      MOZ_ASSERT(aCanBreakBefore <= 3, "Bogus break-flags value!");
       uint32_t breakMask = (uint32_t(aCanBreakBefore) << FLAGS_CAN_BREAK_SHIFT);
       uint32_t toggle = breakMask ^ (mValue & FLAGS_CAN_BREAK_BEFORE);
       mValue ^= toggle;
@@ -1368,6 +1371,7 @@ class gfxShapedWord final : public gfxShapedText {
     memset(mCharGlyphsStorage, 0, aLength * sizeof(CompressedGlyph));
     uint8_t* text = reinterpret_cast<uint8_t*>(&mCharGlyphsStorage[aLength]);
     memcpy(text, aText, aLength * sizeof(uint8_t));
+    SetupClusterBoundaries(0, aText, aLength);
   }
 
   gfxShapedWord(const char16_t* aText, uint32_t aLength, Script aRunScript,
@@ -2299,6 +2303,10 @@ class gfxFont {
 // are dependent on the specific font, so they are set per GlyphRun.
 
 struct MOZ_STACK_CLASS TextRunDrawParams {
+  explicit TextRunDrawParams(mozilla::gfx::PaletteCache& aPaletteCache)
+      : paletteCache(aPaletteCache) {}
+
+  mozilla::gfx::PaletteCache& paletteCache;
   RefPtr<mozilla::gfx::DrawTarget> dt;
   gfxContext* context = nullptr;
   gfxFont::Spacing* spacing = nullptr;
@@ -2312,7 +2320,6 @@ struct MOZ_STACK_CLASS TextRunDrawParams {
   gfxPattern* textStrokePattern = nullptr;
   const mozilla::gfx::StrokeOptions* strokeOpts = nullptr;
   const mozilla::gfx::DrawOptions* drawOpts = nullptr;
-  const mozilla::gfx::FontPaletteValueSet* paletteValueSet = nullptr;
   nsAtom* fontPalette = nullptr;
   DrawMode drawMode = DrawMode::GLYPH_FILL;
   bool isVerticalRun = false;
@@ -2320,34 +2327,6 @@ struct MOZ_STACK_CLASS TextRunDrawParams {
   bool paintSVGGlyphs = true;
   bool allowGDI = true;
   bool hasTextShadow = false;
-
-  // MRU cache of color-font palettes being used by fonts in the run. We cache
-  // these in the TextRunDrawParams so that we can avoid re-creating a new
-  // palette (which can be quite expensive) for each individual glyph run.
-  using CacheKey = const gfxFont*;
-
-  struct CacheData {
-    CacheKey mKey;
-    mozilla::UniquePtr<nsTArray<mozilla::gfx::sRGBColor>> mPalette;
-  };
-
-  class PaletteCache
-      : public mozilla::MruCache<CacheKey, CacheData, PaletteCache> {
-   public:
-    static mozilla::HashNumber Hash(const CacheKey& aKey) {
-      return mozilla::HashGeneric(aKey);
-    }
-    static bool Match(const CacheKey& aKey, const CacheData& aVal) {
-      return aVal.mKey == aKey;
-    }
-  };
-
-  PaletteCache mPaletteCache;
-
-  // Returns a pointer to a palette owned by the PaletteCache. This is only
-  // valid until the next call to GetPaletteFor (which might evict it) or
-  // until the TextRunDrawParams goes out of scope.
-  nsTArray<mozilla::gfx::sRGBColor>* GetPaletteFor(const gfxFont* aFont);
 };
 
 struct MOZ_STACK_CLASS FontDrawParams {
@@ -2368,7 +2347,11 @@ struct MOZ_STACK_CLASS FontDrawParams {
 };
 
 struct MOZ_STACK_CLASS EmphasisMarkDrawParams {
+  EmphasisMarkDrawParams(gfxContext* aContext,
+                         mozilla::gfx::PaletteCache& aPaletteCache)
+      : context(aContext), paletteCache(aPaletteCache) {}
   gfxContext* context;
+  mozilla::gfx::PaletteCache& paletteCache;
   gfxFont::Spacing* spacing;
   gfxTextRun* mark;
   gfxFloat advance;

@@ -43,6 +43,7 @@
 #include "mozilla/UniquePtr.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
+#include "mozilla/glean/GleanMetrics.h"
 
 namespace mozilla {
 namespace net {
@@ -781,11 +782,13 @@ nsresult TRR::ReturnData(nsIChannel* aChannel) {
     if (!mHostResolver) {
       return NS_ERROR_FAILURE;
     }
+    RecordReason(TRRSkippedReason::TRR_OK);
     (void)mHostResolver->CompleteLookup(mRec, NS_OK, ai, mPB, mOriginSuffix,
                                         mTRRSkippedReason, this);
     mHostResolver = nullptr;
     mRec = nullptr;
   } else {
+    RecordReason(TRRSkippedReason::TRR_OK);
     (void)mHostResolver->CompleteLookupByType(mRec, NS_OK, mResult,
                                               mTRRSkippedReason, mTTL, mPB);
   }
@@ -1006,6 +1009,13 @@ TRR::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
   channel.swap(mChannel);
 
   mChannelStatus = aStatusCode;
+  if (NS_SUCCEEDED(aStatusCode)) {
+    nsCString label = "regular"_ns;
+    if (mPB) {
+      label = "private"_ns;
+    }
+    mozilla::glean::networking::trr_request_count.Get(label).Add(1);
+  }
 
   {
     // Cancel the timer since we don't need it anymore.

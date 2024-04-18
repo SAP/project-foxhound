@@ -28,9 +28,9 @@ Contributing
    How to fix a bug <contributing/fixing-bugs.md>
    Code reviews <contributing/code-reviews.md>
    Landing code <contributing/landing-code.md>
-   Leveling up <contributing/levelling-up.md>
+   Leveling up <https://firefox-source-docs.mozilla.org/contributing/levelling-up.html>
    Coding standards <contributing/coding-standards.md>
-   Filing good bugs <contributing/filing-good-bugs.md>
+   Filing good bugs <https://firefox-source-docs.mozilla.org/contributing/filing-good-bugs.html>
    Investigating performance issues <contributing/performance.md>
    Writing efficient React code <contributing/react-performance-tips.md>
 

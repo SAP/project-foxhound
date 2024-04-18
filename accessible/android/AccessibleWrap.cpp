@@ -61,38 +61,6 @@ AccessibleWrap::~AccessibleWrap() {}
 nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
   auto accessible = static_cast<AccessibleWrap*>(aEvent->GetAccessible());
   NS_ENSURE_TRUE(accessible, NS_ERROR_FAILURE);
-  DocAccessibleWrap* doc =
-      static_cast<DocAccessibleWrap*>(accessible->Document());
-  if (doc) {
-    switch (aEvent->GetEventType()) {
-      case nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED: {
-        if (accessible != aEvent->Document() && !aEvent->IsFromUserInput()) {
-          AccCaretMoveEvent* caretEvent = downcast_accEvent(aEvent);
-          HyperTextAccessible* ht = AsHyperText();
-          // Pivot to the caret's position if it has an expanded selection.
-          // This is used mostly for find in page.
-          if ((ht && ht->SelectionCount())) {
-            DOMPoint point =
-                AsHyperText()->OffsetToDOMPoint(caretEvent->GetCaretOffset());
-            if (LocalAccessible* newPos =
-                    doc->GetAccessibleOrContainer(point.node)) {
-              static_cast<AccessibleWrap*>(newPos)->PivotTo(
-                  java::SessionAccessibility::HTML_GRANULARITY_DEFAULT, true,
-                  true);
-            }
-          }
-        }
-        break;
-      }
-      case nsIAccessibleEvent::EVENT_SCROLLING_START: {
-        accessible->PivotTo(
-            java::SessionAccessibility::HTML_GRANULARITY_DEFAULT, true, true);
-        break;
-      }
-      default:
-        break;
-    }
-  }
 
   nsresult rv = LocalAccessible::HandleAccEvent(aEvent);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -153,39 +121,29 @@ Accessible* AccessibleWrap::DoPivot(Accessible* aAccessible,
   return nullptr;
 }
 
-bool AccessibleWrap::PivotTo(int32_t aGranularity, bool aForward,
-                             bool aInclusive) {
-  Accessible* result = DoPivot(this, aGranularity, aForward, aInclusive);
-  if (result) {
-    MOZ_ASSERT(result->IsLocal());
-    // Dispatch a virtual cursor change event that will be turned into an
-    // android accessibility focused changed event in the parent.
-    PivotMoveReason reason = aForward ? nsIAccessiblePivot::REASON_NEXT
-                                      : nsIAccessiblePivot::REASON_PREV;
-    LocalAccessible* localResult = result->AsLocal();
-    RefPtr<AccEvent> event = new AccVCChangeEvent(
-        localResult->Document(), this, localResult, reason, eFromUserInput);
-    nsEventShell::FireEvent(event);
-
-    return true;
+Accessible* AccessibleWrap::ExploreByTouch(Accessible* aAccessible, float aX,
+                                           float aY) {
+  Accessible* root;
+  if (LocalAccessible* local = aAccessible->AsLocal()) {
+    root = local->RootAccessible();
+  } else {
+    // If this is a RemoteAccessible, provide the top level
+    // remote doc as the pivot root for thread safety reasons.
+    DocAccessibleParent* doc = aAccessible->AsRemote()->Document();
+    while (doc && !doc->IsTopLevel()) {
+      doc = doc->ParentDoc();
+    }
+    MOZ_ASSERT(doc, "Failed to get top level DocAccessibleParent");
+    root = doc;
   }
-
-  return false;
-}
-
-void AccessibleWrap::ExploreByTouch(float aX, float aY) {
-  a11y::Pivot pivot(RootAccessible());
-  TraversalRule rule;
-
-  Accessible* maybeResult = pivot.AtPoint(aX, aY, rule);
-  LocalAccessible* result = maybeResult ? maybeResult->AsLocal() : nullptr;
-
-  if (result && result != this) {
-    RefPtr<AccEvent> event =
-        new AccVCChangeEvent(result->Document(), this, result,
-                             nsIAccessiblePivot::REASON_POINT, eFromUserInput);
-    nsEventShell::FireEvent(event);
+  a11y::Pivot pivot(root);
+  TraversalRule rule(java::SessionAccessibility::HTML_GRANULARITY_DEFAULT,
+                     aAccessible->IsLocal());
+  Accessible* result = pivot.AtPoint(aX, aY, rule);
+  if (result == aAccessible) {
+    return nullptr;
   }
+  return result;
 }
 
 static TextLeafPoint ToTextLeafPoint(Accessible* aAccessible, int32_t aOffset) {

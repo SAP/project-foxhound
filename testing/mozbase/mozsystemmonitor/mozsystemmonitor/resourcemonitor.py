@@ -123,11 +123,11 @@ def _collect(pipe, poll_interval):
     try:
         # Establish initial values.
 
-        last_time = time.monotonic()
         io_last = get_disk_io_counters()
-        cpu_last = psutil.cpu_times(True)
         swap_last = psutil.swap_memory()
         psutil.cpu_percent(None, True)
+        cpu_last = psutil.cpu_times(True)
+        last_time = time.monotonic()
 
         sin_index = swap_last._fields.index("sin")
         sout_index = swap_last._fields.index("sout")
@@ -136,10 +136,14 @@ def _collect(pipe, poll_interval):
 
         while not _poll(pipe, poll_interval=sleep_interval):
             io = get_disk_io_counters()
-            cpu_times = psutil.cpu_times(True)
-            cpu_percent = psutil.cpu_percent(None, True)
             virt_mem = psutil.virtual_memory()
             swap_mem = psutil.swap_memory()
+            cpu_percent = psutil.cpu_percent(None, True)
+            cpu_times = psutil.cpu_times(True)
+            # Take the timestamp as soon as possible after getting cpu_times
+            # to reduce the likelihood of our process being interrupted between
+            # the two instructions. Having a delayed timestamp would cause the
+            # next sample to report more than 100% CPU time.
             measured_end_time = time.monotonic()
 
             # TODO Does this wrap? At 32 bits? At 64 bits?
@@ -830,7 +834,11 @@ class SystemResourceMonitor(object):
                         "tooltipLabel": "{marker.data.phase}",
                         "tableLabel": "{marker.name} — {marker.data.phase} — CPU time: {marker.data.cpuTime} ({marker.data.cpuPercent})",
                         "chartLabel": "{marker.data.phase}",
-                        "display": ["marker-chart", "marker-table"],
+                        "display": [
+                            "marker-chart",
+                            "marker-table",
+                            "timeline-overview",
+                        ],
                         "data": [
                             {
                                 "key": "cpuTime",
@@ -920,6 +928,7 @@ class SystemResourceMonitor(object):
                     "registerTime": 0,
                     "unregisterTime": None,
                     "pausedRanges": [],
+                    "showMarkersInTimeline": True,
                     "name": "",
                     "isMainThread": False,
                     "pid": "0",
@@ -1051,11 +1060,26 @@ class SystemResourceMonitor(object):
                     sum(list(m.cpu_percent)) / len(m.cpu_percent)
                 ),
             }
+
+            # due to inconsistencies in the sampling rate, sometimes the
+            # cpu_times add up to more than 100%, causing annoying
+            # spikes in the CPU use charts. Avoid them by dividing the
+            # values by the total if it is above 1.
             total = 0
-            for field in ["nice", "user", "system", "iowait", "softirq"]:
+            for field in ["nice", "user", "system", "iowait", "softirq", "idle"]:
                 if hasattr(m.cpu_times[0], field):
                     total += sum(getattr(core, field) for core in m.cpu_times) / (
                         m.end - m.start
+                    )
+            divisor = total if total > 1 else 1
+
+            total = 0
+            for field in ["nice", "user", "system", "iowait", "softirq"]:
+                if hasattr(m.cpu_times[0], field):
+                    total += (
+                        sum(getattr(core, field) for core in m.cpu_times)
+                        / (m.end - m.start)
+                        / divisor
                     )
                     if total > 0:
                         valid_cpu_fields.add(field)

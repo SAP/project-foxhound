@@ -110,10 +110,14 @@ void ShareableCanvasRenderer::UpdateCompositableClient() {
   // With remote texture push callback, a new pushed remote texture is notifiled
   // from RemoteTextureMap to WebRenderImageHost.
   if (mData.mRemoteTextureOwnerIdOfPushCallback) {
-    GetForwarder()->EnableRemoteTexturePushCallback(
-        mCanvasClient, *mData.mRemoteTextureOwnerIdOfPushCallback, mData.mSize,
-        flags);
-    EnsurePipeline();
+    if (!HasPipeline()) {
+      GetForwarder()->EnableRemoteTexturePushCallback(
+          mCanvasClient, *mData.mRemoteTextureOwnerIdOfPushCallback,
+          mData.mSize, flags);
+      EnsurePipeline();
+    }
+    // Post front buffer
+    context->GetFrontBuffer(nullptr);
     return;
   }
 
@@ -189,10 +193,15 @@ void ShareableCanvasRenderer::UpdateCompositableClient() {
       if (!mData.mIsAlphaPremult) {
         flags |= TextureFlags::NON_PREMULTIPLIED;
       }
+      if (provider && provider->WaitForRemoteTextureOwner()) {
+        flags |= TextureFlags::WAIT_FOR_REMOTE_TEXTURE_OWNER;
+      }
       EnsurePipeline();
       forwarder->UseRemoteTexture(mCanvasClient, textureDesc.textureId(),
                                   textureDesc.ownerId(), mData.mSize, flags);
-
+      if (provider) {
+        provider->UseCompositableForwarder(forwarder);
+      }
       FireDidTransactionCallback();
       return;
     }

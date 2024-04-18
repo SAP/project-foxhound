@@ -206,19 +206,27 @@ function promiseWebAuthnGetAssertion(tab, key_handle = null, extensions = {}) {
   );
 }
 
-function promiseWebAuthnGetAssertionDiscoverable(tab, extensions = {}) {
-  return ContentTask.spawn(tab.linkedBrowser, [extensions], ([extensions]) => {
-    let challenge = content.crypto.getRandomValues(new Uint8Array(16));
+function promiseWebAuthnGetAssertionDiscoverable(
+  tab,
+  mediation = "optional",
+  extensions = {}
+) {
+  return ContentTask.spawn(
+    tab.linkedBrowser,
+    [extensions, mediation],
+    ([extensions, mediation]) => {
+      let challenge = content.crypto.getRandomValues(new Uint8Array(16));
 
-    let publicKey = {
-      challenge,
-      extensions,
-      rpId: content.document.domain,
-      allowCredentials: [],
-    };
+      let publicKey = {
+        challenge,
+        extensions,
+        rpId: content.document.domain,
+        allowCredentials: [],
+      };
 
-    return content.navigator.credentials.get({ publicKey });
-  });
+      return content.navigator.credentials.get({ publicKey, mediation });
+    }
+  );
 }
 
 function checkRpIdHash(rpIdHash, hostname) {
@@ -234,5 +242,18 @@ function checkRpIdHash(rpIdHash, hostname) {
         throw new Error("Calculated RP ID hash doesn't match.");
       }
     });
+}
+
+function promiseNotification(id) {
+  return new Promise(resolve => {
+    PopupNotifications.panel.addEventListener("popupshown", function shown() {
+      let notification = PopupNotifications.getNotification(id);
+      if (notification) {
+        ok(true, `${id} prompt visible`);
+        PopupNotifications.panel.removeEventListener("popupshown", shown);
+        resolve();
+      }
+    });
+  });
 }
 /* eslint-enable no-shadow */

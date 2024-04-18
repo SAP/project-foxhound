@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import PropTypes from "prop-types";
-import React, { PureComponent } from "react";
-import { div } from "react-dom-factories";
-import { bindActionCreators } from "redux";
-import ReactDOM from "react-dom";
-import { connect } from "../../utils/connect";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import React, { PureComponent } from "devtools/client/shared/vendor/react";
+import { div } from "devtools/client/shared/vendor/react-dom-factories";
+import { bindActionCreators } from "devtools/client/shared/vendor/redux";
+import ReactDOM from "devtools/client/shared/vendor/react-dom";
+import { connect } from "devtools/client/shared/vendor/react-redux";
 
 import { getLineText, isLineBlackboxed } from "./../../utils/source";
 import { createLocation } from "./../../utils/location";
@@ -30,14 +30,14 @@ import {
   isSourceMapIgnoreListEnabled,
   isSourceOnSourceMapIgnoreList,
   isMapScopesEnabled,
-} from "../../selectors";
+} from "../../selectors/index";
 
 // Redux actions
-import actions from "../../actions";
+import actions from "../../actions/index";
 
 import SearchInFileBar from "./SearchInFileBar";
 import HighlightLines from "./HighlightLines";
-import Preview from "./Preview";
+import Preview from "./Preview/index";
 import Breakpoints from "./Breakpoints";
 import ColumnBreakpoints from "./ColumnBreakpoints";
 import DebugLine from "./DebugLine";
@@ -66,12 +66,12 @@ import {
   onMouseOver,
   startOperation,
   endOperation,
-} from "../../utils/editor";
+} from "../../utils/editor/index";
 
 import { resizeToggleButton, resizeBreakpointGutter } from "../../utils/ui";
 
-const { debounce } = require("devtools/shared/debounce");
-const classnames = require("devtools/client/shared/classnames.js");
+const { debounce } = require("resource://devtools/shared/debounce.js");
+const classnames = require("resource://devtools/client/shared/classnames.js");
 
 const { appinfo } = Services;
 const isMacOS = appinfo.OS === "Darwin";
@@ -83,10 +83,6 @@ function isSecondary(ev) {
 function isCmd(ev) {
   return isMacOS ? ev.metaKey : ev.ctrlKey;
 }
-
-import "./Editor.css";
-import "./Breakpoints.css";
-import "./InlinePreview.css";
 
 const cssVars = {
   searchbarHeight: "var(--editor-searchbar-height)",
@@ -203,6 +199,7 @@ class Editor extends PureComponent {
       });
 
     codeMirror.on("gutterClick", this.onGutterClick);
+    codeMirror.on("cursorActivity", this.onCursorChange);
 
     const codeMirrorWrapper = codeMirror.getWrapperElement();
     // Set code editor wrapper to be focusable
@@ -436,6 +433,29 @@ class Editor extends PureComponent {
 
     this.props.showEditorContextMenu(event, editor, location);
   }
+
+  /**
+   * CodeMirror event handler, called whenever the cursor moves
+   * for user-driven or programatic reasons.
+   */
+  onCursorChange = event => {
+    const { line, ch } = event.doc.getCursor();
+    this.props.selectLocation(
+      createLocation({
+        source: this.props.selectedSource,
+        // CodeMirror cursor location is all 0-based.
+        // Whereast in DevTools frontend and backend,
+        // only colunm is 0-based, the line is 1 based.
+        line: line + 1,
+        column: ch,
+      }),
+      {
+        // Reset the context, so that we don't switch to original
+        // while moving the cursor within a bundle
+        keepContext: false,
+      }
+    );
+  };
 
   onGutterClick = (cm, line, gutter, ev) => {
     const {
@@ -763,6 +783,7 @@ const mapDispatchToProps = dispatch => ({
       closeTab: actions.closeTab,
       showEditorContextMenu: actions.showEditorContextMenu,
       showEditorGutterContextMenu: actions.showEditorGutterContextMenu,
+      selectLocation: actions.selectLocation,
     },
     dispatch
   ),

@@ -8,7 +8,7 @@
 
 #include "nsAVIFDecoder.h"
 
-#include "aom/aomdx.h"
+#include <aom/aomdx.h>
 
 #include "DAV1DDecoder.h"
 #include "gfxPlatform.h"
@@ -19,6 +19,7 @@
 
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryComms.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 using namespace mozilla::gfx;
 
@@ -685,7 +686,7 @@ bool OwnedAOMImage::CloneFrom(aom_image_t* aImage, bool aIsAlpha) {
 
   // If aImage is alpha plane. The data is located in Y channel.
   if (aIsAlpha) {
-    mBuffer = MakeUnique<uint8_t[]>(yBufSize);
+    mBuffer = MakeUniqueFallible<uint8_t[]>(yBufSize);
     if (!mBuffer) {
       return false;
     }
@@ -707,7 +708,7 @@ bool OwnedAOMImage::CloneFrom(aom_image_t* aImage, bool aIsAlpha) {
   int crHeight = aom_img_plane_height(aImage, AOM_PLANE_V);
   size_t crBufSize = crStride * crHeight;
 
-  mBuffer = MakeUnique<uint8_t[]>(yBufSize + cbBufSize + crBufSize);
+  mBuffer = MakeUniqueFallible<uint8_t[]>(yBufSize + cbBufSize + crBufSize);
   if (!mBuffer) {
     return false;
   }
@@ -1064,8 +1065,6 @@ UniquePtr<AVIFDecodedData> AOMDecoder::AOMImageToToDecodedData(
   aom_image_t* alphaImage = aAlphaPlane ? aAlphaPlane->GetImage() : nullptr;
 
   MOZ_ASSERT(colorImage);
-  MOZ_ASSERT(colorImage->stride[AOM_PLANE_Y] ==
-             colorImage->stride[AOM_PLANE_ALPHA]);
   MOZ_ASSERT(colorImage->stride[AOM_PLANE_Y] >=
              aom_img_plane_width(colorImage, AOM_PLANE_Y));
   MOZ_ASSERT(colorImage->stride[AOM_PLANE_U] ==
@@ -1733,9 +1732,8 @@ nsAVIFDecoder::DecodeResult nsAVIFDecoder::DoDecodeInternal(
     return AsVariant(NonDecoderResult::SizeOverflow);
   }
 
-  UniquePtr<uint8_t[]> rgbBuf = MakeUnique<uint8_t[]>(rgbBufLength.value());
-  const uint8_t* endOfRgbBuf = {rgbBuf.get() + rgbBufLength.value()};
-
+  UniquePtr<uint8_t[]> rgbBuf =
+      MakeUniqueFallible<uint8_t[]>(rgbBufLength.value());
   if (!rgbBuf) {
     MOZ_LOG(sAVIFLog, LogLevel::Debug,
             ("[this=%p] allocation of %u-byte rgbBuf failed", this,
@@ -1797,6 +1795,7 @@ nsAVIFDecoder::DecodeResult nsAVIFDecoder::DoDecodeInternal(
   }
 
   MOZ_LOG(sAVIFLog, LogLevel::Debug, ("[this=%p] writing to surface", this));
+  const uint8_t* endOfRgbBuf = {rgbBuf.get() + rgbBufLength.value()};
   WriteState writeBufferResult = WriteState::NEED_MORE_DATA;
   for (uint8_t* rowPtr = rgbBuf.get(); rowPtr < endOfRgbBuf;
        rowPtr += rgbStride.value()) {

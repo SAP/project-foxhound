@@ -60,7 +60,7 @@ bool nsJSUtils::GetCallingLocation(JSContext* aContext, nsACString& aFilename,
     return false;
   }
   if (aColumn) {
-    *aColumn = column.zeroOriginValue();
+    *aColumn = column.oneOriginValue();
   }
 
   return aFilename.Assign(filename.get(), fallible);
@@ -74,7 +74,7 @@ bool nsJSUtils::GetCallingLocation(JSContext* aContext, nsAString& aFilename,
     return false;
   }
   if (aColumn) {
-    *aColumn = column.zeroOriginValue();
+    *aColumn = column.oneOriginValue();
   }
 
   return aFilename.Assign(NS_ConvertUTF8toUTF16(filename.get()), fallible);

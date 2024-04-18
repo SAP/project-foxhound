@@ -7,9 +7,7 @@
 #include "MediaSourceDemuxer.h"
 
 #include "MediaSourceUtils.h"
-#include "OpusDecoder.h"
 #include "SourceBufferList.h"
-#include "VorbisDecoder.h"
 #include "VideoUtils.h"
 #include "nsPrintfCString.h"
 
@@ -33,7 +31,7 @@ MediaSourceDemuxer::MediaSourceDemuxer(AbstractThread* aAbstractMainThread)
     : mTaskQueue(
           TaskQueue::Create(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
                             "MediaSourceDemuxer::mTaskQueue")),
-      mMonitor("MediaSourceDemuxer") {
+      mMutex("MediaSourceDemuxer") {
   MOZ_ASSERT(NS_IsMainThread());
 }
 
@@ -96,7 +94,7 @@ bool MediaSourceDemuxer::ScanSourceBuffersForContent() {
     return false;
   }
 
-  MonitorAutoLock mon(mMonitor);
+  MutexAutoLock mon(mMutex);
 
   bool haveEmptySourceBuffer = false;
   for (const auto& sourceBuffer : mSourceBuffers) {
@@ -124,7 +122,7 @@ bool MediaSourceDemuxer::ScanSourceBuffersForContent() {
 }
 
 uint32_t MediaSourceDemuxer::GetNumberTracks(TrackType aType) const {
-  MonitorAutoLock mon(mMonitor);
+  MutexAutoLock mon(mMutex);
 
   switch (aType) {
     case TrackType::kAudioTrack:
@@ -138,7 +136,7 @@ uint32_t MediaSourceDemuxer::GetNumberTracks(TrackType aType) const {
 
 already_AddRefed<MediaTrackDemuxer> MediaSourceDemuxer::GetTrackDemuxer(
     TrackType aType, uint32_t aTrackNumber) {
-  MonitorAutoLock mon(mMonitor);
+  MutexAutoLock mon(mMutex);
   RefPtr<TrackBuffersManager> manager = GetManager(aType);
   if (!manager) {
     return nullptr;
@@ -153,14 +151,14 @@ already_AddRefed<MediaTrackDemuxer> MediaSourceDemuxer::GetTrackDemuxer(
 bool MediaSourceDemuxer::IsSeekable() const { return true; }
 
 UniquePtr<EncryptionInfo> MediaSourceDemuxer::GetCrypto() {
-  MonitorAutoLock mon(mMonitor);
+  MutexAutoLock mon(mMutex);
   auto crypto = MakeUnique<EncryptionInfo>();
   *crypto = mInfo.mCrypto;
   return crypto;
 }
 
 void MediaSourceDemuxer::AttachSourceBuffer(
-    RefPtr<TrackBuffersManager>& aSourceBuffer) {
+    const RefPtr<TrackBuffersManager>& aSourceBuffer) {
   nsCOMPtr<nsIRunnable> task = NewRunnableMethod<RefPtr<TrackBuffersManager>&&>(
       "MediaSourceDemuxer::DoAttachSourceBuffer", this,
       &MediaSourceDemuxer::DoAttachSourceBuffer, aSourceBuffer);
@@ -177,7 +175,7 @@ void MediaSourceDemuxer::DoAttachSourceBuffer(
 }
 
 void MediaSourceDemuxer::DetachSourceBuffer(
-    RefPtr<TrackBuffersManager>& aSourceBuffer) {
+    const RefPtr<TrackBuffersManager>& aSourceBuffer) {
   nsCOMPtr<nsIRunnable> task =
       NS_NewRunnableFunction("MediaSourceDemuxer::DoDetachSourceBuffer",
                              [self = RefPtr{this}, aSourceBuffer]() {
@@ -198,7 +196,7 @@ void MediaSourceDemuxer::DoDetachSourceBuffer(
 
   AutoTArray<RefPtr<MediaSourceTrackDemuxer>, 2> matchingDemuxers;
   {
-    MonitorAutoLock mon(mMonitor);
+    MutexAutoLock mon(mMutex);
     if (aSourceBuffer == mAudioTrack) {
       mAudioTrack = nullptr;
     }
@@ -250,7 +248,7 @@ MediaSourceDemuxer::~MediaSourceDemuxer() {
 
 RefPtr<GenericPromise> MediaSourceDemuxer::GetDebugInfo(
     dom::MediaSourceDemuxerDebugInfo& aInfo) const {
-  MonitorAutoLock mon(mMonitor);
+  MutexAutoLock mon(mMutex);
   nsTArray<RefPtr<GenericPromise>> promises;
   if (mAudioTrack) {
     promises.AppendElement(mAudioTrack->RequestDebugInfo(aInfo.mAudioTrack));
@@ -273,13 +271,13 @@ MediaSourceTrackDemuxer::MediaSourceTrackDemuxer(MediaSourceDemuxer* aParent,
     : mParent(aParent),
       mTaskQueue(mParent->GetTaskQueue()),
       mType(aType),
-      mMonitor("MediaSourceTrackDemuxer"),
+      mMutex("MediaSourceTrackDemuxer"),
       mManager(aManager),
       mReset(true),
       mPreRoll(TimeUnit::FromMicroseconds(
-          OpusDataDecoder::IsOpus(mParent->GetTrackInfo(mType)->mMimeType) ||
-                  VorbisDataDecoder::IsVorbis(
-                      mParent->GetTrackInfo(mType)->mMimeType)
+          mParent->GetTrackInfo(mType)->mMimeType.EqualsLiteral("audio/opus") ||
+                  mParent->GetTrackInfo(mType)->mMimeType.EqualsLiteral(
+                      "audio/vorbis")
               ? 80000
           : mParent->GetTrackInfo(mType)->mMimeType.EqualsLiteral(
                 "audio/mp4a-latm")
@@ -295,7 +293,7 @@ MediaSourceTrackDemuxer::MediaSourceTrackDemuxer(MediaSourceDemuxer* aParent,
 }
 
 UniquePtr<TrackInfo> MediaSourceTrackDemuxer::GetInfo() const {
-  MonitorAutoLock mon(mParent->mMonitor);
+  MutexAutoLock mon(mParent->mMutex);
   return mParent->GetTrackInfo(mType)->Clone();
 }
 
@@ -326,7 +324,7 @@ void MediaSourceTrackDemuxer::Reset() {
         MOZ_ASSERT(self->OnTaskQueue());
         self->mManager->Seek(self->mType, TimeUnit::Zero(), TimeUnit::Zero());
         {
-          MonitorAutoLock mon(self->mMonitor);
+          MutexAutoLock mon(self->mMutex);
           self->mNextRandomAccessPoint =
               self->mManager->GetNextRandomAccessPoint(
                   self->mType, MediaSourceDemuxer::EOS_FUZZ);
@@ -338,7 +336,7 @@ void MediaSourceTrackDemuxer::Reset() {
 }
 
 nsresult MediaSourceTrackDemuxer::GetNextRandomAccessPoint(TimeUnit* aTime) {
-  MonitorAutoLock mon(mMonitor);
+  MutexAutoLock mon(mMutex);
   *aTime = mNextRandomAccessPoint;
   return NS_OK;
 }
@@ -352,7 +350,7 @@ MediaSourceTrackDemuxer::SkipToNextRandomAccessPoint(
 }
 
 media::TimeIntervals MediaSourceTrackDemuxer::GetBuffered() {
-  MonitorAutoLock mon(mMonitor);
+  MutexAutoLock mon(mMutex);
   if (!mManager) {
     return media::TimeIntervals();
   }
@@ -428,7 +426,7 @@ RefPtr<MediaSourceTrackDemuxer::SeekPromise> MediaSourceTrackDemuxer::DoSeek(
   }
   mReset = false;
   {
-    MonitorAutoLock mon(mMonitor);
+    MutexAutoLock mon(mMutex);
     mNextRandomAccessPoint =
         mManager->GetNextRandomAccessPoint(mType, MediaSourceDemuxer::EOS_FUZZ);
   }
@@ -489,7 +487,7 @@ MediaSourceTrackDemuxer::DoGetSamples(int32_t aNumSamples) {
   RefPtr<SamplesHolder> samples = new SamplesHolder;
   samples->AppendSample(sample);
   {
-    MonitorAutoLock mon(mMonitor);  // spurious warning will be given
+    MutexAutoLock mon(mMutex);  // spurious warning will be given
     // Diagnostic asserts for bug 1810396
     MOZ_DIAGNOSTIC_ASSERT(sample, "Invalid sample pointer found!");
     MOZ_DIAGNOSTIC_ASSERT(sample->HasValidTime(), "Invalid sample time found!");
@@ -542,7 +540,7 @@ bool MediaSourceTrackDemuxer::HasManager(TrackBuffersManager* aManager) const {
 
 void MediaSourceTrackDemuxer::DetachManager() {
   MOZ_ASSERT(OnTaskQueue());
-  MonitorAutoLock mon(mMonitor);
+  MutexAutoLock mon(mMutex);
   mManager = nullptr;
 }
 

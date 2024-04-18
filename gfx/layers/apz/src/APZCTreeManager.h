@@ -520,6 +520,9 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   APZSampler* GetSampler() const;
   APZUpdater* GetUpdater() const;
 
+  bool AdvanceAnimationsInternal(const MutexAutoLock& aProofOfMapLock,
+                                 const SampleTime& aSampleTime);
+
   // We need to allow APZUpdater to lock and unlock this tree during a WR
   // scene swap. We do this using private helpers to avoid exposing these
   // functions to the world.
@@ -581,11 +584,12 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
       const AsyncTransformComponents& aComponents) const;
 
   /*
-   * Returns the transform matrix from |aApzc| to the root content APZC of
-   * |aApzc|.
+   * Returns the matrix which transforms coordinates relative to the layout
+   * viewport of |aApzc|, to be relative to the document origin of the root
+   * content APZC of |aApzc|.
    * |aApzc| must be the root APZC of an out-of-process iframe.
    */
-  ParentLayerToParentLayerMatrix4x4 GetOopifApzcToRootContentApzcTransform(
+  CSSToCSSMatrix4x4 GetOopifToRootContentTransform(
       AsyncPanZoomController* aApzc) const;
 
   /**
@@ -612,6 +616,8 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    */
   already_AddRefed<AsyncPanZoomController> FindZoomableApzc(
       AsyncPanZoomController* aStart) const;
+
+  AsyncPanZoomController* FindRootApzcFor(LayersId aLayersId) const;
 
   ScreenMargin GetCompositorFixedLayerMargins() const;
 
@@ -652,6 +658,13 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   TargetApzcForNodeResult GetTargetApzcForNode(const HitTestingTreeNode* aNode);
   TargetApzcForNodeResult FindHandoffParent(
       const AsyncPanZoomController* aApzc);
+  /**
+   * Find the root __content__ APZC for |aLayersId|.
+   * If |aLayersId| is NOT for the LayersId for the root content, this function
+   * returns nullptr.
+   *
+   * NOTE: Only the top-level content document will have a root content APZC.
+   */
   HitTestingTreeNode* FindRootNodeForLayersId(LayersId aLayersId) const;
   AsyncPanZoomController* FindRootContentApzcForLayersId(
       LayersId aLayersId) const;
@@ -788,9 +801,6 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   static already_AddRefed<GeckoContentController> GetContentController(
       LayersId aLayersId);
 
-  bool AdvanceAnimationsInternal(const MutexAutoLock& aProofOfMapLock,
-                                 const SampleTime& aSampleTime);
-
   using ClippedCompositionBoundsMap =
       std::unordered_map<ScrollableLayerGuid, ParentLayerRect,
                          ScrollableLayerGuid::HashIgnoringPresShellFn,
@@ -812,6 +822,11 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    * figure out where they're going. Protected so gtests can access it.
    */
   RefPtr<InputQueue> mInputQueue;
+
+  /** A lock that protects mApzcMap, mScrollThumbInfo, mRootScrollbarInfo,
+   * mFixedPositionInfo, and mStickyPositionInfo.
+   */
+  mutable mozilla::Mutex mMapLock;
 
  private:
   /* Layers id for the root CompositorBridgeParent that owns this
@@ -852,11 +867,6 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    */
   std::unordered_set<LayersId, LayersId::HashFn> mDetachedLayersIds
       MOZ_GUARDED_BY(mTreeLock);
-
-  /** A lock that protects mApzcMap, mScrollThumbInfo, mRootScrollbarInfo,
-   * mFixedPositionInfo, and mStickyPositionInfo.
-   */
-  mutable mozilla::Mutex mMapLock;
 
   /**
    * Helper structure to store a bunch of things in mApzcMap so that they can

@@ -42,8 +42,8 @@ class ClientSource;
 
 interface nsIURI;
 interface nsIChannel;
-interface nsIContentViewer;
 interface nsIContentSecurityPolicy;
+interface nsIDocumentViewer;
 interface nsIEditor;
 interface nsIEditingSession;
 interface nsIInputStream;
@@ -70,6 +70,21 @@ webidl ContentFrameMessageManager;
 webidl EventTarget;
 webidl Document;
 
+/**
+ * nsIDocShell is an interface corresponding to the native nsDocShell object,
+ * which is a legacy in-process object roughly corresponding to a 'browsing
+ * context', as created for a browser tab or an iframe, for example.
+ *
+ * nsIDocShell has a 1:1 relationship with its paired dom::BrowsingContext and
+ * nsGlobalWindowOuter. It may be replaced during navigation.
+ *
+ * See also the comment documenting dom::BrowsingContext and the documentation
+ * at:
+ *
+ * https://html.spec.whatwg.org/multipage/document-sequences.html#browsing-context
+ * https://firefox-source-docs.mozilla.org/dom/navigation/embedding.html
+ * https://firefox-source-docs.mozilla.org/dom/navigation/nav_replace.html
+ */
 [scriptable, builtinclass, uuid(049234fe-da10-478b-bc5d-bc6f9a1ba63d)]
 interface nsIDocShell : nsIDocShellTreeItem
 {
@@ -135,10 +150,10 @@ interface nsIDocShell : nsIDocShellTreeItem
   [notxpcom,nostdcall] readonly attribute PresShell eldestPresShell;
 
   /**
-   * Content Viewer that is currently loaded for this DocShell.  This may
+   * Document Viewer that is currently loaded for this DocShell.  This may
    * change as the underlying content changes.
    */
-  [infallible] readonly attribute nsIContentViewer contentViewer;
+  [infallible] readonly attribute nsIDocumentViewer docViewer;
 
   /**
    * Get the id of the outer window that is or will be in this docshell.
@@ -352,7 +367,7 @@ interface nsIDocShell : nsIDocShellTreeItem
    * is called for child docshells.  This method will post an event to
    * complete the simulated load after returning to the event loop.
    */
-  void beginRestore(in nsIContentViewer viewer, in boolean top);
+  void beginRestore(in nsIDocumentViewer viewer, in boolean top);
 
   /**
    * Finish firing WebProgressListener notifications and DOM events for
@@ -454,7 +469,7 @@ interface nsIDocShell : nsIDocShellTreeItem
    *        document.
    * @param aCsp the CSP to use for the new document.
    */
-  void createAboutBlankContentViewer(in nsIPrincipal aPrincipal,
+  void createAboutBlankDocumentViewer(in nsIPrincipal aPrincipal,
                                      in nsIPrincipal aPartitionedPrincipal,
                                      [optional] in nsIContentSecurityPolicy aCSP);
 
@@ -538,14 +553,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    * Returns true if this docshell is the top level content docshell.
    */
   [infallible] readonly attribute boolean isTopLevelContentDocShell;
-
-  /**
-   * Like nsIDocShellTreeItem::GetSameTypeParent, except this ignores <iframe
-   * mozbrowser> boundaries. Which no longer exist.
-   *
-   * @deprecated: Use `BrowsingContext::GetParent()` in the future.
-   */
-  nsIDocShell getSameTypeInProcessParentIgnoreBrowserBoundaries();
 
   /**
    * True iff asynchronous panning and zooming is enabled for this

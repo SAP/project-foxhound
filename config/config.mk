@@ -128,18 +128,20 @@ NO_PROFILE_GUIDED_OPTIMIZE = 1
 endif
 
 # Enable profile-based feedback
-ifneq (1,$(NO_PROFILE_GUIDED_OPTIMIZE))
 ifdef MOZ_PROFILE_GENERATE
+ifneq (1,$(NO_PROFILE_GUIDED_OPTIMIZE))
 PGO_CFLAGS += -DNS_FREE_PERMANENT_DATA=1
 PGO_CFLAGS += $(if $(filter $(notdir $<),$(notdir $(NO_PROFILE_GUIDED_OPTIMIZE))),,$(PROFILE_GEN_CFLAGS))
+endif # NO_PROFILE_GUIDED_OPTIMIZE
 PGO_LDFLAGS += $(PROFILE_GEN_LDFLAGS)
 endif # MOZ_PROFILE_GENERATE
 
 ifdef MOZ_PROFILE_USE
+ifneq (1,$(NO_PROFILE_GUIDED_OPTIMIZE))
 PGO_CFLAGS += $(if $(filter $(notdir $<),$(notdir $(NO_PROFILE_GUIDED_OPTIMIZE))),,$(PROFILE_USE_CFLAGS))
+endif # NO_PROFILE_GUIDED_OPTIMIZE
 PGO_LDFLAGS += $(PROFILE_USE_LDFLAGS)
 endif # MOZ_PROFILE_USE
-endif # NO_PROFILE_GUIDED_OPTIMIZE
 
 # Overloaded by comm builds to refer to $(commtopsrcdir), so that
 # `mail` resolves in en-US builds and in repacks.
@@ -285,7 +287,7 @@ endif # WINNT
 
 ifeq ($(OS_ARCH),WINNT)
 ifneq (,$(filter msvc clang-cl,$(CC_TYPE)))
-ifneq ($(CPU_ARCH),x86)
+ifneq ($(TARGET_CPU),x86)
 # Normal operation on 64-bit Windows needs 2 MB of stack. (Bug 582910)
 # ASAN requires 6 MB of stack.
 # Setting the stack to 8 MB to match the capability of other systems
@@ -310,7 +312,7 @@ WIN32_EXE_LDFLAGS      += -STACK:2097152
 endif
 endif
 else
-ifneq ($(CPU_ARCH),x86)
+ifneq ($(TARGET_CPU),x86)
 MOZ_PROGRAM_LDFLAGS += -Wl,-Xlink=-STACK:8388608
 else
 MOZ_PROGRAM_LDFLAGS += -Wl,-Xlink=-STACK:1572864

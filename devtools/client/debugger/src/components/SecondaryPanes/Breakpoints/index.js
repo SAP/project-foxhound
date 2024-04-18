@@ -2,21 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "react";
-import { div } from "react-dom-factories";
-import PropTypes from "prop-types";
-import { connect } from "../../../utils/connect";
+import React, { Component } from "devtools/client/shared/vendor/react";
+import { div } from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import { connect } from "devtools/client/shared/vendor/react-redux";
 
 import ExceptionOption from "./ExceptionOption";
 
 import Breakpoint from "./Breakpoint";
 import BreakpointHeading from "./BreakpointHeading";
 
-import actions from "../../../actions";
+import actions from "../../../actions/index";
 import { getSelectedLocation } from "../../../utils/selected-location";
 import { createHeadlessEditor } from "../../../utils/editor/create-editor";
 
-import { makeBreakpointId } from "../../../utils/breakpoint";
+import { makeBreakpointId } from "../../../utils/breakpoint/index";
 
 import {
   getSelectedSource,
@@ -24,12 +24,9 @@ import {
   getShouldPauseOnDebuggerStatement,
   getShouldPauseOnExceptions,
   getShouldPauseOnCaughtExceptions,
-  supportsDebuggerStatementIgnore,
-} from "../../../selectors";
+} from "../../../selectors/index";
 
-const classnames = require("devtools/client/shared/classnames.js");
-
-import "./Breakpoints.css";
+const classnames = require("resource://devtools/client/shared/classnames.js");
 
 class Breakpoints extends Component {
   static get propTypes() {
@@ -94,14 +91,12 @@ class Breakpoints extends Component {
           empty: isEmpty,
         }),
       },
-      this.props.supportsDebuggerStatementIgnore
-        ? React.createElement(ExceptionOption, {
-            className: "breakpoints-debugger-statement",
-            label: L10N.getStr("pauseOnDebuggerStatement"),
-            isChecked: shouldPauseOnDebuggerStatement,
-            onChange: this.togglePauseOnDebuggerStatement,
-          })
-        : null,
+      React.createElement(ExceptionOption, {
+        className: "breakpoints-debugger-statement",
+        label: L10N.getStr("pauseOnDebuggerStatement"),
+        isChecked: shouldPauseOnDebuggerStatement,
+        onChange: this.togglePauseOnDebuggerStatement,
+      }),
       React.createElement(ExceptionOption, {
         className: "breakpoints-exceptions",
         label: L10N.getStr("pauseOnExceptionsItem2"),
@@ -169,7 +164,6 @@ const mapStateToProps = state => ({
   shouldPauseOnDebuggerStatement: getShouldPauseOnDebuggerStatement(state),
   shouldPauseOnExceptions: getShouldPauseOnExceptions(state),
   shouldPauseOnCaughtExceptions: getShouldPauseOnCaughtExceptions(state),
-  supportsDebuggerStatementIgnore: supportsDebuggerStatementIgnore(state),
 });
 
 export default connect(mapStateToProps, {

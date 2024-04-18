@@ -7,6 +7,7 @@ headers = [
     "COLRFonts.h",
     "nsStyleConsts.h",
     "mozilla/css/Loader.h",
+    "mozilla/AnimatedPropertyID.h",
     "mozilla/css/SheetLoadData.h",
     "mozilla/DeclarationBlock.h",
     "mozilla/dom/AnimationEffectBinding.h",
@@ -210,6 +211,7 @@ allowlist-types = [
     "mozilla::Keyframe",
     "mozilla::PropertyValuePair",
     "mozilla::DeclarationBlockMutationClosure",
+    "mozilla::AnimatedPropertyID",
     "mozilla::AnimationPropertySegment",
     "mozilla::AnonymousCounterStyle",
     "mozilla::AtomArray",
@@ -364,6 +366,9 @@ opaque-types = [
     "std::namespace::atomic___base", "std::atomic__My_base",
     "std::atomic",
     "std::atomic___base",
+    "std::tuple.*", # Causes "Cannot find type _Pred in this scope" error on mac, like rust-skia#571
+    "std::.*::tuple.*",
+
     # We want everything but FontVariation and Float to be opaque but we don't
     # have negative regexes.
     "mozilla::gfx::(.{0,4}|.{6,12}|.{14,}|([^F][^o][^n][^t][^V][^a][^r][^i][^a][^t][^i][^o][^n])|([^F][^l][^o][^a][^t]))",
@@ -389,8 +394,6 @@ opaque-types = [
                             # for clang.
     "mozilla::SeenPtrs",
     "mozilla::SupportsWeakPtr",
-    "std::tuple",
-    "std::tuple_.*", # Causes "Cannot find type _Pred in this scope" error on mac, like rust-skia#571
     "SupportsWeakPtr",
     "mozilla::detail::WeakReference",
     "mozilla::WeakPtr",
@@ -429,6 +432,7 @@ cbindgen-types = [
     { gecko = "StyleAnimationTimeline", servo = "crate::values::computed::AnimationTimeline" },
     { gecko = "StyleAppearance", servo = "crate::values::specified::Appearance" },
     { gecko = "StyleAspectRatio", servo = "crate::values::computed::position::AspectRatio" },
+    { gecko = "StyleAtom", servo = "crate::Atom" },
     { gecko = "StyleComputedFontStretchRange", servo = "crate::font_face::ComputedFontStretchRange" },
     { gecko = "StyleComputedFontStyleDescriptor", servo = "crate::font_face::ComputedFontStyleDescriptor" },
     { gecko = "StyleComputedFontWeightRange", servo = "crate::font_face::ComputedFontWeightRange" },
@@ -438,6 +442,7 @@ cbindgen-types = [
     { gecko = "StyleDisplay", servo = "crate::values::specified::Display" },
     { gecko = "StyleDisplayMode", servo = "crate::gecko::media_features::DisplayMode" },
     { gecko = "StylePlatform", servo = "crate::gecko::media_features::Platform" },
+    { gecko = "StyleGtkThemeFamily", servo = "crate::gecko::media_features::GtkThemeFamily" },
     { gecko = "StylePrefersColorScheme", servo = "crate::gecko::media_features::PrefersColorScheme" },
     { gecko = "StyleScripting", servo = "crate::gecko::media_features::Scripting" },
     { gecko = "StyleDynamicRange", servo = "crate::gecko::media_features::DynamicRange" },
@@ -473,6 +478,10 @@ cbindgen-types = [
     { gecko = "StyleScrollSnapStrictness", servo = "crate::values::computed::ScrollSnapStrictness" },
     { gecko = "StyleScrollSnapType", servo = "crate::values::computed::ScrollSnapType" },
     { gecko = "StyleAnimationName", servo = "crate::values::computed::AnimationName" },
+    { gecko = "StyleAnimationDirection", servo = "crate::values::computed::AnimationDirection" },
+    { gecko = "StyleAnimationFillMode", servo = "crate::values::computed::AnimationFillMode" },
+    { gecko = "StyleAnimationPlayState", servo = "crate::values::computed::AnimationPlayState" },
+    { gecko = "StyleAnimationComposition", servo = "crate::values::computed::AnimationComposition" },
     { gecko = "StyleScrollTimelineName", servo = "crate::values::computed::ScrollTimelineName" },
     { gecko = "StyleScrollAxis", servo = "crate::values::computed::ScrollAxis" },
     { gecko = "StyleViewTimelineInset", servo = "crate::values::computed::ViewTimelineInset" },
@@ -653,6 +662,7 @@ cbindgen-types = [
     { gecko = "StyleTime", servo = "crate::values::computed::Time" },
     { gecko = "StyleXTextScale", servo = "crate::values::computed::XTextScale" },
     { gecko = "StyleZoom", servo = "crate::values::computed::Zoom" },
+    { gecko = "StyleTransitionProperty", servo = "crate::values::computed::TransitionProperty" },
     { gecko = "StyleAnimationValueMap", servo = "crate::properties::animated_properties::AnimationValueMap" },
     { gecko = "StyleAuthorStyles", servo = "crate::gecko::data::AuthorStyles" },
     { gecko = "StyleUseCounters", servo = "crate::use_counters::UseCounters" },

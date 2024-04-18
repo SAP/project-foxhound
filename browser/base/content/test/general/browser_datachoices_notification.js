@@ -54,7 +54,7 @@ function promiseNextTick() {
  * @return {Promise} Resolved when the notification is displayed.
  */
 function promiseWaitForAlertActive(aNotificationBox) {
-  let deferred = PromiseUtils.defer();
+  let deferred = Promise.withResolvers();
   aNotificationBox.stack.addEventListener(
     "AlertActive",
     function () {
@@ -71,7 +71,7 @@ function promiseWaitForAlertActive(aNotificationBox) {
  * @return {Promise} Resolved when the notification is closed.
  */
 function promiseWaitForNotificationClose(aNotification) {
-  let deferred = PromiseUtils.defer();
+  let deferred = Promise.withResolvers();
   waitForNotificationClose(aNotification, deferred.resolve);
   return deferred.promise;
 }
@@ -176,6 +176,7 @@ add_task(async function test_single_window() {
   // Wait for the infobar to be displayed.
   triggerInfoBar(10 * 1000);
   await alertShownPromise;
+  await promiseNextTick();
 
   Assert.equal(
     gNotificationBox.allNotifications.length,

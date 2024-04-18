@@ -254,7 +254,8 @@ class nsHtml5TreeOpExecutor final
   void PreloadStyle(const nsAString& aURL, const nsAString& aCharset,
                     const nsAString& aCrossOrigin, const nsAString& aMedia,
                     const nsAString& aReferrerPolicy, const nsAString& aNonce,
-                    const nsAString& aIntegrity, bool aLinkPreload);
+                    const nsAString& aIntegrity, bool aLinkPreload,
+                    const nsAString& aFetchPriority);
 
   void PreloadImage(const nsAString& aURL, const nsAString& aCrossOrigin,
                     const nsAString& aMedia, const nsAString& aSrcset,
@@ -269,10 +270,12 @@ class nsHtml5TreeOpExecutor final
                             const nsAString& aType, const nsAString& aMedia);
 
   void PreloadFont(const nsAString& aURL, const nsAString& aCrossOrigin,
-                   const nsAString& aMedia, const nsAString& aReferrerPolicy);
+                   const nsAString& aMedia, const nsAString& aReferrerPolicy,
+                   const nsAString& aFetchPriority);
 
   void PreloadFetch(const nsAString& aURL, const nsAString& aCrossOrigin,
-                    const nsAString& aMedia, const nsAString& aReferrerPolicy);
+                    const nsAString& aMedia, const nsAString& aReferrerPolicy,
+                    const nsAString& aFetchPriority);
 
   void SetSpeculationBase(const nsAString& aURL);
 

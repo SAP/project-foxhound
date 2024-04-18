@@ -48,6 +48,35 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
     MissingFFMpegFunction,
     MissingLibAVFunction,
   };
+
+  static const char* LinkResultToString(LinkResult aResult) {
+    switch (aResult) {
+      case LinkResult::Success:
+        return "Success";
+      case LinkResult::NoProvidedLib:
+        return "NoProvidedLib";
+      case LinkResult::NoAVCodecVersion:
+        return "NoAVCodecVersion";
+      case LinkResult::CannotUseLibAV57:
+        return "CannotUseLibAV57";
+      case LinkResult::BlockedOldLibAVVersion:
+        return "BlockedOldLibAVVersion";
+      case LinkResult::UnknownFutureLibAVVersion:
+        return "UnknownFutureLibAVVersion";
+      case LinkResult::UnknownFutureFFMpegVersion:
+        return "UnknownFutureFFMpegVersion";
+      case LinkResult::UnknownOlderFFMpegVersion:
+        return "UnknownOlderFFMpegVersion";
+      case LinkResult::MissingFFMpegFunction:
+        return "MissingFFMpegFunction";
+      case LinkResult::MissingLibAVFunction:
+        return "MissingLibAVFunction";
+      default:
+        break;
+    }
+    return "Unknown";
+  }
+
   // Examine mAVCodecLib, mAVUtilLib and mVALib, and attempt to resolve
   // all symbols.
   // Upon failure, the entire object will be reset and any attached libraries
@@ -78,6 +107,8 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
                                int* got_picture_ptr, const AVPacket* avpkt);
   AVCodec* (*avcodec_find_decoder)(int id);
   AVCodec* (*avcodec_find_decoder_by_name)(const char* name);
+  AVCodec* (*avcodec_find_encoder)(int id);
+  AVCodec* (*avcodec_find_encoder_by_name)(const char* name);
   void (*avcodec_flush_buffers)(AVCodecContext* avctx);
   int (*avcodec_open2)(AVCodecContext* avctx, const AVCodec* codec,
                        AVDictionary** options);
@@ -106,8 +137,15 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
   int (*avcodec_default_get_buffer2)(AVCodecContext* s, AVFrame* frame,
                                      int flags);
 
+  // libavcodec >= v57
+  AVPacket* (*av_packet_alloc)(void);
+  void (*av_packet_unref)(AVPacket* pkt);
+  void (*av_packet_free)(AVPacket** pkt);
+
   // libavcodec v58 and later only
   int (*avcodec_send_packet)(AVCodecContext* avctx, const AVPacket* avpkt);
+  int (*avcodec_receive_packet)(AVCodecContext* avctx, AVPacket* avpkt);
+  int (*avcodec_send_frame)(AVCodecContext* avctx, const AVFrame* frame);
   int (*avcodec_receive_frame)(AVCodecContext* avctx, AVFrame* frame);
 
   // libavcodec optional
@@ -131,11 +169,15 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
   int (*av_dict_set)(AVDictionary** pm, const char* key, const char* value,
                      int flags);
   void (*av_dict_free)(AVDictionary** m);
+  int (*av_opt_set)(void* obj, const char* name, const char* val,
+                    int search_flags);
 
   // libavutil v55 and later only
   AVFrame* (*av_frame_alloc)();
   void (*av_frame_free)(AVFrame** frame);
   void (*av_frame_unref)(AVFrame* frame);
+  int (*av_frame_get_buffer)(AVFrame* frame, int align);
+  int (*av_frame_make_writable)(AVFrame* frame);
   AVBufferRef* (*av_buffer_create)(uint8_t* data, int size,
                                    void (*free)(void* opaque, uint8_t* data),
                                    void* opaque, int flags);

@@ -13,7 +13,9 @@
   preview/interventions.ftl                        (../components/urlbar/content/interventions.ftl)
   preview/enUS-searchFeatures.ftl                  (../components/urlbar/content/enUS-searchFeatures.ftl)
   preview/shopping.ftl                             (../components/shopping/content/shopping.ftl)
-  preview/onboarding.ftl                           (../components/newtab/aboutwelcome/content/onboarding.ftl)
+  preview/onboarding.ftl                           (../components/aboutwelcome/content/onboarding.ftl)
+  preview/appmenu.ftl                              (../../services/fxaccounts/content/appmenu.ftl)
+  preview/select-translations.ftl                  (../locales-preview/select-translations.ftl)
   browser                                          (%browser/**/*.ftl)
 
 @AB_CD@.jar:

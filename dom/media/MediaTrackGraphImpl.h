@@ -137,11 +137,11 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
                                nsISerialEventTarget* aMainThread);
   static MediaTrackGraphImpl* GetInstance(
       GraphDriverType aGraphDriverRequested, uint64_t aWindowID,
-      TrackRate aSampleRate, CubebUtils::AudioDeviceID aOutputDeviceID,
+      TrackRate aSampleRate, CubebUtils::AudioDeviceID aPrimaryOutputDeviceID,
       nsISerialEventTarget* aMainThread);
   static MediaTrackGraphImpl* GetInstanceIfExists(
       uint64_t aWindowID, TrackRate aSampleRate,
-      CubebUtils::AudioDeviceID aOutputDeviceID);
+      CubebUtils::AudioDeviceID aPrimaryOutputDeviceID);
   // For GraphHashSet:
   struct Lookup;
   operator Lookup() const;
@@ -202,7 +202,38 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
     AppendMessage(WrapUnique(new MediaTrack::ControlMessageWithNoShutdown(
         std::forward<Function>(aFunction))));
   }
+  /**
+   * Append to the message queue a control message to execute a given lambda
+   * function with a single IsInShutdown parameter.  A No argument indicates
+   * execution on the thread of a graph that is still running.  A Yes argument
+   * indicates execution on the main thread when the graph has been forced to
+   * shut down.
+   **/
+  template <typename Function>
+  void QueueControlOrShutdownMessage(Function&& aFunction) {
+    AppendMessage(WrapUnique(new MediaTrack::ControlOrShutdownMessage(
+        std::forward<Function>(aFunction))));
+  }
+  /* Add or remove an audio output for this track.  At most one output may be
+   * registered per key.  aPreferredSampleRate is the rate preferred by the
+   * output device; it may be zero to indicate the preferred rate for the
+   * default device; it is unused when aDeviceID is the graph's primary output.
+   */
+  void RegisterAudioOutput(MediaTrack* aTrack, void* aKey,
+                           CubebUtils::AudioDeviceID aDeviceID,
+                           TrackRate aPreferredSampleRate);
+  void UnregisterAudioOutput(MediaTrack* aTrack, void* aKey);
 
+  void SetAudioOutputVolume(MediaTrack* aTrack, void* aKey, float aVolume);
+  /* Manage the creation and destruction of CrossGraphReceivers.
+   * aPreferredSampleRate is the rate preferred by the output device. */
+  void IncrementOutputDeviceRefCnt(CubebUtils::AudioDeviceID aDeviceID,
+                                   TrackRate aPreferredSampleRate);
+  void DecrementOutputDeviceRefCnt(CubebUtils::AudioDeviceID aDeviceID);
+  /* Send a control message to update mOutputDevices for main thread changes to
+   * mAudioOutputParams. */
+  void UpdateAudioOutput(MediaTrack* aTrack,
+                         CubebUtils::AudioDeviceID aDeviceID);
   /**
    * Dispatches a runnable from any thread to the correct main thread for this
    * MediaTrackGraph.
@@ -258,17 +289,18 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Proxy method called by GraphDriver to iterate the graph.
    * If this graph was created with GraphRunType SINGLE_THREAD, mGraphRunner
    * will take care of calling OneIterationImpl from its thread. Otherwise,
-   * OneIterationImpl is called directly. Output from the graph gets mixed into
-   * aMixer, if it is non-null.
+   * OneIterationImpl is called directly. Mixed audio output from the graph is
+   * passed into aMixerReceiver, if it is non-null.
    */
   IterationResult OneIteration(GraphTime aStateTime, GraphTime aIterationEnd,
-                               AudioMixer* aMixer) override;
+                               MixerCallbackReceiver* aMixerReceiver) override;
 
   /**
    * Returns true if this MediaTrackGraph should keep running
    */
   IterationResult OneIterationImpl(GraphTime aStateTime,
-                                   GraphTime aIterationEnd, AudioMixer* aMixer);
+                                   GraphTime aIterationEnd,
+                                   MixerCallbackReceiver* aMixerReceiver);
 
   /**
    * Called from the driver, when the graph thread is about to stop, to tell
@@ -340,7 +372,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Do all the processing and play the audio and video, from
    * mProcessedTime to mStateComputedTime.
    */
-  void Process(AudioMixer* aMixer);
+  void Process(MixerCallbackReceiver* aMixerReceiver);
 
   /**
    * For use during ProcessedMediaTrack::ProcessInput() or
@@ -350,12 +382,27 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    */
   void RunMessageAfterProcessing(UniquePtr<ControlMessageInterface> aMessage);
 
+  /* From the main thread, ask the MTG to resolve the returned promise when
+   * the device specified has started.
+   * A null aDeviceID indicates the default audio output device.
+   * The promise is rejected with NS_ERROR_INVALID_ARG if aSink does not
+   * correspond to any output devices used by the graph, or
+   * NS_ERROR_NOT_AVAILABLE if outputs to the device are removed or
+   * NS_ERROR_ILLEGAL_DURING_SHUTDOWN if the graph is force shut down
+   * before the promise could be resolved.
+   */
+  using GraphStartedPromise = GenericPromise;
+  RefPtr<GraphStartedPromise> NotifyWhenDeviceStarted(
+      CubebUtils::AudioDeviceID aDeviceID) override;
+
   /**
    * Resolve the GraphStartedPromise when the driver has started processing on
    * the audio thread after the device has started.
+   * (Audio is initially processed in the FallbackDriver's thread while the
+   * device is starting up.)
    */
-  void NotifyWhenGraphStarted(RefPtr<MediaTrack> aTrack,
-                              MozPromiseHolder<GraphStartedPromise>&& aHolder);
+  void NotifyWhenPrimaryDeviceStarted(
+      MozPromiseHolder<GraphStartedPromise>&& aHolder);
 
   /**
    * Apply an AudioContext operation (suspend/resume/close), on the graph
@@ -412,27 +459,21 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   TrackTime GraphTimeToTrackTimeWithBlocking(const MediaTrack* aTrack,
                                              GraphTime aTime) const;
 
+ private:
   /**
-   * If aTrack needs an audio track but doesn't have one, create it.
-   * If aTrack doesn't need an audio track but has one, destroy it.
+   * Set mOutputDeviceForAEC to indicate the audio output to be passed as the
+   * reverse stream for audio echo cancellation.  Graph thread.
    */
-  void CreateOrDestroyAudioTracks(MediaTrack* aTrack);
+  void SelectOutputDeviceForAEC();
   /**
    * Queue audio (mix of track audio and silence for blocked intervals)
    * to the audio output track. Returns the number of frames played.
    */
-  struct TrackAndKey {
-    MediaTrack* mTrack;
-    void* mKey;
-  };
-  struct TrackKeyAndVolume {
-    MediaTrack* mTrack;
-    void* mKey;
-    float mVolume;
-  };
-  TrackTime PlayAudio(AudioMixer* aMixer, const TrackKeyAndVolume& aTkv,
-                      GraphTime aPlayedTime);
+  struct TrackAndVolume;
+  TrackTime PlayAudio(const TrackAndVolume& aOutput, GraphTime aPlayedTime,
+                      uint32_t aOutputChannelCount);
 
+ public:
   /* Runs off a message on the graph thread when something requests audio from
    * an input audio device of ID aID, and delivers the input audio frames to
    * aListener. */
@@ -450,12 +491,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * audio from this audio input device. */
   virtual void CloseAudioInput(DeviceInputTrack* aTrack) override;
 
-  /* Add or remove an audio output for this track. All tracks that have an
-   * audio output are mixed and written to a single audio output stream. */
-  void RegisterAudioOutput(MediaTrack* aTrack, void* aKey);
-  void UnregisterAudioOutput(MediaTrack* aTrack, void* aKey);
   void UnregisterAllAudioOutputs(MediaTrack* aTrack);
-  void SetAudioOutputVolume(MediaTrack* aTrack, void* aKey, float aVolume);
 
   /* Called on the graph thread when the input device settings should be
    * reevaluated, for example, if the channel count of the input track should
@@ -464,8 +500,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
 
   /* Called on the graph thread when there is new output data for listeners.
    * This is the mixed audio output of this MediaTrackGraph. */
-  void NotifyOutputData(AudioDataValue* aBuffer, size_t aFrames,
-                        TrackRate aRate, uint32_t aChannels) override;
+  void NotifyOutputData(const AudioChunk& aChunk);
   /* Called on the graph thread after an AudioCallbackDriver with an input
    * stream has stopped. */
   void NotifyInputStopped() override;
@@ -522,8 +557,16 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
     mTrackOrderDirty = true;
   }
 
-  // Get the current maximum channel count. Graph thread only.
-  uint32_t AudioOutputChannelCount() const;
+ private:
+  // Get the current maximum channel count required for a device.
+  // aDevice is an element of mOutputDevices.  Graph thread only.
+  struct OutputDeviceEntry;
+  uint32_t AudioOutputChannelCount(const OutputDeviceEntry& aDevice) const;
+  // Get the current maximum channel count for audio output through an
+  // AudioCallbackDriver.  Graph thread only.
+  uint32_t PrimaryOutputChannelCount() const;
+
+ public:
   // Set a new maximum channel count. Graph thread only.
   void SetMaxOutputChannelCount(uint32_t aMaxChannelCount);
 
@@ -652,6 +695,11 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
 
   // Data members
 
+  /**
+   * The ID of the inner Window which uses this graph, or zero for offline
+   * graphs.
+   */
+  const uint64_t mWindowID;
   /*
    * If set, the GraphRunner class handles handing over data from audio
    * callbacks to a common single thread, shared across GraphDrivers.
@@ -748,19 +796,6 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * still waiting for the next iteration to finish.
    */
   nsTArray<nsCOMPtr<nsIRunnable>> mPendingUpdateRunnables;
-
-  /**
-   * The ID of the inner Window which uses this graph, or zero for offline
-   * graphs.
-   */
-  const uint64_t mWindowID;
-  /**
-   * Devices to use for cubeb output, or nullptr for default device.
-   * A MediaTrackGraph always has an output (even if silent).
-   *
-   * All mOutputDeviceID access is on the graph thread.
-   */
-  const CubebUtils::AudioDeviceID mOutputDeviceID;
 
   /**
    * List of resume operations waiting for a switch to an AudioCallbackDriver.
@@ -993,11 +1028,85 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Track for window audio capture.
    */
   nsTArray<WindowAndTrack> mWindowCaptureTracks;
+
   /**
-   * Tracks that have their audio output mixed and written to an audio output
-   * device.
+   * Main thread unordered record of audio outputs, keyed by Track and output
+   * key.  Used to determine when an output device is no longer in use and to
+   * record the volumes corresponding to each key.  An array is used as a
+   * simple hash table, on the assumption that the number of outputs is small.
    */
-  nsTArray<TrackKeyAndVolume> mAudioOutputs;
+  struct TrackAndKey {
+    MOZ_UNSAFE_REF("struct exists only if track exists") MediaTrack* mTrack;
+    void* mKey;
+  };
+  struct TrackKeyDeviceAndVolume {
+    MOZ_UNSAFE_REF("struct exists only if track exists")
+    MediaTrack* const mTrack;
+    void* const mKey;
+    const CubebUtils::AudioDeviceID mDeviceID;
+    float mVolume;
+
+    bool operator==(const TrackAndKey& aTrackAndKey) const {
+      return mTrack == aTrackAndKey.mTrack && mKey == aTrackAndKey.mKey;
+    }
+  };
+  nsTArray<TrackKeyDeviceAndVolume> mAudioOutputParams;
+  /**
+   * Main thread record of which audio output devices are active, keyed by
+   * AudioDeviceID, and their CrossGraphReceivers if any.
+   * mOutputDeviceRefCnts[0] always exists and corresponds to the primary
+   * audio output device, which an AudioCallbackDriver will use if active.
+   * mCount may be zero for the first entry only.  */
+  struct DeviceReceiverAndCount {
+    const CubebUtils::AudioDeviceID mDeviceID;
+    // For secondary devices, mReceiver receives audio output.
+    // Null for the primary output device, fed by an AudioCallbackDriver.
+    const RefPtr<CrossGraphReceiver> mReceiver;
+    size_t mRefCnt;  // number of mAudioOutputParams entries with this device
+
+    bool operator==(CubebUtils::AudioDeviceID aDeviceID) const {
+      return mDeviceID == aDeviceID;
+    }
+  };
+  nsTArray<DeviceReceiverAndCount> mOutputDeviceRefCnts;
+  /**
+   * Graph thread record of devices to which audio outputs are mixed, keyed by
+   * AudioDeviceID.  All tracks that have an audio output to each device are
+   * grouped for mixing their outputs to a single stream.
+   * mOutputDevices[0] always exists and corresponds to the primary audio
+   * output device, which an AudioCallbackDriver will use if active.
+   * An AudioCallbackDriver may be active when no audio outputs have audio
+   * outputs.
+   */
+  struct TrackAndVolume {
+    MOZ_UNSAFE_REF("struct exists only if track exists")
+    MediaTrack* const mTrack;
+    float mVolume;
+
+    bool operator==(const MediaTrack* aTrack) const { return mTrack == aTrack; }
+  };
+  struct OutputDeviceEntry {
+    const CubebUtils::AudioDeviceID mDeviceID;
+    // For secondary devices, mReceiver receives audio output.
+    // Null for the primary output device, fed by an AudioCallbackDriver.
+    const RefPtr<CrossGraphReceiver> mReceiver;
+    /**
+     * Mapping from MediaTrack to volume for all tracks that have their audio
+     * output mixed and written to this output device.
+     */
+    nsTArray<TrackAndVolume> mTrackOutputs;
+
+    bool operator==(CubebUtils::AudioDeviceID aDeviceID) const {
+      return mDeviceID == aDeviceID;
+    }
+  };
+  nsTArray<OutputDeviceEntry> mOutputDevices;
+  /**
+   * mOutputDeviceForAEC identifies the audio output to be passed as the
+   * reverse stream for audio echo cancellation.  Used only if a microphone is
+   * active.  Graph thread.
+   */
+  CubebUtils::AudioDeviceID mOutputDeviceForAEC = nullptr;
 
   /**
    * Global volume scale. Used when running tests so that the output is not too
@@ -1049,20 +1158,14 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Manage the native or non-native input device in graph. Graph thread only.
    */
   DeviceInputTrackManager mDeviceInputTrackManagerGraphThread;
+  /**
+   * The mixer that the graph mixes into during an iteration. This is here
+   * rather than on the stack so that its buffer is not allocated each
+   * iteration. Graph thread only.
+   */
+  AudioMixer mMixer;
 };
 
 }  // namespace mozilla
-
-template <>
-class nsDefaultComparator<mozilla::MediaTrackGraphImpl::TrackKeyAndVolume,
-                          mozilla::MediaTrackGraphImpl::TrackAndKey> {
- public:
-  bool Equals(
-      const mozilla::MediaTrackGraphImpl::TrackKeyAndVolume& aElement,
-      const mozilla::MediaTrackGraphImpl::TrackAndKey& aTrackAndKey) const {
-    return aElement.mTrack == aTrackAndKey.mTrack &&
-           aElement.mKey == aTrackAndKey.mKey;
-  }
-};
 
 #endif /* MEDIATRACKGRAPHIMPL_H_ */

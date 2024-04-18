@@ -325,9 +325,15 @@ impl DataStorageInner {
             .filter(|slot| !slot.is_empty())
             .map(|slot| (slot.key.clone(), slot.slot_index))
             .collect();
-        data_storage::entries
-            .get(&self.name)
-            .add(self.persistent_table.len() as i32);
+        let num_entries = self.persistent_table.len() as i64;
+        match self.name.as_str() {
+            "AlternateServices" => data_storage::alternate_services.set(num_entries),
+            "ClientAuthRememberList" => data_storage::client_auth_remember_list.set(num_entries),
+            "SiteSecurityServiceState" => {
+                data_storage::site_security_service_state.set(num_entries)
+            }
+            _ => panic!("unknown nsIDataStorageManager::DataStorage"),
+        }
         Ok(())
     }
 
@@ -399,7 +405,6 @@ impl DataStorageInner {
     fn read_old_format(&mut self, path: PathBuf) -> Result<(), nsresult> {
         let file = File::open(path).map_err(|_| NS_ERROR_FAILURE)?;
         let reader = BufReader::new(file);
-        let mut migration_okay = true;
         // First read each line in the old file into the persistent slots list.
         // The old format was limited to 1024 lines, so only expect that many.
         for line in reader.lines().flatten().take(1024) {
@@ -407,19 +412,16 @@ impl DataStorageInner {
                 Ok(entry) => {
                     if self.persistent_slots.len() >= MAX_SLOTS {
                         warn!("too many lines in old DataStorage format");
-                        migration_okay = false;
                         break;
                     }
                     if !entry.is_empty() {
                         self.persistent_slots.push(entry);
                     } else {
                         warn!("empty entry in old DataStorage format?");
-                        migration_okay = false;
                     }
                 }
                 Err(_) => {
                     warn!("failed to migrate a line from old DataStorage format");
-                    migration_okay = false;
                 }
             }
         }
@@ -432,10 +434,15 @@ impl DataStorageInner {
             .collect();
         // Finally, write out the migrated data to the new backing file.
         self.async_write_entries(self.persistent_slots.clone())?;
-        data_storage::migration.get(&self.name).set(migration_okay);
-        data_storage::entries
-            .get(&self.name)
-            .add(self.persistent_table.len() as i32);
+        let num_entries = self.persistent_table.len() as i64;
+        match self.name.as_str() {
+            "AlternateServices" => data_storage::alternate_services.set(num_entries),
+            "ClientAuthRememberList" => data_storage::client_auth_remember_list.set(num_entries),
+            "SiteSecurityServiceState" => {
+                data_storage::site_security_service_state.set(num_entries)
+            }
+            _ => panic!("unknown nsIDataStorageManager::DataStorage"),
+        }
         Ok(())
     }
 

@@ -197,6 +197,13 @@ class alignas(16) Instance {
   // Pointer that should be freed (due to padding before the Instance).
   void* allocatedBase_;
 
+  // Fields from the JS context for memory allocation, stashed on the instance
+  // so it can be accessed from JIT code.
+  const void* addressOfNurseryPosition_;
+#ifdef JS_GC_ZEAL
+  const void* addressOfGCZealModeBits_;
+#endif
+
   // The data must be the last field.  Globals for the module start here
   // and are inline in this structure.  16-byte alignment is required for SIMD
   // data.
@@ -303,6 +310,14 @@ class alignas(16) Instance {
   static constexpr size_t offsetInData(size_t offset) {
     return offsetOfData() + offset;
   }
+  static constexpr size_t offsetOfAddressOfNurseryPosition() {
+    return offsetof(Instance, addressOfNurseryPosition_);
+  }
+#ifdef JS_GC_ZEAL
+  static constexpr size_t offsetOfAddressOfGCZealModeBits() {
+    return offsetof(Instance, addressOfGCZealModeBits_);
+  }
+#endif
 
   JSContext* cx() const { return cx_; }
   void* debugTrapHandler() const { return debugTrapHandler_; }
@@ -554,6 +569,26 @@ class alignas(16) Instance {
                          const wasm::TypeDef* typeDef);
   static int32_t intrI8VecMul(Instance* instance, uint32_t dest, uint32_t src1,
                               uint32_t src2, uint32_t len, uint8_t* memBase);
+
+  static void* stringFromWTF16Array(Instance* instance, void* arrayArg,
+                                    uint32_t start, uint32_t len);
+  static int32_t stringToWTF16Array(Instance* instance, void* stringArg,
+                                    void* arrayArg, uint32_t start);
+  static void* stringFromCharCode(Instance* instance, uint32_t charCode);
+  static void* stringFromCodePoint(Instance* instance, uint32_t codePoint);
+  static int32_t stringCharCodeAt(Instance* instance, void* stringArg,
+                                  uint32_t index);
+  static int32_t stringCodePointAt(Instance* instance, void* stringArg,
+                                   uint32_t index);
+  static int32_t stringLength(Instance* instance, void* stringArg);
+  static void* stringConcatenate(Instance* instance, void* firstStringArg,
+                                 void* secondStringArg);
+  static void* stringSubstring(Instance* instance, void* stringArg,
+                               int32_t startIndex, int32_t endIndex);
+  static int32_t stringEquals(Instance* instance, void* firstStringArg,
+                              void* secondStringArg);
+  static int32_t stringCompare(Instance* instance, void* firstStringArg,
+                               void* secondStringArg);
 };
 
 bool ResultsToJSValue(JSContext* cx, ResultType type, void* registerResultLoc,

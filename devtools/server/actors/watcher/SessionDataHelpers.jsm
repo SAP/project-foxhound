@@ -31,19 +31,16 @@ if (typeof module == "object") {
     true
   );
 } else {
-  const { XPCOMUtils } = ChromeUtils.importESModule(
-    "resource://gre/modules/XPCOMUtils.sys.mjs"
-  );
   // Ignore the "duplicate" definitions here as this are also defined
   // in the if block above.
   // eslint-disable-next-line mozilla/valid-lazy
-  XPCOMUtils.defineLazyGetter(lazy, "validateBreakpointLocation", () => {
+  ChromeUtils.defineLazyGetter(lazy, "validateBreakpointLocation", () => {
     return ChromeUtils.import(
       "resource://devtools/shared/validate-breakpoint.jsm"
     ).validateBreakpointLocation;
   });
   // eslint-disable-next-line mozilla/valid-lazy
-  XPCOMUtils.defineLazyGetter(lazy, "validateEventBreakpoint", () => {
+  ChromeUtils.defineLazyGetter(lazy, "validateEventBreakpoint", () => {
     const { loader } = ChromeUtils.importESModule(
       "resource://devtools/shared/loader/Loader.sys.mjs"
     );
@@ -57,6 +54,7 @@ if (typeof module == "object") {
 const SUPPORTED_DATA = {
   BLACKBOXING: "blackboxing",
   BREAKPOINTS: "breakpoints",
+  BROWSER_ELEMENT_HOST: "browser-element-host",
   XHR_BREAKPOINTS: "xhr-breakpoints",
   EVENT_BREAKPOINTS: "event-breakpoints",
   RESOURCES: "resources",

@@ -70,8 +70,8 @@ uint32_t ScreenDeviceInfoImpl::NumberOfDevices() {
 int32_t ScreenDeviceInfoImpl::GetDeviceName(
     uint32_t aDeviceNumber, char* aDeviceNameUTF8, uint32_t aDeviceNameUTF8Size,
     char* aDeviceUniqueIdUTF8, uint32_t aDeviceUniqueIdUTF8Size,
-    char* aProductUniqueIdUTF8, uint32_t aProductUniqueIdUTF8Size,
-    pid_t* aPid) {
+    char* aProductUniqueIdUTF8, uint32_t aProductUniqueIdUTF8Size, pid_t* aPid,
+    bool* aDeviceIsPlaceholder) {
   DesktopDisplayDevice desktopDisplayDevice;
 
   // always initialize output
@@ -160,8 +160,8 @@ uint32_t WindowDeviceInfoImpl::NumberOfDevices() {
 int32_t WindowDeviceInfoImpl::GetDeviceName(
     uint32_t aDeviceNumber, char* aDeviceNameUTF8, uint32_t aDeviceNameUTF8Size,
     char* aDeviceUniqueIdUTF8, uint32_t aDeviceUniqueIdUTF8Size,
-    char* aProductUniqueIdUTF8, uint32_t aProductUniqueIdUTF8Size,
-    pid_t* aPid) {
+    char* aProductUniqueIdUTF8, uint32_t aProductUniqueIdUTF8Size, pid_t* aPid,
+    bool* aDeviceIsPlaceholder) {
   DesktopDisplayDevice desktopDisplayDevice;
 
   // always initialize output
@@ -245,8 +245,8 @@ uint32_t BrowserDeviceInfoImpl::NumberOfDevices() {
 int32_t BrowserDeviceInfoImpl::GetDeviceName(
     uint32_t aDeviceNumber, char* aDeviceNameUTF8, uint32_t aDeviceNameUTF8Size,
     char* aDeviceUniqueIdUTF8, uint32_t aDeviceUniqueIdUTF8Size,
-    char* aProductUniqueIdUTF8, uint32_t aProductUniqueIdUTF8Size,
-    pid_t* aPid) {
+    char* aProductUniqueIdUTF8, uint32_t aProductUniqueIdUTF8Size, pid_t* aPid,
+    bool* aDeviceIsPlaceholder) {
   DesktopTab desktopTab;
 
   // always initialize output
@@ -711,12 +711,14 @@ void DesktopCaptureImpl::OnCaptureResult(DesktopCapturer::Result aResult,
 
 void DesktopCaptureImpl::NotifyOnFrame(const VideoFrame& aFrame) {
   RTC_DCHECK_RUN_ON(&mCaptureThreadChecker);
-  MOZ_ASSERT(Timestamp::Millis(aFrame.render_time_ms()) >
-             mNextFrameMinimumTime);
   // Set the next frame's minimum time to ensure two consecutive frames don't
   // have an identical render time (which is in milliseconds).
-  mNextFrameMinimumTime =
+  Timestamp nextFrameMinimumTime =
       Timestamp::Millis(aFrame.render_time_ms()) + TimeDelta::Millis(1);
+
+  MOZ_ASSERT(nextFrameMinimumTime >= mNextFrameMinimumTime);
+
+  mNextFrameMinimumTime = nextFrameMinimumTime;
   auto callbacks = mCallbacks.Lock();
   for (auto* cb : *callbacks) {
     cb->OnFrame(aFrame);

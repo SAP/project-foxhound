@@ -46,7 +46,7 @@ const DUMMY_PAGE_URI = Services.io.newURI(
   "chrome://extensions/content/dummy.xhtml"
 );
 
-var { BaseContext, CanOfAPIs, SchemaAPIManager, SpreadArgs, defineLazyGetter } =
+var { BaseContext, CanOfAPIs, SchemaAPIManager, SpreadArgs, redefineGetter } =
   ExtensionCommon;
 
 var {
@@ -72,7 +72,6 @@ schemaURLs.add("chrome://extensions/content/schemas/experiments.json");
 
 let GlobalManager;
 let ParentAPIManager;
-let StartupCache;
 
 function verifyActorForContext(actor, context) {
   if (JSWindowActorParent.isInstance(actor)) {
@@ -234,16 +233,19 @@ let apiManager = new (class extends SchemaAPIManager {
   }
 })();
 
+/**
+ * @typedef {object} ParentPort
+ * @property {boolean} [native]
+ * @property {string} [senderChildId]
+ * @property {function(StructuredCloneHolder): any} onPortMessage
+ * @property {Function} onPortDisconnect
+ */
+
 // Receives messages related to the extension messaging API and forwards them
 // to relevant child messengers.  Also handles Native messaging and GeckoView.
+/** @typedef {typeof ProxyMessenger} NativeMessenger */
 const ProxyMessenger = {
-  /**
-   * @typedef {object} ParentPort
-   * @property {function(StructuredCloneHolder)} onPortMessage
-   * @property {function()} onPortDisconnect
-   */
-
-  /** @type {Map<number, ParentPort>} */
+  /** @type {Map<number, Partial<ParentPort>&Promise<ParentPort>>} */
   ports: new Map(),
 
   init() {
@@ -361,6 +363,7 @@ const ProxyMessenger = {
     }
 
     // PortMessages that follow will need to wait for the port to be opened.
+    /** @type {callback} */
     let resolvePort;
     this.ports.set(arg.portId, new Promise(res => (resolvePort = res)));
 
@@ -660,26 +663,25 @@ class ProxyContextParent extends BaseContext {
     super.unload();
     apiManager.emit("proxy-context-unload", this);
   }
+
+  get apiCan() {
+    const apiCan = new CanOfAPIs(this, this.extension.apiManager, {});
+    return redefineGetter(this, "apiCan", apiCan);
+  }
+
+  get apiObj() {
+    return redefineGetter(this, "apiObj", this.apiCan.root);
+  }
+
+  get sandbox() {
+    // Note: Blob and URL globals are used in ext-contentScripts.js.
+    const sandbox = Cu.Sandbox(this.principal, {
+      sandboxName: this.uri.spec,
+      wantGlobalProperties: ["Blob", "URL"],
+    });
+    return redefineGetter(this, "sandbox", sandbox);
+  }
 }
-
-defineLazyGetter(ProxyContextParent.prototype, "apiCan", function () {
-  let obj = {};
-  let can = new CanOfAPIs(this, this.extension.apiManager, obj);
-  return can;
-});
-
-defineLazyGetter(ProxyContextParent.prototype, "apiObj", function () {
-  return this.apiCan.root;
-});
-
-defineLazyGetter(ProxyContextParent.prototype, "sandbox", function () {
-  // NOTE: the required Blob and URL globals are used in the ext-registerContentScript.js
-  // API module to convert JS and CSS data into blob URLs.
-  return Cu.Sandbox(this.principal, {
-    sandboxName: this.uri.spec,
-    wantGlobalProperties: ["Blob", "URL"],
-  });
-});
 
 /**
  * The parent side of proxied API context for extension content script
@@ -722,11 +724,6 @@ class ExtensionPageContextParent extends ProxyContextParent {
     if (data.tabId >= 0) {
       return data.tabId;
     }
-  }
-
-  onBrowserChange(browser) {
-    super.onBrowserChange(browser);
-    this.xulBrowser = browser;
   }
 
   unload() {
@@ -1400,7 +1397,7 @@ class HiddenXULWindow {
       }
     }
 
-    let awaitFrameLoader = Promise.resolve();
+    let awaitFrameLoader;
 
     if (browser.getAttribute("remote") === "true") {
       awaitFrameLoader = promiseEvent(browser, "XULFrameLoaderCreated");
@@ -1779,7 +1776,7 @@ const DebugUtils = {
  * was received by the message manager. The promise is rejected if the message
  * manager was closed before a message was received.
  *
- * @param {MessageListenerManager} messageManager
+ * @param {nsIMessageListenerManager} messageManager
  *        The message manager on which to listen for messages.
  * @param {string} messageName
  *        The message to listen for.
@@ -2051,140 +2048,6 @@ let IconDetails = {
   },
 };
 
-// A cache to support faster initialization of extensions at browser startup.
-// All cached data is removed when the browser is updated.
-// Extension-specific data is removed when the add-on is updated.
-StartupCache = {
-  STORE_NAMES: Object.freeze([
-    "general",
-    "locales",
-    "manifests",
-    "other",
-    "permissions",
-    "schemas",
-    "menus",
-  ]),
-
-  _ensureDirectoryPromise: null,
-  _saveTask: null,
-
-  _ensureDirectory() {
-    if (this._ensureDirectoryPromise === null) {
-      this._ensureDirectoryPromise = IOUtils.makeDirectory(
-        PathUtils.parent(this.file),
-        {
-          ignoreExisting: true,
-          createAncestors: true,
-        }
-      );
-    }
-
-    return this._ensureDirectoryPromise;
-  },
-
-  // When the application version changes, this file is removed by
-  // RemoveComponentRegistries in nsAppRunner.cpp.
-  file: PathUtils.join(
-    Services.dirsvc.get("ProfLD", Ci.nsIFile).path,
-    "startupCache",
-    "webext.sc.lz4"
-  ),
-
-  async _saveNow() {
-    let data = new Uint8Array(lazy.aomStartup.encodeBlob(this._data));
-    await this._ensureDirectoryPromise;
-    await IOUtils.write(this.file, data, { tmpPath: `${this.file}.tmp` });
-    Services.telemetry.scalarSet(
-      "extensions.startupCache.write_byteLength",
-      data.byteLength
-    );
-  },
-
-  save() {
-    this._ensureDirectory();
-
-    if (!this._saveTask) {
-      this._saveTask = new lazy.DeferredTask(() => this._saveNow(), 5000);
-
-      IOUtils.profileBeforeChange.addBlocker(
-        "Flush WebExtension StartupCache",
-        async () => {
-          await this._saveTask.finalize();
-          this._saveTask = null;
-        }
-      );
-    }
-
-    return this._saveTask.arm();
-  },
-
-  _data: null,
-  async _readData() {
-    let result = new Map();
-    try {
-      Glean.extensions.startupCacheLoadTime.start();
-      let { buffer } = await IOUtils.read(this.file);
-
-      result = lazy.aomStartup.decodeBlob(buffer);
-      Glean.extensions.startupCacheLoadTime.stop();
-    } catch (e) {
-      Glean.extensions.startupCacheLoadTime.cancel();
-      if (!DOMException.isInstance(e) || e.name !== "NotFoundError") {
-        Cu.reportError(e);
-      }
-
-      Services.telemetry.keyedScalarAdd(
-        "extensions.startupCache.read_errors",
-        lazy.getErrorNameForTelemetry(e),
-        1
-      );
-    }
-
-    this._data = result;
-    return result;
-  },
-
-  get dataPromise() {
-    if (!this._dataPromise) {
-      this._dataPromise = this._readData();
-    }
-    return this._dataPromise;
-  },
-
-  clearAddonData(id) {
-    return Promise.all([
-      this.general.delete(id),
-      this.locales.delete(id),
-      this.manifests.delete(id),
-      this.permissions.delete(id),
-      this.menus.delete(id),
-    ]).catch(e => {
-      // Ignore the error. It happens when we try to flush the add-on
-      // data after the AddonManager has flushed the entire startup cache.
-    });
-  },
-
-  observe(subject, topic, data) {
-    if (topic === "startupcache-invalidate") {
-      this._data = new Map();
-      this._dataPromise = Promise.resolve(this._data);
-    }
-  },
-
-  get(extension, path, createFunc) {
-    return this.general.get(
-      [extension.id, extension.version, ...path],
-      createFunc
-    );
-  },
-
-  delete(extension, path) {
-    return this.general.delete([extension.id, extension.version, ...path]);
-  },
-};
-
-Services.obs.addObserver(StartupCache, "startupcache-invalidate");
-
 class CacheStore {
   constructor(storeName) {
     this.storeName = storeName;
@@ -2251,9 +2114,131 @@ class CacheStore {
   }
 }
 
-for (let name of StartupCache.STORE_NAMES) {
-  StartupCache[name] = new CacheStore(name);
-}
+// A cache to support faster initialization of extensions at browser startup.
+// All cached data is removed when the browser is updated.
+// Extension-specific data is removed when the add-on is updated.
+var StartupCache = {
+  _ensureDirectoryPromise: null,
+  _saveTask: null,
+
+  _ensureDirectory() {
+    if (this._ensureDirectoryPromise === null) {
+      this._ensureDirectoryPromise = IOUtils.makeDirectory(
+        PathUtils.parent(this.file),
+        {
+          ignoreExisting: true,
+          createAncestors: true,
+        }
+      );
+    }
+
+    return this._ensureDirectoryPromise;
+  },
+
+  // When the application version changes, this file is removed by
+  // RemoveComponentRegistries in nsAppRunner.cpp.
+  file: PathUtils.join(
+    Services.dirsvc.get("ProfLD", Ci.nsIFile).path,
+    "startupCache",
+    "webext.sc.lz4"
+  ),
+
+  async _saveNow() {
+    let data = new Uint8Array(lazy.aomStartup.encodeBlob(this._data));
+    await this._ensureDirectoryPromise;
+    await IOUtils.write(this.file, data, { tmpPath: `${this.file}.tmp` });
+
+    Glean.extensions.startupCacheWriteBytelength.set(data.byteLength);
+  },
+
+  save() {
+    this._ensureDirectory();
+
+    if (!this._saveTask) {
+      this._saveTask = new lazy.DeferredTask(() => this._saveNow(), 5000);
+
+      IOUtils.profileBeforeChange.addBlocker(
+        "Flush WebExtension StartupCache",
+        async () => {
+          await this._saveTask.finalize();
+          this._saveTask = null;
+        }
+      );
+    }
+
+    return this._saveTask.arm();
+  },
+
+  _data: null,
+  async _readData() {
+    let result = new Map();
+    try {
+      Glean.extensions.startupCacheLoadTime.start();
+      let { buffer } = await IOUtils.read(this.file);
+
+      result = lazy.aomStartup.decodeBlob(buffer);
+      Glean.extensions.startupCacheLoadTime.stop();
+    } catch (e) {
+      Glean.extensions.startupCacheLoadTime.cancel();
+      if (!DOMException.isInstance(e) || e.name !== "NotFoundError") {
+        Cu.reportError(e);
+      }
+      let error = lazy.getErrorNameForTelemetry(e);
+      Glean.extensions.startupCacheReadErrors[error].add(1);
+    }
+
+    this._data = result;
+    return result;
+  },
+
+  get dataPromise() {
+    if (!this._dataPromise) {
+      this._dataPromise = this._readData();
+    }
+    return this._dataPromise;
+  },
+
+  clearAddonData(id) {
+    return Promise.all([
+      this.general.delete(id),
+      this.locales.delete(id),
+      this.manifests.delete(id),
+      this.permissions.delete(id),
+      this.menus.delete(id),
+    ]).catch(e => {
+      // Ignore the error. It happens when we try to flush the add-on
+      // data after the AddonManager has flushed the entire startup cache.
+    });
+  },
+
+  observe(subject, topic, data) {
+    if (topic === "startupcache-invalidate") {
+      this._data = new Map();
+      this._dataPromise = Promise.resolve(this._data);
+    }
+  },
+
+  get(extension, path, createFunc) {
+    return this.general.get(
+      [extension.id, extension.version, ...path],
+      createFunc
+    );
+  },
+
+  delete(extension, path) {
+    return this.general.delete([extension.id, extension.version, ...path]);
+  },
+
+  general: new CacheStore("general"),
+  locales: new CacheStore("locales"),
+  manifests: new CacheStore("manifests"),
+  other: new CacheStore("other"),
+  permissions: new CacheStore("permissions"),
+  schemas: new CacheStore("schemas"),
+  menus: new CacheStore("menus"),
+};
+
+Services.obs.addObserver(StartupCache, "startupcache-invalidate");
 
 export var ExtensionParent = {
   GlobalManager,

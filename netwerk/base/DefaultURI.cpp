@@ -150,6 +150,10 @@ NS_IMETHODIMP DefaultURI::GetPathQueryRef(nsACString& aPathQueryRef) {
 }
 
 NS_IMETHODIMP DefaultURI::Equals(nsIURI* other, bool* _retval) {
+  if (!other) {
+    *_retval = false;
+    return NS_OK;
+  }
   RefPtr<DefaultURI> otherUri;
   nsresult rv = other->QueryInterface(kDefaultURICID, getter_AddRefs(otherUri));
   if (NS_FAILED(rv)) {
@@ -162,6 +166,10 @@ NS_IMETHODIMP DefaultURI::Equals(nsIURI* other, bool* _retval) {
 }
 
 NS_IMETHODIMP DefaultURI::SchemeIs(const char* scheme, bool* _retval) {
+  if (!scheme) {
+    *_retval = false;
+    return NS_OK;
+  }
   *_retval = mURL->Scheme().Equals(scheme);
   return NS_OK;
 }
@@ -482,14 +490,27 @@ DefaultURI::Mutator::SetPathQueryRef(const nsACString& aPathQueryRef,
     return mMutator->GetStatus();
   }
 
-  nsAutoCString pathQueryRef(aPathQueryRef);
-  if (!StringBeginsWith(pathQueryRef, "/"_ns)) {
-    pathQueryRef.Insert('/', 0);
-  }
-
   RefPtr<MozURL> url;
   mMutator->Finalize(getter_AddRefs(url));
   mMutator = Nothing();
+
+  if (!url) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsAutoCString pathQueryRef(aPathQueryRef);
+  if (url->CannotBeABase()) {
+    // If the base URL cannot be a base, then setting the pathQueryRef
+    // needs to change everything after the scheme.
+    pathQueryRef.Insert(":", 0);
+    pathQueryRef.Insert(url->Scheme(), 0);
+    // Clear the URL to make sure FromSpec creates an absolute URL
+    url = nullptr;
+  } else if (!StringBeginsWith(pathQueryRef, "/"_ns)) {
+    // If the base URL can be a base, make sure the path
+    // begins with a /
+    pathQueryRef.Insert('/', 0);
+  }
 
   auto result = MozURL::Mutator::FromSpec(pathQueryRef, url);
   if (result.isErr()) {

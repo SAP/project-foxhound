@@ -1448,7 +1448,7 @@ add_task(async function testContentBlockingReloadWarning() {
     "#contentBlockingOptionStrict .content-blocking-warning.reload-tabs"
   );
   ok(
-    !BrowserTestUtils.is_hidden(strictWarning),
+    !BrowserTestUtils.isHidden(strictWarning),
     "The warning in the strict section should be showing"
   );
 
@@ -1520,7 +1520,7 @@ add_task(async function testReloadTabsMessage() {
 
   Services.prefs.setStringPref(CAT_PREF, "standard");
   ok(
-    !BrowserTestUtils.is_hidden(standardWarning),
+    !BrowserTestUtils.isHidden(standardWarning),
     "The warning in the standard section should be showing"
   );
 
@@ -1538,7 +1538,7 @@ add_task(async function testReloadTabsMessage() {
   await exampleTabBrowserDiscardedPromise;
 
   ok(
-    BrowserTestUtils.is_hidden(standardWarning),
+    BrowserTestUtils.isHidden(standardWarning),
     "The warning in the standard section should have hidden after being clicked"
   );
 
@@ -1565,7 +1565,7 @@ add_task(async function testRFPWarningBanner() {
 
   // Verify if the banner is hidden at the beginning.
   ok(
-    !BrowserTestUtils.is_visible(rfpWarningBanner),
+    !BrowserTestUtils.isVisible(rfpWarningBanner),
     "The RFP warning banner is hidden at the beginning."
   );
 
@@ -1576,7 +1576,7 @@ add_task(async function testRFPWarningBanner() {
 
   // Verify if the banner is shown.
   ok(
-    BrowserTestUtils.is_visible(rfpWarningBanner),
+    BrowserTestUtils.isVisible(rfpWarningBanner),
     "The RFP warning banner is shown."
   );
 
@@ -1590,7 +1590,7 @@ add_task(async function testRFPWarningBanner() {
 
   // Verify if the banner is shown.
   ok(
-    BrowserTestUtils.is_visible(rfpWarningBanner),
+    BrowserTestUtils.isVisible(rfpWarningBanner),
     "The RFP warning banner is shown."
   );
 
@@ -1604,7 +1604,7 @@ add_task(async function testRFPWarningBanner() {
 
   // Verify if the banner is shown.
   ok(
-    BrowserTestUtils.is_visible(rfpWarningBanner),
+    BrowserTestUtils.isVisible(rfpWarningBanner),
     "The RFP warning banner is shown."
   );
 

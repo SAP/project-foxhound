@@ -21,6 +21,8 @@ import { DevToolsInfaillibleUtils } from "resource://devtools/shared/DevToolsInf
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ChannelMap: "resource://devtools/shared/network-observer/ChannelMap.sys.mjs",
+  NetworkAuthListener:
+    "resource://devtools/shared/network-observer/NetworkAuthListener.sys.mjs",
   NetworkHelper:
     "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
   NetworkOverride:
@@ -123,6 +125,12 @@ export class NetworkObserver {
    * @type {Map}
    */
   #decodedCertificateCache = new Map();
+  /**
+   * Whether the consumer supports listening and handling auth prompts.
+   *
+   * @type {boolean}
+   */
+  #authPromptListenerEnabled = false;
   /**
    * See constructor argument of the same name.
    *
@@ -227,6 +235,10 @@ export class NetworkObserver {
       this.#serviceWorkerRequest,
       "service-worker-synthesized-response"
     );
+  }
+
+  setAuthPromptListenerEnabled(enabled) {
+    this.#authPromptListenerEnabled = enabled;
   }
 
   setSaveRequestAndResponseBodies(save) {
@@ -434,13 +446,16 @@ export class NetworkObserver {
         // There also is never any timing events, so we can fire this
         // event with zeroed out values.
         const timings = this.#setupHarTimings(httpActivity);
-
         const serverTimings = this.#extractServerTimings(httpActivity.channel);
+        const serviceWorkerTimings =
+          this.#extractServiceWorkerTimings(httpActivity);
+
+        httpActivity.owner.addServerTimings(serverTimings);
+        httpActivity.owner.addServiceWorkerTimings(serviceWorkerTimings);
         httpActivity.owner.addEventTimings(
           timings.total,
           timings.timings,
-          timings.offsets,
-          serverTimings
+          timings.offsets
         );
       } else if (topic === "http-on-failed-opening-request") {
         const { blockedReason } = lazy.NetworkUtils.getBlockedReason(
@@ -694,7 +709,8 @@ export class NetworkObserver {
       },
       channel
     );
-    httpActivity.fromCache = fromCache || fromServiceWorker;
+    httpActivity.fromCache = fromCache;
+    httpActivity.fromServiceWorker = fromServiceWorker;
 
     // Bug 1489217 - Avoid watching for response content for blocked or in-progress requests
     // as it can't be observed and would throw if we try.
@@ -703,6 +719,10 @@ export class NetworkObserver {
         fromCache,
         fromServiceWorker,
       });
+    }
+
+    if (this.#authPromptListenerEnabled) {
+      new lazy.NetworkAuthListener(httpActivity.channel, httpActivity.owner);
     }
 
     return httpActivity;
@@ -977,11 +997,11 @@ export class NetworkObserver {
       const result = this.#setupHarTimings(httpActivity);
       const serverTimings = this.#extractServerTimings(httpActivity.channel);
 
+      httpActivity.owner.addServerTimings(serverTimings);
       httpActivity.owner.addEventTimings(
         result.total,
         result.timings,
-        result.offsets,
-        serverTimings
+        result.offsets
       );
     }
   }
@@ -1292,6 +1312,25 @@ export class NetworkObserver {
     return serverTimings;
   }
 
+  #extractServiceWorkerTimings({ fromServiceWorker, channel }) {
+    if (!fromServiceWorker) {
+      return null;
+    }
+    const timedChannel = channel.QueryInterface(Ci.nsITimedChannel);
+
+    return {
+      launchServiceWorker:
+        timedChannel.launchServiceWorkerEndTime -
+        timedChannel.launchServiceWorkerStartTime,
+      requestToServiceWorker:
+        timedChannel.dispatchFetchEventEndTime -
+        timedChannel.dispatchFetchEventStartTime,
+      handledByServiceWorker:
+        timedChannel.handleFetchEventEndTime -
+        timedChannel.handleFetchEventStartTime,
+    };
+  }
+
   #convertTimeToMs(timing) {
     return Math.max(Math.round(timing / 1000), -1);
   }
@@ -1375,6 +1414,10 @@ export class NetworkObserver {
    * listening.
    */
   destroy() {
+    if (this.#isDestroyed) {
+      return;
+    }
+
     if (Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT) {
       gActivityDistributor.removeObserver(this);
       Services.obs.removeObserver(

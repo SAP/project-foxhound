@@ -95,6 +95,7 @@ namespace jit {
   _(Trunc)                        \
   _(CharCodeAt)                   \
   _(FromCharCode)                 \
+  _(FromCharCodeEmptyIfNegative)  \
   _(Pow)                          \
   _(PowHalf)                      \
   _(MinMax)                       \
@@ -125,6 +126,7 @@ namespace jit {
   _(NewCallObject)                \
   _(Lambda)                       \
   _(FunctionWithProto)            \
+  _(ObjectKeys)                   \
   _(ObjectState)                  \
   _(ArrayState)                   \
   _(SetArrayLength)               \
@@ -557,6 +559,14 @@ class RFromCharCode final : public RInstruction {
                              SnapshotIterator& iter) const override;
 };
 
+class RFromCharCodeEmptyIfNegative final : public RInstruction {
+ public:
+  RINSTRUCTION_HEADER_NUM_OP_(FromCharCodeEmptyIfNegative, 1)
+
+  [[nodiscard]] bool recover(JSContext* cx,
+                             SnapshotIterator& iter) const override;
+};
+
 class RPow final : public RInstruction {
  public:
   RINSTRUCTION_HEADER_NUM_OP_(Pow, 2)
@@ -824,6 +834,14 @@ class RFunctionWithProto final : public RInstruction {
 class RNewCallObject final : public RInstruction {
  public:
   RINSTRUCTION_HEADER_NUM_OP_(NewCallObject, 1)
+
+  [[nodiscard]] bool recover(JSContext* cx,
+                             SnapshotIterator& iter) const override;
+};
+
+class RObjectKeys final : public RInstruction {
+ public:
+  RINSTRUCTION_HEADER_NUM_OP_(ObjectKeys, 1)
 
   [[nodiscard]] bool recover(JSContext* cx,
                              SnapshotIterator& iter) const override;

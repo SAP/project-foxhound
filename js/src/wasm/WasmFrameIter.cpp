@@ -22,10 +22,10 @@
 #include "js/ColumnNumber.h"  // JS::WasmFunctionIndex, LimitedColumnNumberOneOrigin, JS::TaggedColumnNumberOneOrigin, JS::TaggedColumnNumberOneOrigin
 #include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "vm/JSContext.h"
+#include "wasm/WasmBuiltinModuleGenerated.h"
 #include "wasm/WasmDebugFrame.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmInstanceData.h"
-#include "wasm/WasmIntrinsicGenerated.h"
 #include "wasm/WasmStubs.h"
 
 #include "jit/MacroAssembler-inl.h"
@@ -64,7 +64,8 @@ WasmFrameIter::WasmFrameIter(JitActivation* activation, wasm::Frame* fp)
       unwoundCallerFP_(nullptr),
       unwind_(Unwind::False),
       unwoundAddressOfReturnAddress_(nullptr),
-      resumePCinCurrentFrame_(nullptr) {
+      resumePCinCurrentFrame_(nullptr),
+      failedUnwindSignatureMismatch_(false) {
   MOZ_ASSERT(fp_);
   instance_ = GetNearestEffectiveInstance(fp_);
 
@@ -85,6 +86,7 @@ WasmFrameIter::WasmFrameIter(JitActivation* activation, wasm::Frame* fp)
     MOZ_ASSERT(codeRange_);
 
     lineOrBytecode_ = trapData.bytecodeOffset;
+    failedUnwindSignatureMismatch_ = trapData.failedUnwindSignatureMismatch;
 
     MOZ_ASSERT(!done());
     return;
@@ -241,6 +243,7 @@ void WasmFrameIter::popFrame() {
 
   MOZ_ASSERT(code_ == &instance()->code());
   lineOrBytecode_ = callsite->lineOrBytecode();
+  failedUnwindSignatureMismatch_ = false;
 
   MOZ_ASSERT(!done());
 }
@@ -317,6 +320,12 @@ bool WasmFrameIter::debugEnabled() const {
   // requested, and available via baseline compilation), and Tier::Debug code
   // will be available.
   if (!code_->metadata().debugEnabled) {
+    return false;
+  }
+
+  // Debug information is not available in prologue when the iterator is
+  // failing to unwind invalid signature trap.
+  if (failedUnwindSignatureMismatch_) {
     return false;
   }
 
@@ -1794,11 +1803,11 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
       return "call to native array.init_elem function";
     case SymbolicAddress::ArrayCopy:
       return "call to native array.copy function";
-#define OP(op, export, sa_name, abitype, entry, idx) \
+#define VISIT_BUILTIN_FUNC(op, export, sa_name, ...) \
   case SymbolicAddress::sa_name:                     \
-    return "call to native " #op " intrinsic (in wasm)";
-      FOR_EACH_INTRINSIC(OP)
-#undef OP
+    return "call to native " #op " builtin (in wasm)";
+      FOR_EACH_BUILTIN_MODULE_FUNC(VISIT_BUILTIN_FUNC)
+#undef VISIT_BUILTIN_FUNC
 #ifdef WASM_CODEGEN_DEBUG
     case SymbolicAddress::PrintI32:
     case SymbolicAddress::PrintPtr:

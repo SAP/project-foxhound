@@ -402,11 +402,12 @@ class FullParseHandler {
                            LexicalScopeNodeType memberBlock,
 #ifdef ENABLE_DECORATORS
                            ListNodeType decorators,
+                           FunctionNodeType addInitializerFunction,
 #endif
                            const TokenPos& pos) {
     return newResult<ClassNode>(name, heritage, memberBlock,
 #ifdef ENABLE_DECORATORS
-                                decorators,
+                                decorators, addInitializerFunction,
 #endif
                                 pos);
   }
@@ -700,14 +701,14 @@ class FullParseHandler {
     return newResult<NullaryNode>(ParseNodeKind::EmptyStmt, pos);
   }
 
-  BinaryNodeResult newImportAssertion(Node keyNode, Node valueNode) {
-    return newBinary(ParseNodeKind::ImportAssertion, keyNode, valueNode);
+  BinaryNodeResult newImportAttribute(Node keyNode, Node valueNode) {
+    return newBinary(ParseNodeKind::ImportAttribute, keyNode, valueNode);
   }
 
-  BinaryNodeResult newModuleRequest(Node moduleSpec, Node importAssertionList,
+  BinaryNodeResult newModuleRequest(Node moduleSpec, Node importAttributeList,
                                     const TokenPos& pos) {
     return newResult<BinaryNode>(ParseNodeKind::ImportModuleRequest, pos,
-                                 moduleSpec, importAssertionList);
+                                 moduleSpec, importAttributeList);
   }
 
   BinaryNodeResult newImportDeclaration(Node importSpecSet, Node moduleRequest,

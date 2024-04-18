@@ -79,6 +79,7 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   using InScrollingGesture = nsIScrollableFrame::InScrollingGesture;
 
   using CSSIntPoint = mozilla::CSSIntPoint;
+  using CSSPoint = mozilla::CSSPoint;
   using ScrollReflowInput = mozilla::ScrollReflowInput;
   using ScrollAnchorContainer = mozilla::layout::ScrollAnchorContainer;
   friend nsHTMLScrollFrame* NS_NewHTMLScrollFrame(
@@ -207,31 +208,11 @@ class nsHTMLScrollFrame : public nsContainerFrame,
     }
     return mScrollPort.Size();
   }
-  /**
-   * GetScrolledRect is designed to encapsulate deciding which
-   * directions of overflow should be reachable by scrolling and which
-   * should not.  Callers should NOT depend on it having any particular
-   * behavior.
-   *
-   * This should only be called when the scrolled frame has been
-   * reflowed with the scroll port size given in mScrollPort.
-   *
-   * Currently it allows scrolling down and to the right for
-   * nsHTMLScrollFrames with LTR directionality, and allows scrolling down and
-   * to the left for nsHTMLScrollFrames with RTL directionality.
-   */
   nsRect GetScrolledRect() const final;
   nsRect GetScrollPortRect() const final { return mScrollPort; }
   nsPoint GetScrollPosition() const final {
     return mScrollPort.TopLeft() - mScrolledFrame->GetPosition();
   }
-  /**
-   * For LTR frames, the logical scroll position is the offset of the top left
-   * corner of the frame from the top left corner of the scroll port (same as
-   * GetScrollPosition).
-   * For RTL frames, it is the offset of the top right corner of the frame from
-   * the top right corner of the scroll port
-   */
   nsPoint GetLogicalScrollPosition() const final {
     nsPoint pt;
     pt.x = IsPhysicalLTR()
@@ -271,7 +252,8 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    */
-  CSSIntPoint GetScrollPositionCSSPixels() final;
+  CSSIntPoint GetRoundedScrollPositionCSSPixels() final;
+
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    */
@@ -699,6 +681,10 @@ class nsHTMLScrollFrame : public nsContainerFrame,
     }
     ScheduleScrollAnimations();
     mMayScheduleScrollAnimations = false;
+  }
+
+  CSSPoint GetScrollPositionCSSPixels() const {
+    return CSSPoint::FromAppUnits(GetScrollPosition());
   }
 
  public:

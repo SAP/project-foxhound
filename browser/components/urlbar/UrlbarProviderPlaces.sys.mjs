@@ -52,7 +52,7 @@ const SQL_BOOKMARK_TAGS_FRAGMENT = `EXISTS(SELECT 1 FROM moz_bookmarks WHERE fk 
    ( SELECT title FROM moz_bookmarks WHERE fk = h.id AND title NOTNULL
      ORDER BY lastModified DESC LIMIT 1
    ) AS btitle,
-   ( SELECT GROUP_CONCAT(t.title, ', ')
+   ( SELECT GROUP_CONCAT(t.title ORDER BY t.title)
      FROM moz_bookmarks b
      JOIN moz_bookmarks t ON t.id = +b.parent AND t.parent = :parent
      WHERE b.fk = h.id
@@ -115,7 +115,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   KeywordUtils: "resource://gre/modules/KeywordUtils.sys.mjs",
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
@@ -317,6 +316,11 @@ function makeUrlbarResult(tokens, info) {
           UrlbarUtils.RESULT_SOURCE.HISTORY,
           ...lazy.UrlbarResult.payloadAndSimpleHighlights(tokens, {
             engine: action.params.engineName,
+            isBlockable: true,
+            blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+            helpUrl:
+              Services.urlFormatter.formatURLPref("app.support.baseURL") +
+              "awesome-bar-result-menu",
             suggestion: [
               action.params.searchSuggestion,
               UrlbarUtils.HIGHLIGHT.SUGGESTED,
@@ -356,6 +360,9 @@ function makeUrlbarResult(tokens, info) {
   let source;
   let tags = [];
   let comment = info.comment;
+  let isBlockable = undefined;
+  let blockL10n = undefined;
+  let helpUrl = undefined;
 
   // The legacy autocomplete result may return "bookmark", "bookmark-tag" or
   // "tag". In the last case it should not be considered a bookmark, but an
@@ -364,6 +371,11 @@ function makeUrlbarResult(tokens, info) {
     source = UrlbarUtils.RESULT_SOURCE.BOOKMARKS;
   } else {
     source = UrlbarUtils.RESULT_SOURCE.HISTORY;
+    isBlockable = true;
+    blockL10n = { id: "urlbar-result-menu-remove-from-history" };
+    helpUrl =
+      Services.urlFormatter.formatURLPref("app.support.baseURL") +
+      "awesome-bar-result-menu";
   }
 
   // If the style indicates that the result is tagged, then the tags are
@@ -378,18 +390,12 @@ function makeUrlbarResult(tokens, info) {
       tags = "";
     }
 
-    // Tags are separated by a comma and in a random order.
+    // Tags are separated by a comma.
     // We should also just include tags that match the searchString.
-    tags = tags
-      .split(",")
-      .map(t => t.trim())
-      .filter(tag => {
-        let lowerCaseTag = tag.toLocaleLowerCase();
-        return tokens.some(token =>
-          lowerCaseTag.includes(token.lowerCaseValue)
-        );
-      })
-      .sort();
+    tags = tags.split(",").filter(tag => {
+      let lowerCaseTag = tag.toLocaleLowerCase();
+      return tokens.some(token => lowerCaseTag.includes(token.lowerCaseValue));
+    });
   }
 
   return new lazy.UrlbarResult(
@@ -400,6 +406,9 @@ function makeUrlbarResult(tokens, info) {
       icon: info.icon,
       title: [comment, UrlbarUtils.HIGHLIGHT.TYPED],
       tags: [tags, UrlbarUtils.HIGHLIGHT.TYPED],
+      isBlockable,
+      blockL10n,
+      helpUrl,
     })
   );
 }
@@ -1536,7 +1545,7 @@ class ProviderPlaces extends UrlbarProvider {
   }
 
   _startLegacyQuery(queryContext, callback) {
-    let deferred = lazy.PromiseUtils.defer();
+    let deferred = Promise.withResolvers();
     let listener = (matches, searchOngoing) => {
       callback(matches);
       if (!searchOngoing) {

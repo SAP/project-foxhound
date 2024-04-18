@@ -316,13 +316,15 @@ void AutoRedirectVetoNotifier::ReportRedirectResult(nsresult aRv) {
 //-----------------------------------------------------------------------------
 
 nsHttpChannel::nsHttpChannel() : HttpAsyncAborter<nsHttpChannel>(this) {
-  LOG(("Creating nsHttpChannel [this=%p]\n", this));
+  LOG(("Creating nsHttpChannel [this=%p, nsIChannel=%p]\n", this,
+       static_cast<nsIChannel*>(this)));
   mChannelCreationTime = PR_Now();
   mChannelCreationTimestamp = TimeStamp::Now();
 }
 
 nsHttpChannel::~nsHttpChannel() {
-  LOG(("Destroying nsHttpChannel [this=%p]\n", this));
+  LOG(("Destroying nsHttpChannel [this=%p, nsIChannel=%p]\n", this,
+       static_cast<nsIChannel*>(this)));
 
   if (LOG_ENABLED()) {
     nsCString webExtension;
@@ -1374,6 +1376,10 @@ nsresult nsHttpChannel::SetupTransaction() {
     if (NS_WARN_IF(!gIOService->SocketProcessReady())) {
       return NS_ERROR_NOT_AVAILABLE;
     }
+    SocketProcessParent* socketProcess = SocketProcessParent::GetSingleton();
+    if (!socketProcess->CanSend()) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
 
     nsCOMPtr<nsIParentChannel> parentChannel;
     NS_QueryNotificationCallbacks(this, parentChannel);
@@ -1395,11 +1401,10 @@ nsresult nsHttpChannel::SetupTransaction() {
     transParent->SetRedirectTimestamp(mRedirectStartTimeStamp,
                                       mRedirectEndTimeStamp);
 
-    SocketProcessParent* socketProcess = SocketProcessParent::GetSingleton();
     if (socketProcess) {
-      Unused << socketProcess->SendPHttpTransactionConstructor(transParent);
+      MOZ_ALWAYS_TRUE(
+          socketProcess->SendPHttpTransactionConstructor(transParent));
     }
-
     mTransaction = transParent;
   } else {
     mTransaction = new nsHttpTransaction();
@@ -3757,6 +3762,18 @@ nsresult nsHttpChannel::OpenCacheEntryInternal(bool isHttps) {
   if (mRequestHead.IsHead()) {
     mCacheIdExtension.Append("HEAD");
   }
+  bool isThirdParty = false;
+  if (StaticPrefs::network_fetch_cache_partition_cross_origin() &&
+      (NS_FAILED(mLoadInfo->TriggeringPrincipal()->IsThirdPartyChannel(
+           this, &isThirdParty)) ||
+       isThirdParty) &&
+      (mLoadInfo->InternalContentPolicyType() == nsIContentPolicy::TYPE_FETCH ||
+       mLoadInfo->InternalContentPolicyType() ==
+           nsIContentPolicy::TYPE_XMLHTTPREQUEST ||
+       mLoadInfo->InternalContentPolicyType() ==
+           nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST)) {
+    mCacheIdExtension.Append("FETCH");
+  }
 
   mCacheOpenWithPriority = cacheEntryOpenFlags & nsICacheStorage::OPEN_PRIORITY;
   mCacheQueueSizeWhenOpen =
@@ -5558,6 +5575,7 @@ NS_IMETHODIMP nsHttpChannel::OnAuthAvailable() {
 
 NS_IMETHODIMP nsHttpChannel::OnAuthCancelled(bool userCancel) {
   LOG(("nsHttpChannel::OnAuthCancelled [this=%p]", this));
+  MOZ_ASSERT(mAuthRetryPending, "OnAuthCancelled should not be called twice");
 
   if (mTransactionPump) {
     // If the channel is trying to authenticate to a proxy and
@@ -6115,6 +6133,21 @@ nsHttpChannel::AsyncOpen(nsIStreamListener* aListener) {
   UpdatePrivateBrowsing();
 
   AntiTrackingUtils::UpdateAntiTrackingInfoForChannel(this);
+
+  // Recalculate the default userAgent header after the AntiTrackingInfo gets
+  // updated because we can only know whether the site is exempted from
+  // fingerprinting protection after we have the AntiTracking Info.
+  //
+  // Note that we don't recalculate the header if it has been modified since the
+  // channel was created because we want to preserve the modified header.
+  if (!LoadIsUserAgentHeaderModified()) {
+    rv = mRequestHead.SetHeader(
+        nsHttp::User_Agent,
+        gHttpHandler->UserAgent(nsContentUtils::ShouldResistFingerprinting(
+            this, RFPTarget::HttpUserAgent)),
+        false, nsHttpHeaderArray::eVarietyRequestEnforceDefault);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+  }
 
   if (WaitingForTailUnblock()) {
     // This channel is marked as Tail and is part of a request context
@@ -7308,6 +7341,8 @@ nsHttpChannel::OnStartRequest(nsIRequest* request) {
     mTransaction->GetNetworkAddresses(mSelfAddr, mPeerAddr, isTrr,
                                       mEffectiveTRRMode, mTRRSkipReason,
                                       echConfigUsed);
+    StoreResolvedByTRR(isTrr);
+    StoreEchConfigUsed(echConfigUsed);
   }
 
   // don't enter this block if we're reading from the cache...

@@ -652,6 +652,17 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
     DISPATCH_CACHEOP();
   }
 
+  CACHEOP_CASE(GuardFuse) {
+    RealmFuses::FuseIndex fuseIndex = icregs.cacheIRReader.realmFuseIndex();
+    if (!frameMgr.cxForLocalUseOnly()
+             ->realm()
+             ->realmFuses.getFuseByIndex(fuseIndex)
+             ->intact()) {
+      return ICInterpretOpResult::NextIC;
+    }
+    DISPATCH_CACHEOP();
+  }
+
   CACHEOP_CASE(GuardProto) {
     ObjOperandId objId = icregs.cacheIRReader.objOperandId();
     uint32_t protoOffset = icregs.cacheIRReader.stubOffset();
@@ -1754,6 +1765,7 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
   CACHEOP_CASE_UNIMPL(StoreDenseElementHole)
   CACHEOP_CASE_UNIMPL(ArrayPush)
   CACHEOP_CASE_UNIMPL(ArrayJoinResult)
+  CACHEOP_CASE_UNIMPL(ObjectKeysResult)
   CACHEOP_CASE_UNIMPL(PackedArrayPopResult)
   CACHEOP_CASE_UNIMPL(PackedArrayShiftResult)
   CACHEOP_CASE_UNIMPL(PackedArraySliceResult)
@@ -1783,11 +1795,16 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
   CACHEOP_CASE_UNIMPL(NewStringObjectResult)
   CACHEOP_CASE_UNIMPL(StringFromCharCodeResult)
   CACHEOP_CASE_UNIMPL(StringFromCodePointResult)
+  CACHEOP_CASE_UNIMPL(StringIncludesResult)
   CACHEOP_CASE_UNIMPL(StringIndexOfResult)
+  CACHEOP_CASE_UNIMPL(StringLastIndexOfResult)
   CACHEOP_CASE_UNIMPL(StringStartsWithResult)
   CACHEOP_CASE_UNIMPL(StringEndsWithResult)
   CACHEOP_CASE_UNIMPL(StringToLowerCaseResult)
   CACHEOP_CASE_UNIMPL(StringToUpperCaseResult)
+  CACHEOP_CASE_UNIMPL(StringTrimResult)
+  CACHEOP_CASE_UNIMPL(StringTrimStartResult)
+  CACHEOP_CASE_UNIMPL(StringTrimEndResult)
   CACHEOP_CASE_UNIMPL(MathAbsInt32Result)
   CACHEOP_CASE_UNIMPL(MathAbsNumberResult)
   CACHEOP_CASE_UNIMPL(MathClz32Result)

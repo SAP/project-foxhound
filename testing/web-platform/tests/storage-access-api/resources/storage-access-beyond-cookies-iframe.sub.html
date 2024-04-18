@@ -18,12 +18,24 @@
         if (!!handle.sessionStorage.getItem("test")) {
           message = "Cross-site first-party Session Storage should be empty";
         }
+        handle.sessionStorage.setItem("test2", id);
+        if (window.sessionStorage.getItem("test2") == id) {
+          message = "Handle bound partitioned instead of unpartitioned Session Storage";
+        }
+        handle.sessionStorage.clear();
+        window.sessionStorage.clear();
         break;
       }
       case "localStorage": {
         if (!!handle.localStorage.getItem("test")) {
           message = "Cross-site first-party Local Storage should be empty";
         }
+        handle.localStorage.setItem("test2", id);
+        if (window.localStorage.getItem("test2") == id) {
+          message = "Handle bound partitioned instead of unpartitioned Local Storage";
+        }
+        handle.localStorage.clear();
+        window.localStorage.clear();
         break;
       }
       case "indexedDB": {
@@ -53,6 +65,28 @@
         if (has) {
           message = "Cross-site first-party Origin Private File System should be empty";
         }
+        break;
+      }
+      case "estimate": {
+        const estimate = await handle.estimate();
+        if (estimate.usage > 0) {
+          message = "Cross-site first-party estimate should be empty";
+        }
+        break;
+      }
+      case "blobStorage": {
+        const blob = await fetch(atob(id)).then(
+          (response) => response.text(),
+          () => "");
+        if (blob != "") {
+          message = "Cross-site first-party blob storage should be empty";
+        }
+        break;
+      }
+      case "BroadcastChannel": {
+        const channel = handle.BroadcastChannel(id);
+        channel.postMessage("Cross-origin handle access");
+        channel.close();
         break;
       }
       default: {

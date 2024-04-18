@@ -31,7 +31,6 @@ const nodeConstants = require("resource://devtools/shared/dom-node-constants.js"
 const {
   getBindingElementAndPseudo,
   getCSSStyleRules,
-  l10n,
   hasVisitedState,
   isAgentStylesheet,
   isAuthorStylesheet,
@@ -256,13 +255,14 @@ class CssLogic {
 
       // Find import and keyframes rules.
       for (const aDomRule of cssSheet.getCssRules()) {
+        const ruleClassName = ChromeUtils.getClassName(aDomRule);
         if (
-          aDomRule.type == CSSRule.IMPORT_RULE &&
+          ruleClassName === "CSSImportRule" &&
           aDomRule.styleSheet &&
           this.mediaMatches(aDomRule)
         ) {
           this._cacheSheet(aDomRule.styleSheet);
-        } else if (aDomRule.type == CSSRule.KEYFRAMES_RULE) {
+        } else if (ruleClassName === "CSSKeyframesRule") {
           this._keyframesRules.push(aDomRule);
         }
       }
@@ -487,7 +487,7 @@ class CssLogic {
   /**
    * Check if the highlighted element or it's parents have matched selectors.
    *
-   * @param {array} aProperties The list of properties you want to check if they
+   * @param {Array} properties: The list of properties you want to check if they
    * have matched selectors or not.
    * @return {object} An object that tells for each property if it has matched
    * selectors or not. Object keys are property names and values are booleans.
@@ -509,7 +509,10 @@ class CssLogic {
           rule.getPropertyValue(property) &&
           (status == STATUS.MATCHED ||
             (status == STATUS.PARENT_MATCH &&
-              InspectorUtils.isInheritedProperty(property)))
+              InspectorUtils.isInheritedProperty(
+                this.viewedDocument,
+                property
+              )))
         ) {
           result[property] = true;
           return false;
@@ -577,7 +580,7 @@ class CssLogic {
         // through the rules backward.
         for (let i = domRules.length - 1; i >= 0; i--) {
           const domRule = domRules[i];
-          if (domRule.type !== CSSRule.STYLE_RULE) {
+          if (!CSSStyleRule.isInstance(domRule)) {
             continue;
           }
 
@@ -663,7 +666,7 @@ CssLogic.getShortName = function (element) {
  *         An array of string selectors.
  */
 CssLogic.getSelectors = function (domRule, desugared = false) {
-  if (domRule.type !== CSSRule.STYLE_RULE) {
+  if (ChromeUtils.getClassName(domRule) !== "CSSStyleRule") {
     // Return empty array since CSSRule#selectorCount assumes only STYLE_RULE type.
     return [];
   }
@@ -959,20 +962,11 @@ class CssRule {
     this._cssSheet = cssSheet;
     this.domRule = domRule;
 
-    const parentRule = domRule.parentRule;
-    if (parentRule && parentRule.type == CSSRule.MEDIA_RULE) {
-      this.mediaText = parentRule.media.mediaText;
-    }
-
     if (this._cssSheet) {
       // parse domRule.selectorText on call to this.selectors
       this._selectors = null;
       this.line = InspectorUtils.getRelativeRuleLine(this.domRule);
       this.column = InspectorUtils.getRuleColumn(this.domRule);
-      this.source = this._cssSheet.shortSource + ":" + this.line;
-      if (this.mediaText) {
-        this.source += " @media " + this.mediaText;
-      }
       this.href = this._cssSheet.href;
       this.authorRule = this._cssSheet.authorSheet;
       this.userRule = this._cssSheet.userSheet;
@@ -980,7 +974,6 @@ class CssRule {
     } else if (element) {
       this._selectors = [new CssSelector(this, "@element.style", 0)];
       this.line = -1;
-      this.source = l10n("rule.sourceElement");
       this.href = "#";
       this.authorRule = true;
       this.userRule = false;
@@ -990,12 +983,6 @@ class CssRule {
   }
 
   _passId = null;
-
-  mediaText = "";
-
-  get isMediaRule() {
-    return !!this.mediaText;
-  }
 
   /**
    * Check if the parent stylesheet is allowed by the CssLogic.sourceFilter.
@@ -1090,16 +1077,6 @@ class CssSelector {
   }
 
   _matchId = null;
-
-  /**
-   * Retrieve the CssSelector source, which is the source of the CssSheet owning
-   * the selector.
-   *
-   * @return {string} the selector source.
-   */
-  get source() {
-    return this.cssRule.source;
-  }
 
   /**
    * Retrieve the CssSelector source element, which is the source of the CssRule
@@ -1317,8 +1294,9 @@ class CssPropertyInfo {
    * Process a matched CssSelector object.
    *
    * @private
-   * @param {CssSelector} selector the matched CssSelector object.
-   * @param {STATUS} status the CssSelector match status.
+   * @param {CssSelector} selector: the matched CssSelector object.
+   * @param {STATUS} status: the CssSelector match status.
+   * @param {Int} distance: See CssLogic._buildMatchedRules for definition.
    */
   _processMatchedSelector(selector, status, distance) {
     const cssRule = selector.cssRule;
@@ -1327,7 +1305,10 @@ class CssPropertyInfo {
       value &&
       (status == STATUS.MATCHED ||
         (status == STATUS.PARENT_MATCH &&
-          InspectorUtils.isInheritedProperty(this.property)))
+          InspectorUtils.isInheritedProperty(
+            this._cssLogic.viewedDocument,
+            this.property
+          )))
     ) {
       const selectorInfo = new CssSelectorInfo(
         selector,
@@ -1416,16 +1397,6 @@ class CssSelectorInfo {
       // for `@import url(path/to/file.css) layer`)
       rule = rule.parentRule || rule.parentStyleSheet?.ownerRule;
     }
-  }
-
-  /**
-   * Retrieve the CssSelector source, which is the source of the CssSheet owning
-   * the selector.
-   *
-   * @return {string} the selector source.
-   */
-  get source() {
-    return this.selector.source;
   }
 
   /**

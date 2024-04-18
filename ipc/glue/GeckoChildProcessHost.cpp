@@ -614,7 +614,7 @@ void GeckoChildProcessHost::PrepareLaunch() {
   }
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
-  SandboxLaunchPrepare(mProcessType, mLaunchOptions.get(), mSandbox);
+  SandboxLaunch::Configure(mProcessType, mSandbox, mLaunchOptions.get());
 #endif
 
 #ifdef XP_WIN
@@ -1337,7 +1337,7 @@ RefPtr<ProcessHandlePromise> AndroidProcessLauncher::DoLaunch() {
 RefPtr<ProcessHandlePromise> PosixProcessLauncher::DoLaunch() {
   ProcessHandle handle = 0;
   Result<Ok, LaunchError> aError =
-      base::LaunchApp(mChildArgv, *mLaunchOptions, &handle);
+      base::LaunchApp(mChildArgv, std::move(*mLaunchOptions), &handle);
   if (aError.isErr()) {
     return ProcessHandlePromise::CreateAndReject(aError.unwrapErr(), __func__);
   }

@@ -1634,23 +1634,6 @@ LogicalMargin nsTableRowGroupFrame::GetBCBorderWidth(WritingMode aWM) {
   return border;
 }
 
-void nsTableRowGroupFrame::SetContinuousBCBorderWidth(LogicalSide aForSide,
-                                                      BCPixelSize aPixelValue) {
-  switch (aForSide) {
-    case eLogicalSideIEnd:
-      mIEndContBorderWidth = aPixelValue;
-      return;
-    case eLogicalSideBEnd:
-      mBEndContBorderWidth = aPixelValue;
-      return;
-    case eLogicalSideIStart:
-      mIStartContBorderWidth = aPixelValue;
-      return;
-    default:
-      NS_ERROR("invalid LogicalSide argument");
-  }
-}
-
 // nsILineIterator methods
 int32_t nsTableRowGroupFrame::GetNumLines() const { return GetRowCount(); }
 
@@ -1692,7 +1675,15 @@ int32_t nsTableRowGroupFrame::FindLineContaining(nsIFrame* aFrame,
   NS_ENSURE_TRUE(aFrame, -1);
 
   nsTableRowFrame* rowFrame = do_QueryFrame(aFrame);
-  NS_ASSERTION(rowFrame, "RowGroup contains a frame that is not a row");
+  if (MOZ_UNLIKELY(!rowFrame)) {
+    // When we do not have valid table structure in the DOM tree, somebody wants
+    // to check the line number with an out-of-flow child of this frame because
+    // its parent frame is set to this frame.  Otherwise, the caller must have
+    // a bug.
+    MOZ_ASSERT(aFrame->GetParent() == this);
+    MOZ_ASSERT(aFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW));
+    return -1;
+  }
 
   int32_t rowIndexInGroup = rowFrame->GetRowIndex() - GetStartRowIndex();
 

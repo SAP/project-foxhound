@@ -912,7 +912,7 @@ bool ClientWebGLContext::CreateHostContext(const uvec2& requestedSize) {
     }
     notLost.info.error = str;
   }
-  if (!notLost.info.error.empty()) {
+  if (!notLost.info.error->empty()) {
     ThrowEvent_WebGLContextCreationError(notLost.info.error);
     return false;
   }
@@ -3460,9 +3460,7 @@ void ClientWebGLContext::BufferData(GLenum target, WebGLsizeiptr rawSize,
     EnqueueError(LOCAL_GL_OUT_OF_MEMORY, "`size` too large for platform.");
     return;
   }
-
-  const auto data = RawBuffer<>{*size};
-  Run<RPROC(BufferData)>(target, data, usage);
+  Run<RPROC(BufferData_SizeOnly)>(target, *size, usage);
 }
 
 void ClientWebGLContext::BufferData(
@@ -3494,26 +3492,7 @@ void ClientWebGLContext::BufferData(GLenum target,
   });
 }
 
-void ClientWebGLContext::RawBufferData(GLenum target, const uint8_t* srcBytes,
-                                       size_t srcLen, GLenum usage) {
-  const FuncScope funcScope(*this, "bufferData");
-
-  const auto srcBuffer =
-      srcBytes ? RawBuffer<>({srcBytes, srcLen}) : RawBuffer<>(srcLen);
-  Run<RPROC(BufferData)>(target, srcBuffer, usage);
-}
-
 ////
-
-void ClientWebGLContext::RawBufferSubData(GLenum target,
-                                          WebGLsizeiptr dstByteOffset,
-                                          const uint8_t* srcBytes,
-                                          size_t srcLen, bool unsynchronized) {
-  const FuncScope funcScope(*this, "bufferSubData");
-
-  Run<RPROC(BufferSubData)>(target, dstByteOffset,
-                            RawBuffer<>({srcBytes, srcLen}), unsynchronized);
-}
 
 void ClientWebGLContext::BufferSubData(GLenum target,
                                        WebGLsizeiptr dstByteOffset,
@@ -4394,6 +4373,8 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
 
   // -
 
+  // -
+
   mozilla::ipc::Shmem* pShmem = nullptr;
   // Image to release after WebGLContext::TexImage().
   RefPtr<layers::Image> keepAliveImage;
@@ -4404,7 +4385,12 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
     const auto& contextInfo = mNotLost->info;
 
     const auto fallbackReason = [&]() -> Maybe<std::string> {
-      auto fallbackReason = BlitPreventReason(level, offset, pi, *desc);
+      if (!respecFormat) {
+        return Some(std::string{
+            "Fast uploads not supported for TexSubImage. Use TexImage."});
+      }
+      auto fallbackReason = BlitPreventReason(
+          level, offset, respecFormat, pi, *desc, contextInfo.isRgb8Renderable);
       if (fallbackReason) return fallbackReason;
 
       const bool canUploadViaSd = contextInfo.uploadableSdTypes[sdType];
@@ -4414,27 +4400,53 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
         return Some(ToString(msg));
       }
 
-      if (sdType == layers::SurfaceDescriptor::TSurfaceDescriptorBuffer) {
-        const auto& sdb = sd.get_SurfaceDescriptorBuffer();
-        const auto& data = sdb.data();
-        if (data.type() == layers::MemoryOrShmem::TShmem) {
-          pShmem = &data.get_Shmem();
-        } else {
-          return Some(
-              std::string{"SurfaceDescriptorBuffer data is not Shmem."});
-        }
-      }
+      switch (sdType) {
+        default:
+          break;
+        case layers::SurfaceDescriptor::TSurfaceDescriptorBuffer: {
+          const auto& sdb = sd.get_SurfaceDescriptorBuffer();
+          const auto& data = sdb.data();
+          if (data.type() == layers::MemoryOrShmem::TShmem) {
+            pShmem = &data.get_Shmem();
+          } else {
+            return Some(
+                std::string{"SurfaceDescriptorBuffer data is not Shmem."});
+          }
+        } break;
+        case layers::SurfaceDescriptor::TSurfaceDescriptorD3D10: {
+          const auto& sdD3D = sd.get_SurfaceDescriptorD3D10();
+          const auto& inProcess = mNotLost->inProcess;
+          MOZ_ASSERT(desc->image);
+          keepAliveImage = desc->image;
 
-      if (sdType == layers::SurfaceDescriptor::TSurfaceDescriptorD3D10) {
-        const auto& sdD3D = sd.get_SurfaceDescriptorD3D10();
-        const auto& inProcess = mNotLost->inProcess;
-        MOZ_ASSERT(desc->image);
-        keepAliveImage = desc->image;
-
-        if (sdD3D.gpuProcessTextureId().isSome() && inProcess) {
-          return Some(
-              std::string{"gpuProcessTextureId works only in GPU process."});
-        }
+          if (sdD3D.gpuProcessTextureId().isSome() && inProcess) {
+            return Some(
+                std::string{"gpuProcessTextureId works only in GPU process."});
+          }
+        } break;
+        case layers::SurfaceDescriptor::TSurfaceDescriptorGPUVideo: {
+          const auto& inProcess = mNotLost->inProcess;
+          MOZ_ASSERT(desc->image);
+          keepAliveImage = desc->image;
+          if (inProcess) {
+            return Some(std::string{
+                "SurfaceDescriptorGPUVideo works only in GPU process."});
+          }
+          const auto& sdv = sd.get_SurfaceDescriptorGPUVideo();
+          if (sdv.type() != layers::SurfaceDescriptorGPUVideo::
+                                TSurfaceDescriptorRemoteDecoder) {
+            return Some(std::string{
+                "SurfaceDescriptorGPUVideo does not contain RemoteDecoder."});
+          }
+          const auto& sdrd = sdv.get_SurfaceDescriptorRemoteDecoder();
+          const auto& subdesc = sdrd.subdesc();
+          if (subdesc.type() !=
+              layers::RemoteDecoderVideoSubDescriptor::Tnull_t) {
+            return Some(
+                std::string{"SurfaceDescriptorGPUVideo does not contain "
+                            "RemoteDecoder null subdesc."});
+          }
+        } break;
       }
 
       switch (respecFormat) {
@@ -4545,38 +4557,6 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
                               });
     }
   }
-}
-
-void ClientWebGLContext::RawTexImage(uint32_t level, GLenum respecFormat,
-                                     uvec3 offset, const webgl::PackingInfo& pi,
-                                     webgl::TexUnpackBlobDesc&& desc) const {
-  const FuncScope funcScope(*this, "tex(Sub)Image[23]D");
-  if (IsContextLost()) return;
-  if (desc.sd) {
-    // Shmems are stored in Buffer surface descriptors. We need to ensure first
-    // that all queued commands are flushed and then send the Shmem over IPDL.
-    const auto& sd = *(desc.sd);
-    if (sd.type() == layers::SurfaceDescriptor::TSurfaceDescriptorBuffer &&
-        sd.get_SurfaceDescriptorBuffer().data().type() ==
-            layers::MemoryOrShmem::TShmem) {
-      const auto& inProcess = mNotLost->inProcess;
-      if (inProcess) {
-        inProcess->TexImage(level, respecFormat, offset, pi, desc);
-      } else {
-        const auto& child = mNotLost->outOfProcess;
-        child->FlushPendingCmds();
-        (void)child->SendTexImage(level, respecFormat, offset, pi,
-                                  std::move(desc));
-      }
-    } else {
-      NS_WARNING(
-          "RawTexImage with SurfaceDescriptor only supports "
-          "SurfaceDescriptorBuffer with Shmem");
-    }
-    return;
-  }
-
-  Run<RPROC(TexImage)>(level, respecFormat, offset, pi, desc);
 }
 
 // -
@@ -5179,30 +5159,6 @@ bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
   }
 
   return true;
-}
-
-bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
-                                      const mozilla::ipc::Shmem& shmem) const {
-  const auto notLost =
-      mNotLost;  // Hold a strong-ref to prevent LoseContext=>UAF.
-  if (!notLost) return false;
-  const auto& inProcess = notLost->inProcess;
-  if (inProcess) {
-    const auto& shmemBytes = shmem.Range<uint8_t>();
-    inProcess->ReadPixelsInto(desc, shmemBytes);
-    return true;
-  }
-  const auto& child = notLost->outOfProcess;
-  child->FlushPendingCmds();
-  webgl::ReadPixelsResultIpc res = {};
-  // We assume the input is an unsafe shmem which won't be consumed by this
-  // request. Since SendReadPixels expects a Shmem rvalue, we must create a copy
-  // to provide it that can be consumed instead of the original descriptor.
-  mozilla::ipc::Shmem dest = shmem;
-  if (!child->SendReadPixels(desc, dest, &res)) {
-    res = {};
-  }
-  return res.byteStride > 0;
 }
 
 bool ClientWebGLContext::ReadPixels_SharedPrecheck(

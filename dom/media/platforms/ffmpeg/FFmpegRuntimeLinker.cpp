@@ -22,6 +22,12 @@ class FFmpegDecoderModule {
   static already_AddRefed<PlatformDecoderModule> Create(FFmpegLibWrapper*);
 };
 
+template <int V>
+class FFmpegEncoderModule {
+ public:
+  static already_AddRefed<PlatformEncoderModule> Create(FFmpegLibWrapper*);
+};
+
 static FFmpegLibWrapper sLibAV;
 
 static const char* sLibs[] = {
@@ -77,7 +83,8 @@ bool FFmpegRuntimeLinker::Init() {
         PR_LoadLibraryWithFlags(lspec, PR_LD_NOW | PR_LD_LOCAL);
     if (sLibAV.mAVCodecLib) {
       sLibAV.mAVUtilLib = sLibAV.mAVCodecLib;
-      switch (sLibAV.Link()) {
+      FFmpegLibWrapper::LinkResult res = sLibAV.Link();
+      switch (res) {
         case FFmpegLibWrapper::LinkResult::Success:
           sLinkStatus = LinkStatus_SUCCEEDED;
           sLinkStatusLibraryName = lib;
@@ -124,6 +131,8 @@ bool FFmpegRuntimeLinker::Init() {
           }
           break;
       }
+      FFMPEGP_LOG("Failed to link %s: %s", lib,
+                  FFmpegLibWrapper::LinkResultToString(res));
     }
   }
 
@@ -137,7 +146,7 @@ bool FFmpegRuntimeLinker::Init() {
 }
 
 /* static */
-already_AddRefed<PlatformDecoderModule> FFmpegRuntimeLinker::Create() {
+already_AddRefed<PlatformDecoderModule> FFmpegRuntimeLinker::CreateDecoder() {
   if (!Init()) {
     return nullptr;
   }
@@ -164,6 +173,41 @@ already_AddRefed<PlatformDecoderModule> FFmpegRuntimeLinker::Create() {
       break;
     case 60:
       module = FFmpegDecoderModule<60>::Create(&sLibAV);
+      break;
+    default:
+      module = nullptr;
+  }
+  return module.forget();
+}
+
+/* static */
+already_AddRefed<PlatformEncoderModule> FFmpegRuntimeLinker::CreateEncoder() {
+  if (!Init()) {
+    return nullptr;
+  }
+  RefPtr<PlatformEncoderModule> module;
+  switch (sLibAV.mVersion) {
+    case 53:
+      module = FFmpegEncoderModule<53>::Create(&sLibAV);
+      break;
+    case 54:
+      module = FFmpegEncoderModule<54>::Create(&sLibAV);
+      break;
+    case 55:
+    case 56:
+      module = FFmpegEncoderModule<55>::Create(&sLibAV);
+      break;
+    case 57:
+      module = FFmpegEncoderModule<57>::Create(&sLibAV);
+      break;
+    case 58:
+      module = FFmpegEncoderModule<58>::Create(&sLibAV);
+      break;
+    case 59:
+      module = FFmpegEncoderModule<59>::Create(&sLibAV);
+      break;
+    case 60:
+      module = FFmpegEncoderModule<60>::Create(&sLibAV);
       break;
     default:
       module = nullptr;

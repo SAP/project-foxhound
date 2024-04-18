@@ -28,6 +28,7 @@
 
 #ifdef XP_MACOSX
 #  include <sys/sysctl.h>
+#  include "nsCocoaFeatures.h"
 #endif
 
 extern mozilla::LazyLogModule gMediaTrackGraphLog;
@@ -300,22 +301,6 @@ MediaTime OfflineClockDriver::GetIntervalForIteration() {
   return MillisecondsToMediaTime(mSlice);
 }
 
-TrackAndPromiseForOperation::TrackAndPromiseForOperation(
-    MediaTrack* aTrack, dom::AudioContextOperation aOperation,
-    AbstractThread* aMainThread,
-    MozPromiseHolder<MediaTrackGraph::AudioContextOperationPromise>&& aHolder)
-    : mTrack(aTrack),
-      mOperation(aOperation),
-      mMainThread(aMainThread),
-      mHolder(std::move(aHolder)) {}
-
-TrackAndPromiseForOperation::TrackAndPromiseForOperation(
-    TrackAndPromiseForOperation&& aOther) noexcept
-    : mTrack(std::move(aOther.mTrack)),
-      mOperation(aOther.mOperation),
-      mMainThread(std::move(aOther.mMainThread)),
-      mHolder(std::move(aOther.mHolder)) {}
-
 /* Helper to proxy the GraphInterface methods used by a running
  * mFallbackDriver. */
 class AudioCallbackDriver::FallbackWrapper : public GraphInterface {
@@ -349,10 +334,6 @@ class AudioCallbackDriver::FallbackWrapper : public GraphInterface {
   bool OnThread() { return mFallbackDriver->OnThread(); }
 
   /* GraphInterface methods */
-  void NotifyOutputData(AudioDataValue* aBuffer, size_t aFrames,
-                        TrackRate aRate, uint32_t aChannels) override {
-    MOZ_CRASH("Unexpected NotifyOutputData from fallback SystemClockDriver");
-  }
   void NotifyInputStopped() override {
     MOZ_CRASH("Unexpected NotifyInputStopped from fallback SystemClockDriver");
   }
@@ -371,15 +352,15 @@ class AudioCallbackDriver::FallbackWrapper : public GraphInterface {
 #endif
   IterationResult OneIteration(GraphTime aStateComputedEnd,
                                GraphTime aIterationEnd,
-                               AudioMixer* aMixer) override {
-    MOZ_ASSERT(!aMixer);
+                               MixerCallbackReceiver* aMixerReceiver) override {
+    MOZ_ASSERT(!aMixerReceiver);
 
 #ifdef DEBUG
     AutoInCallback aic(mOwner);
 #endif
 
     IterationResult result =
-        mGraph->OneIteration(aStateComputedEnd, aIterationEnd, aMixer);
+        mGraph->OneIteration(aStateComputedEnd, aIterationEnd, aMixerReceiver);
 
     AudioStreamState audioState = mOwner->mAudioStreamState;
 
@@ -476,15 +457,20 @@ AudioCallbackDriver::AudioCallbackDriver(
   mCubebOperationThread->SetIdleThreadTimeout(
       PR_MillisecondsToInterval(kIdleThreadTimeoutMs));
 
-  if (aAudioInputType == AudioInputType::Voice) {
+  bool allowVoice = true;
+#ifdef MOZ_WIDGET_COCOA
+  // Using the VoiceProcessingIO audio unit on MacOS 12 causes crashes in
+  // platform code.
+  allowVoice = nsCocoaFeatures::macOSVersionMajor() != 12;
+#endif
+
+  if (aAudioInputType == AudioInputType::Voice && allowVoice) {
     LOG(LogLevel::Debug, ("VOICE."));
     mInputDevicePreference = CUBEB_DEVICE_PREF_VOICE;
     CubebUtils::SetInCommunication(true);
   } else {
     mInputDevicePreference = CUBEB_DEVICE_PREF_ALL;
   }
-
-  mMixer.AddCallback(WrapNotNull(this));
 }
 
 AudioCallbackDriver::~AudioCallbackDriver() {
@@ -589,23 +575,37 @@ void AudioCallbackDriver::Init(const nsCString& aStreamName) {
 
   uint32_t latencyFrames = CubebUtils::GetCubebMTGLatencyInFrames(&output);
 
+  LOG(LogLevel::Debug, ("Minimum latency in frames: %d", latencyFrames));
+
   // Macbook and MacBook air don't have enough CPU to run very low latency
   // MediaTrackGraphs, cap the minimal latency to 512 frames int this case.
   if (IsMacbookOrMacbookAir()) {
     latencyFrames = std::max((uint32_t)512, latencyFrames);
+    LOG(LogLevel::Debug,
+        ("Macbook or macbook air, new latency: %d", latencyFrames));
   }
 
-  // On OSX, having a latency that is lower than 10ms is very common. It's
-  // not very useful when doing voice, because all the WebRTC code deal in 10ms
-  // chunks of audio.  Take the first power of two above 10ms at the current
-  // rate in this case. It's probably 512, for common rates.
-#if defined(XP_MACOSX)
+  // Buffer sizes lower than 10ms are nowadays common. It's not very useful
+  // when doing voice, because all the WebRTC code that does audio input
+  // processing deals in 10ms chunks of audio. Take the first power of two
+  // above 10ms at the current rate in this case. It's probably 512, for common
+  // rates.
   if (mInputDevicePreference == CUBEB_DEVICE_PREF_VOICE) {
     if (latencyFrames < mSampleRate / 100) {
       latencyFrames = mozilla::RoundUpPow2(mSampleRate / 100);
+      LOG(LogLevel::Debug,
+          ("AudioProcessing enabled, new latency %d", latencyFrames));
     }
   }
-#endif
+
+  // It's not useful for the graph to run with a block size lower than the Web
+  // Audio API block size, but increasingly devices report that they can do
+  // audio latencies lower than that.
+  if (latencyFrames < WEBAUDIO_BLOCK_SIZE) {
+    LOG(LogLevel::Debug,
+        ("Latency clamped to %d from %d", WEBAUDIO_BLOCK_SIZE, latencyFrames));
+    latencyFrames = WEBAUDIO_BLOCK_SIZE;
+  }
   LOG(LogLevel::Debug, ("Effective latency in frames: %d", latencyFrames));
 
   input = output;
@@ -942,7 +942,7 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
   }
 
   IterationResult result =
-      Graph()->OneIteration(nextStateComputedTime, mIterationEnd, &mMixer);
+      Graph()->OneIteration(nextStateComputedTime, mIterationEnd, this);
 
   mStateComputedTime = nextStateComputedTime;
 
@@ -956,14 +956,6 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
   // stream of the AEC.
   NaNToZeroInPlace(aOutputBuffer, aFrames * mOutputChannelCount);
 #endif
-
-  // Callback any observers for the AEC speaker data.  Note that one
-  // (maybe) of these will be full-duplex, the others will get their input
-  // data off separate cubeb callbacks.  Take care with how stuff is
-  // removed/added to this list and TSAN issues, but input and output will
-  // use separate callback methods.
-  Graph()->NotifyOutputData(aOutputBuffer, static_cast<size_t>(aFrames),
-                            mSampleRate, mOutputChannelCount);
 
 #ifdef XP_MACOSX
   // This only happens when the output is on a macbookpro's external speaker,
@@ -1086,26 +1078,28 @@ void AudioCallbackDriver::StateCallback(cubeb_state aState) {
   }
 }
 
-void AudioCallbackDriver::MixerCallback(AudioDataValue* aMixedBuffer,
-                                        AudioSampleFormat aFormat,
-                                        uint32_t aChannels, uint32_t aFrames,
+void AudioCallbackDriver::MixerCallback(AudioChunk* aMixedBuffer,
                                         uint32_t aSampleRate) {
   MOZ_ASSERT(InIteration());
   uint32_t toWrite = mBuffer.Available();
 
-  if (!mBuffer.Available() && aFrames > 0) {
+  TrackTime frameCount = aMixedBuffer->mDuration;
+  if (!mBuffer.Available() && frameCount > 0) {
     NS_WARNING("DataCallback buffer full, expect frame drops.");
   }
 
-  MOZ_ASSERT(mBuffer.Available() <= aFrames);
+  MOZ_ASSERT(mBuffer.Available() <= frameCount);
 
-  mBuffer.WriteFrames(aMixedBuffer, mBuffer.Available());
+  mBuffer.WriteFrames(*aMixedBuffer, mBuffer.Available());
   MOZ_ASSERT(mBuffer.Available() == 0,
              "Missing frames to fill audio callback's buffer.");
+  if (toWrite == frameCount) {
+    return;
+  }
 
-  DebugOnly<uint32_t> written = mScratchBuffer.Fill(
-      aMixedBuffer + toWrite * aChannels, aFrames - toWrite);
-  NS_WARNING_ASSERTION(written == aFrames - toWrite, "Dropping frames.");
+  aMixedBuffer->SliceTo(toWrite, frameCount);
+  DebugOnly<uint32_t> written = mScratchBuffer.Fill(*aMixedBuffer);
+  NS_WARNING_ASSERTION(written == frameCount - toWrite, "Dropping frames.");
 };
 
 void AudioCallbackDriver::PanOutputIfNeeded(bool aMicrophoneActive) {

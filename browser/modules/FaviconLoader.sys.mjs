@@ -6,7 +6,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
 });
 
 const STREAM_SEGMENT_SIZE = 4096;
@@ -154,7 +153,7 @@ class FaviconLoad {
   }
 
   load() {
-    this._deferred = lazy.PromiseUtils.defer();
+    this._deferred = Promise.withResolvers();
 
     // Clear the references when we succeed or fail.
     let cleanup = () => {
@@ -548,6 +547,7 @@ class IconLoader {
         expiration: undefined,
         iconURL: iconInfo.iconUri.spec,
         canStoreIcon: iconInfo.beforePageShow,
+        beforePageShow: iconInfo.beforePageShow,
       });
       return;
     }
@@ -569,6 +569,7 @@ class IconLoader {
         expiration,
         iconURL: dataURL,
         canStoreIcon,
+        beforePageShow: iconInfo.beforePageShow,
       });
     } catch (e) {
       if (e.result != Cr.NS_BINDING_ABORTED) {

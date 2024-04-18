@@ -1,5 +1,5 @@
-/**
- * Copyright 2020 Google Inc. All rights reserved.
+/*
+ * Copyright 2023 Google Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,87 +14,62 @@
  * limitations under the License.
  */
 
-import {IsPageTargetCallback, TargetFilterCallback} from '../api/Browser.js';
+import type {Browser} from '../api/Browser.js';
+import {_connectToBiDiBrowser} from '../bidi/BrowserConnector.js';
+import {_connectToCdpBrowser} from '../cdp/BrowserConnector.js';
 import {isNode} from '../environment.js';
 import {assert} from '../util/assert.js';
 import {isErrorLike} from '../util/ErrorLike.js';
 
-import {CDPBrowser} from './Browser.js';
-import {Connection} from './Connection.js';
-import {ConnectionTransport} from './ConnectionTransport.js';
+import type {ConnectionTransport} from './ConnectionTransport.js';
+import type {ConnectOptions} from './ConnectOptions.js';
+import type {BrowserConnectOptions} from './ConnectOptions.js';
 import {getFetch} from './fetch.js';
-import type {ConnectOptions} from './Puppeteer.js';
-import {Viewport} from './PuppeteerViewport.js';
-import {debugError} from './util.js';
-/**
- * Generic browser options that can be passed when launching any browser or when
- * connecting to an existing browser instance.
- * @public
- */
-export interface BrowserConnectOptions {
-  /**
-   * Whether to ignore HTTPS errors during navigation.
-   * @defaultValue `false`
-   */
-  ignoreHTTPSErrors?: boolean;
-  /**
-   * Sets the viewport for each page.
-   */
-  defaultViewport?: Viewport | null;
-  /**
-   * Slows down Puppeteer operations by the specified amount of milliseconds to
-   * aid debugging.
-   */
-  slowMo?: number;
-  /**
-   * Callback to decide if Puppeteer should connect to a given target or not.
-   */
-  targetFilter?: TargetFilterCallback;
-  /**
-   * @internal
-   */
-  _isPageTarget?: IsPageTargetCallback;
-  /**
-   * @defaultValue 'cdp'
-   * @internal
-   */
-  protocol?: 'cdp' | 'webDriverBiDi';
-  /**
-   * Timeout setting for individual protocol (CDP) calls.
-   *
-   * @defaultValue `180_000`
-   */
-  protocolTimeout?: number;
-}
 
 const getWebSocketTransportClass = async () => {
   return isNode
-    ? (await import('./NodeWebSocketTransport.js')).NodeWebSocketTransport
-    : (await import('./BrowserWebSocketTransport.js'))
+    ? (await import('../node/NodeWebSocketTransport.js')).NodeWebSocketTransport
+    : (await import('../common/BrowserWebSocketTransport.js'))
         .BrowserWebSocketTransport;
 };
 
 /**
  * Users should never call this directly; it's called when calling
- * `puppeteer.connect`.
+ * `puppeteer.connect`. This method attaches Puppeteer to an existing browser instance.
  *
  * @internal
  */
-export async function _connectToCDPBrowser(
+export async function _connectToBrowser(
+  options: ConnectOptions
+): Promise<Browser> {
+  const {connectionTransport, endpointUrl} =
+    await getConnectionTransport(options);
+
+  if (options.protocol === 'webDriverBiDi') {
+    const bidiBrowser = await _connectToBiDiBrowser(
+      connectionTransport,
+      endpointUrl,
+      options
+    );
+    return bidiBrowser;
+  } else {
+    const cdpBrowser = await _connectToCdpBrowser(
+      connectionTransport,
+      endpointUrl,
+      options
+    );
+    return cdpBrowser;
+  }
+}
+
+/**
+ * Establishes a websocket connection by given options and returns both transport and
+ * endpoint url the transport is connected to.
+ */
+async function getConnectionTransport(
   options: BrowserConnectOptions & ConnectOptions
-): Promise<CDPBrowser> {
-  const {
-    browserWSEndpoint,
-    browserURL,
-    ignoreHTTPSErrors = false,
-    defaultViewport = {width: 800, height: 600},
-    transport,
-    headers = {},
-    slowMo = 0,
-    targetFilter,
-    _isPageTarget: isPageTarget,
-    protocolTimeout,
-  } = options;
+): Promise<{connectionTransport: ConnectionTransport; endpointUrl: string}> {
+  const {browserWSEndpoint, browserURL, transport, headers = {}} = options;
 
   assert(
     Number(!!browserWSEndpoint) + Number(!!browserURL) + Number(!!transport) ===
@@ -102,54 +77,27 @@ export async function _connectToCDPBrowser(
     'Exactly one of browserWSEndpoint, browserURL or transport must be passed to puppeteer.connect'
   );
 
-  let connection!: Connection;
   if (transport) {
-    connection = new Connection('', transport, slowMo, protocolTimeout);
+    return {connectionTransport: transport, endpointUrl: ''};
   } else if (browserWSEndpoint) {
     const WebSocketClass = await getWebSocketTransportClass();
     const connectionTransport: ConnectionTransport =
       await WebSocketClass.create(browserWSEndpoint, headers);
-    connection = new Connection(
-      browserWSEndpoint,
-      connectionTransport,
-      slowMo,
-      protocolTimeout
-    );
+    return {
+      connectionTransport: connectionTransport,
+      endpointUrl: browserWSEndpoint,
+    };
   } else if (browserURL) {
     const connectionURL = await getWSEndpoint(browserURL);
     const WebSocketClass = await getWebSocketTransportClass();
     const connectionTransport: ConnectionTransport =
       await WebSocketClass.create(connectionURL);
-    connection = new Connection(
-      connectionURL,
-      connectionTransport,
-      slowMo,
-      protocolTimeout
-    );
+    return {
+      connectionTransport: connectionTransport,
+      endpointUrl: connectionURL,
+    };
   }
-  const version = await connection.send('Browser.getVersion');
-
-  const product = version.product.toLowerCase().includes('firefox')
-    ? 'firefox'
-    : 'chrome';
-
-  const {browserContextIds} = await connection.send(
-    'Target.getBrowserContexts'
-  );
-  const browser = await CDPBrowser._create(
-    product || 'chrome',
-    connection,
-    browserContextIds,
-    ignoreHTTPSErrors,
-    defaultViewport,
-    undefined,
-    () => {
-      return connection.send('Browser.close').catch(debugError);
-    },
-    targetFilter,
-    isPageTarget
-  );
-  return browser;
+  throw new Error('Invalid connection options');
 }
 
 async function getWSEndpoint(browserURL: string): Promise<string> {

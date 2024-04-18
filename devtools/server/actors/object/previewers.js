@@ -156,10 +156,14 @@ const previewers = {
       grip.isGenerator = obj.isGeneratorFunction;
 
       if (obj.script) {
+        // NOTE: Debugger.Script.prototype.startColumn is 1-based.
+        //       Convert to 0-based, while keeping the wasm's column (1) as is.
+        //       (bug 1863878)
+        const columnBase = obj.script.format === "wasm" ? 0 : 1;
         grip.location = {
           url: obj.script.url,
           line: obj.script.startLine,
-          column: obj.script.startColumn,
+          column: obj.script.startColumn - columnBase,
         };
       }
 
@@ -238,7 +242,7 @@ const previewers = {
             }
             items.push(item);
           }
-        } else if (raw && !Object.getOwnPropertyDescriptor(raw, i)) {
+        } else if (raw && !obj.getOwnPropertyDescriptor(i)) {
           items.push(null);
         } else {
           // Workers do not have access to Cu.
@@ -415,6 +419,10 @@ const previewers = {
 
   Headers: [
     function(objectActor, grip) {
+      // Bug 1863776: Headers can't be yet previewed from workers
+      if (isWorker) {
+        return false;
+      }
       const enumEntries = PropertyIterators.enumHeadersEntries(objectActor);
 
       grip.preview = {
@@ -894,7 +902,15 @@ previewers.Object = [
 
     let url;
     if (isWindow && rawObj.location) {
-      url = rawObj.location.href;
+      try {
+        url = rawObj.location.href;
+      } catch(e) {
+        // This can happen when we have a cross-process window.
+        // In such case, let's retrieve the url from the iframe.
+        // For window.top from a remote iframe, there's no way we can't retrieve the URL,
+        // so return a label that help user know what's going on.
+        url = rawObj.browsingContext?.embedderElement?.src || "Restricted";
+      }
     } else if (rawObj.href) {
       url = rawObj.href;
     } else {

@@ -337,10 +337,10 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(bool aNullParent = true) override;
 
-  bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) override {
-    bool isFocusable = false;
-    IsHTMLFocusable(aWithMouse, &isFocusable, aTabIndex);
-    return isFocusable;
+  Focusable IsFocusableWithoutStyle(bool aWithMouse) override {
+    Focusable result;
+    IsHTMLFocusable(aWithMouse, &result.mFocusable, &result.mTabIndex);
+    return result;
   }
   /**
    * Returns true if a subclass is not allowed to override the value returned
@@ -697,6 +697,8 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   }
 
  protected:
+  mozilla::dom::FetchPriority GetFetchPriority() const;
+
   static void ParseFetchPriority(const nsAString& aValue, nsAttrValue& aResult);
 
  private:
@@ -924,19 +926,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   // Used by A, AREA, LINK, and STYLE.
   already_AddRefed<nsIURI> GetHrefURIForAnchors() const;
 
- public:
-  /**
-   * Returns whether this element is an editable root. There are two types of
-   * editable roots:
-   *   1) the documentElement if the whole document is editable (for example for
-   *      desginMode=on)
-   *   2) an element that is marked editable with contentEditable=true and that
-   *      doesn't have a parent or whose parent is not editable.
-   * Note that this doesn't return input and textarea elements that haven't been
-   * made editable through contentEditable or designMode.
-   */
-  bool IsEditableRoot() const;
-
  private:
   void ChangeEditableState(int32_t aChange);
 };
@@ -1040,10 +1029,9 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement {
    */
   already_AddRefed<nsILayoutHistoryState> GetLayoutHistory(bool aRead);
 
-  // Form changes (in particular whether our current form has been submitted
-  // invalidly) affect the user-valid/user-invalid pseudo-classes. Sub-classes
-  // can override this to react to it.
-  virtual void UpdateValidityElementStates(bool aNotify) {}
+  // Sets the user-interacted flag in
+  // https://html.spec.whatwg.org/#user-interacted, if it applies.
+  virtual void SetUserInteracted(bool aNotify) {}
 
  protected:
   virtual ~nsGenericHTMLFormElement() = default;

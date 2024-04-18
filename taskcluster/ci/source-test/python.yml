@@ -178,7 +178,7 @@ mozharness:
         cache-dotcache: true
         cwd: '{checkout}/testing/mozharness'
         command: >
-            /usr/local/bin/tox -e py39-hg5.2
+            /usr/local/bin/tox -e py311-hg6.4
     when:
         files-changed:
             - 'testing/mozharness/**'
@@ -506,6 +506,20 @@ featuregates:
     when:
         files-changed:
             - 'toolkit/components/featuregates/**'
+
+skip-fails:
+    description: testing/skip-fails unit tests
+    always-target: false
+    python-version: [3]
+    treeherder:
+        symbol: sf
+    run:
+        using: python-test
+        subsuite: skip-fails
+    when:
+        files-changed:
+            - 'testing/skipfails.py'
+            - 'testing/test/**'
 
 talos:
     description: testing/talos unit tests

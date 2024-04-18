@@ -12,7 +12,6 @@
 #include "mozilla/FunctionRef.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/ClonedErrorHolder.h"
-#include "mozilla/dom/ClonedErrorHolderBinding.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/JSActorManager.h"
@@ -257,10 +256,14 @@ already_AddRefed<Promise> JSActor::SendQuery(JSContext* aCx,
   meta.queryId() = mNextQueryId++;
   meta.kind() = JSActorMessageKind::Query;
 
+  SendRawMessage(meta, std::move(data), CaptureJSStack(aCx), aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
   mPendingQueries.InsertOrUpdate(meta.queryId(),
                                  PendingQuery{promise, meta.messageName()});
 
-  SendRawMessage(meta, std::move(data), CaptureJSStack(aCx), aRv);
   return promise.forget();
 }
 
@@ -407,14 +410,9 @@ void JSActor::QueryHandler::RejectedCallback(JSContext* aCx,
   JS::Rooted<JS::Value> value(aCx, aValue);
   if (value.isObject()) {
     JS::Rooted<JSObject*> error(aCx, &value.toObject());
-    if (RefPtr<ClonedErrorHolder> ceh =
+    if (UniquePtr<ClonedErrorHolder> ceh =
             ClonedErrorHolder::Create(aCx, error, IgnoreErrors())) {
-      JS::RootedObject obj(aCx);
-      // Note: We can't use `ToJSValue` here because ClonedErrorHolder isn't
-      // wrapper cached.
-      if (ceh->WrapObject(aCx, nullptr, &obj)) {
-        value.setObject(*obj);
-      } else {
+      if (!ToJSValue(aCx, std::move(ceh), &value)) {
         JS_ClearPendingException(aCx);
       }
     } else {

@@ -33,10 +33,7 @@ add_setup(async function () {
   await waitForIdle();
   // Enable local telemetry recording for the duration of the tests.
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.search.log", true],
-      ["browser.search.serpEventTelemetry.enabled", true],
-    ],
+    set: [["browser.search.serpEventTelemetry.enabled", true]],
   });
 
   registerCleanupFunction(async () => {
@@ -52,33 +49,30 @@ add_task(async function load_2_pbm_serps_and_1_non_pbm_serp() {
   });
 
   info("Load SERP in a new tab.");
-  let impression = TestUtils.topicObserved("reported-page-with-impression");
   let url = getSERPUrl("searchTelemetry.html");
   let tab = await BrowserTestUtils.openNewForegroundTab(
     privateWindow.gBrowser,
     url
   );
   info("Wait for page impression.");
-  await impression;
+  await waitForPageWithAdImpressions();
 
   info("Load another SERP in the same tab.");
-  impression = TestUtils.topicObserved("reported-page-with-impression");
   url = getSERPUrl("searchTelemetryAd.html");
   BrowserTestUtils.startLoadingURIString(privateWindow.gBrowser, url);
   info("Wait for page impression.");
-  await impression;
+  await waitForPageWithAdImpressions();
 
   info("Close private window.");
   BrowserTestUtils.removeTab(tab);
   await BrowserTestUtils.closeWindow(privateWindow);
 
   info("Load SERP in non-private window.");
-  impression = TestUtils.topicObserved("reported-page-with-impression");
   tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
   info("Wait for page impression.");
-  await impression;
+  await waitForPageWithAdImpressions();
 
-  assertImpressionEvents([
+  assertSERPTelemetry([
     {
       impression: {
         provider: "example",
@@ -88,6 +82,9 @@ add_task(async function load_2_pbm_serps_and_1_non_pbm_serp() {
         is_shopping_page: "false",
         is_private: "true",
         shopping_tab_displayed: "false",
+      },
+      abandonment: {
+        reason: SearchSERPTelemetryUtils.ABANDONMENTS.NAVIGATION,
       },
     },
     {
@@ -100,6 +97,17 @@ add_task(async function load_2_pbm_serps_and_1_non_pbm_serp() {
         is_private: "true",
         shopping_tab_displayed: "false",
       },
+      abandonment: {
+        reason: SearchSERPTelemetryUtils.ABANDONMENTS.TAB_CLOSE,
+      },
+      adImpressions: [
+        {
+          component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+          ads_loaded: "2",
+          ads_visible: "2",
+          ads_hidden: "0",
+        },
+      ],
     },
     {
       impression: {
@@ -111,6 +119,14 @@ add_task(async function load_2_pbm_serps_and_1_non_pbm_serp() {
         is_private: "false",
         shopping_tab_displayed: "false",
       },
+      adImpressions: [
+        {
+          component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+          ads_loaded: "2",
+          ads_visible: "2",
+          ads_hidden: "0",
+        },
+      ],
     },
   ]);
 

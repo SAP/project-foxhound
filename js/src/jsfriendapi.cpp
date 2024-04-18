@@ -46,6 +46,7 @@
 #include "vm/PromiseObject.h"  // js::PromiseObject
 #include "vm/Realm.h"
 #include "vm/StringObject.h"
+#include "vm/Watchtower.h"
 #include "vm/WrapperObject.h"
 #ifdef ENABLE_RECORD_TUPLE
 #  include "vm/RecordType.h"
@@ -466,8 +467,8 @@ void JS::detail::SetReservedSlotWithBarrier(JSObject* obj, size_t slot,
   if (obj->is<ProxyObject>()) {
     obj->as<ProxyObject>().setReservedSlot(slot, value);
   } else {
-    // Note: we don't use setReservedSlot so that this also works on swappable
-    // DOM objects. See NativeObject::getReservedSlotRef comment.
+    // Note: We do not currently support watching reserved object slots for
+    // property modification.
     obj->as<NativeObject>().setSlot(slot, value);
   }
 }

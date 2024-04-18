@@ -224,7 +224,6 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
       observers.report_block_data_observer;
   configuration.paced_sender = transport->packet_sender();
   configuration.send_bitrate_observer = observers.bitrate_observer;
-  configuration.send_side_delay_observer = observers.send_delay_observer;
   configuration.send_packet_observer = observers.send_packet_observer;
   configuration.event_log = event_log;
   configuration.retransmission_rate_limiter = retransmission_rate_limiter;
@@ -280,7 +279,7 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
         crypto_options.sframe.require_frame_encryption;
     video_config.field_trials = &trials;
     video_config.enable_retransmit_all_layers =
-        video_config.field_trials->IsEnabled(
+        !video_config.field_trials->IsDisabled(
             "WebRTC-Video-EnableRetransmitAllLayers");
 
     const bool using_flexfec =
@@ -577,7 +576,7 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
   RTC_DCHECK_LT(simulcast_index, rtp_streams_.size());
 
   uint32_t rtp_timestamp =
-      encoded_image.Timestamp() +
+      encoded_image.RtpTimestamp() +
       rtp_streams_[simulcast_index].rtp_rtcp->StartTimestamp();
 
   // RTCPSender has it's own copy of the timestamp offset, added in
@@ -585,7 +584,7 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
   // TODO(nisse): Delete RTCPSender:timestamp_offset_, and see if we can confine
   // knowledge of the offset to a single place.
   if (!rtp_streams_[simulcast_index].rtp_rtcp->OnSendingRtpFrame(
-          encoded_image.Timestamp(), encoded_image.capture_time_ms_,
+          encoded_image.RtpTimestamp(), encoded_image.capture_time_ms_,
           rtp_config_.payload_type,
           encoded_image._frameType == VideoFrameType::kVideoFrameKey)) {
     // The payload router could be active but this module isn't sending.

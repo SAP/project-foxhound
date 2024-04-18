@@ -20,12 +20,10 @@
 #include "VPXDecoder.h"
 #include "VideoUtils.h"
 #include "gfxMacUtils.h"
-#include "gfxPlatform.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "nsThreadUtils.h"
 
 #define LOG(...) DDMOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
 #define LOGEX(_this, ...) \
@@ -37,7 +35,7 @@ using namespace layers;
 
 AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig,
                                layers::ImageContainer* aImageContainer,
-                               CreateDecoderParams::OptionSet aOptions,
+                               const CreateDecoderParams::OptionSet& aOptions,
                                layers::KnowsCompositor* aKnowsCompositor,
                                Maybe<TrackingId> aTrackingId)
     : mExtraData(aConfig.mExtraData),
@@ -336,7 +334,8 @@ static void PlatformCallback(void* decompressionOutputRefCon,
     NS_WARNING("VideoToolbox decoder returned an error");
     decoder->OnDecodeError(status);
     return;
-  } else if (!image) {
+  }
+  if (!image) {
     NS_WARNING("VideoToolbox decoder returned no data");
   } else if (flags & kVTDecodeInfo_FrameDropped) {
     NS_WARNING("  ...frame tagged as dropped...");
@@ -606,7 +605,8 @@ MediaResult AppleVTDecoder::InitializeSession() {
       mStreamType == StreamType::H264
           ? kCMVideoCodecType_H264
           : CMVideoCodecType(AppleDecoderModule::kCMVideoCodecType_VP9),
-      mPictureWidth, mPictureHeight, extensions, &mFormat);
+      AssertedCast<int32_t>(mPictureWidth),
+      AssertedCast<int32_t>(mPictureHeight), extensions, &mFormat);
   if (rv != noErr) {
     return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                        RESULT_DETAIL("Couldn't create format description!"));
@@ -652,8 +652,9 @@ MediaResult AppleVTDecoder::InitializeSession() {
 }
 
 CFDictionaryRef AppleVTDecoder::CreateDecoderExtensions() {
-  AutoCFRelease<CFDataRef> data = CFDataCreate(
-      kCFAllocatorDefault, mExtraData->Elements(), mExtraData->Length());
+  AutoCFRelease<CFDataRef> data =
+      CFDataCreate(kCFAllocatorDefault, mExtraData->Elements(),
+                   AssertedCast<CFIndex>(mExtraData->Length()));
 
   const void* atomsKey[1];
   atomsKey[0] = mStreamType == StreamType::H264 ? CFSTR("avcC") : CFSTR("vpcC");

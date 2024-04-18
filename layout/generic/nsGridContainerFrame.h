@@ -123,10 +123,6 @@ class nsGridContainerFrame final : public nsContainerFrame,
   nscoord GetMinISize(gfxContext* aRenderingContext) override;
   nscoord GetPrefISize(gfxContext* aRenderingContext) override;
   void MarkIntrinsicISizesDirty() override;
-  bool IsFrameOfType(uint32_t aFlags) const override {
-    return nsContainerFrame::IsFrameOfType(
-        aFlags & ~nsIFrame::eCanContainOverflowContainers);
-  }
 
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override;
@@ -262,6 +258,28 @@ class nsGridContainerFrame final : public nsContainerFrame,
     return HasAnyStateBits(NS_STATE_GRID_HAS_ROW_SUBGRID_ITEM |
                            NS_STATE_GRID_HAS_COL_SUBGRID_ITEM);
   }
+  /**
+   * Return true if the grid item aChild should stretch in its aAxis (i.e. aAxis
+   * is in the aChild's writing-mode).
+   *
+   * Note: this method does *not* consider the grid item's aspect-ratio and
+   * natural size in the axis when the self-alignment value is 'normal' per
+   * https://drafts.csswg.org/css-grid/#grid-item-sizing
+   */
+  bool GridItemShouldStretch(const nsIFrame* aChild, LogicalAxis aAxis) const;
+
+  /**
+   * Returns true if aFrame forms an independent formatting context and hence
+   * should be inhibited from being a subgrid (i.e. if the used value of
+   * 'grid-template-{rows,columns}:subgrid' should be 'none').
+   * https://drafts.csswg.org/css-grid-2/#subgrid-listing
+   *
+   * (Note this only makes sense to call if aFrame is itself either a grid
+   * container frame or a wrapper frame for a grid container frame, e.g. a
+   * scroll container frame for a scrollable grid.  Having said that, this is
+   * technically safe to call on any non-null frame.)
+   */
+  static bool ShouldInhibitSubgridDueToIFC(const nsIFrame* aFrame);
 
   /**
    * Return a container grid frame for the supplied frame, if available.
@@ -434,9 +452,6 @@ class nsGridContainerFrame final : public nsContainerFrame,
    * NS_STATE_GRID_IS_ROW/COL_MASONRY bits we ought to have.
    */
   nsFrameState ComputeSelfSubgridMasonryBits() const;
-
-  /** Helper for ComputeSelfSubgridMasonryBits(). */
-  bool WillHaveAtLeastOneTrackInAxis(LogicalAxis aAxis) const;
 
  private:
   // Helpers for ReflowChildren

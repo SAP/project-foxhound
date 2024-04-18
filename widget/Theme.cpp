@@ -228,7 +228,7 @@ std::tuple<sRGBColor, sRGBColor, sRGBColor> Theme::ComputeCheckboxColors(
       auto bg = ComputeBorderColor(aState, aColors, OutlineCoversBorder::No);
       auto fg = aColors.HighContrast()
                     ? aColors.System(StyleSystemColor::Graytext)
-                    : sRGBColor::White(.8f);
+                    : sRGBColor::White(aColors.IsDark() ? .4f : .8f);
       return std::make_tuple(bg, bg, fg);
     }
 
@@ -1065,11 +1065,17 @@ void Theme::PaintProgress(nsIFrame* aFrame, PaintBackendData& aPaintData,
 template <typename PaintBackendData>
 void Theme::PaintButton(nsIFrame* aFrame, PaintBackendData& aPaintData,
                         const LayoutDeviceRect& aRect,
-                        const ElementState& aState, const Colors& aColors,
-                        DPIRatio aDpiRatio) {
+                        StyleAppearance aAppearance, const ElementState& aState,
+                        const Colors& aColors, DPIRatio aDpiRatio) {
   const CSSCoord radius = 4.0f;
   auto [backgroundColor, borderColor] =
       ComputeButtonColors(aState, aColors, aFrame);
+
+  if (aAppearance == StyleAppearance::Toolbarbutton &&
+      (!aState.HasState(ElementState::HOVER) ||
+       aState.HasState(ElementState::DISABLED))) {
+    borderColor = sTransparent;
+  }
 
   ThemeDrawing::PaintRoundedRectWithRadius(aPaintData, aRect, backgroundColor,
                                            borderColor, kButtonBorderWidth,
@@ -1327,8 +1333,9 @@ bool Theme::DoDrawWidgetBackground(PaintBackendData& aPaintData,
       break;
     }
     case StyleAppearance::Button:
-      PaintButton(aFrame, aPaintData, devPxRect, elementState, colors,
-                  dpiRatio);
+    case StyleAppearance::Toolbarbutton:
+      PaintButton(aFrame, aPaintData, devPxRect, aAppearance, elementState,
+                  colors, dpiRatio);
       break;
     case StyleAppearance::FocusOutline:
       PaintAutoStyleOutline(aFrame, aPaintData, devPxRect, colors, dpiRatio);
@@ -1438,6 +1445,7 @@ LayoutDeviceIntMargin Theme::GetWidgetBorder(nsDeviceContext* aContext,
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
     case StyleAppearance::Button:
+    case StyleAppearance::Toolbarbutton:
       // Return the border size from the UA sheet, even though what we paint
       // doesn't actually match that. We know this is the UA sheet border
       // because we disable native theming when different border widths are
@@ -1505,6 +1513,7 @@ bool Theme::GetWidgetOverflow(nsDeviceContext* aContext, nsIFrame* aFrame,
     case StyleAppearance::MenulistButton:
     case StyleAppearance::Menulist:
     case StyleAppearance::Button:
+    case StyleAppearance::Toolbarbutton:
       // 2px for each segment, plus 1px separation, but we paint 1px inside
       // the border area so 4px overflow.
       overflow.SizeTo(4, 4, 4, 4);
@@ -1670,6 +1679,7 @@ bool Theme::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* aFrame,
     case StyleAppearance::ScrollbarVertical:
     case StyleAppearance::Scrollcorner:
     case StyleAppearance::Button:
+    case StyleAppearance::Toolbarbutton:
     case StyleAppearance::Listbox:
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:

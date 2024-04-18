@@ -30,6 +30,7 @@
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/UserActivation.h"
 #include "nsIDragService.h"
 #include "nsIPrompt.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -291,6 +292,7 @@ nsWindowWatcher::OpenWindow(mozIDOMWindowProxy* aParent, const nsACString& aUrl,
 
   RefPtr<BrowsingContext> bc;
   MOZ_TRY(OpenWindowInternal(aParent, aUrl, aName, aFeatures,
+                             mozilla::dom::UserActivation::Modifiers::None(),
                              /* calledFromJS = */ false, dialog,
                              /* navigate = */ true, argv,
                              /* aIsPopupSpam = */ false,
@@ -359,15 +361,13 @@ static SizeSpec CalcSizeSpec(const WindowFeatures&, bool aHasChromeParent,
                              CSSToDesktopScale);
 
 NS_IMETHODIMP
-nsWindowWatcher::OpenWindow2(mozIDOMWindowProxy* aParent,
-                             const nsACString& aUrl, const nsACString& aName,
-                             const nsACString& aFeatures,
-                             bool aCalledFromScript, bool aDialog,
-                             bool aNavigate, nsISupports* aArguments,
-                             bool aIsPopupSpam, bool aForceNoOpener,
-                             bool aForceNoReferrer, PrintKind aPrintKind,
-                             nsDocShellLoadState* aLoadState,
-                             BrowsingContext** aResult) {
+nsWindowWatcher::OpenWindow2(
+    mozIDOMWindowProxy* aParent, const nsACString& aUrl,
+    const nsACString& aName, const nsACString& aFeatures,
+    const UserActivation::Modifiers& aModifiers, bool aCalledFromScript,
+    bool aDialog, bool aNavigate, nsISupports* aArguments, bool aIsPopupSpam,
+    bool aForceNoOpener, bool aForceNoReferrer, PrintKind aPrintKind,
+    nsDocShellLoadState* aLoadState, BrowsingContext** aResult) {
   nsCOMPtr<nsIArray> argv = ConvertArgsToArray(aArguments);
 
   uint32_t argc = 0;
@@ -383,10 +383,10 @@ nsWindowWatcher::OpenWindow2(mozIDOMWindowProxy* aParent,
     dialog = argc > 0;
   }
 
-  return OpenWindowInternal(aParent, aUrl, aName, aFeatures, aCalledFromScript,
-                            dialog, aNavigate, argv, aIsPopupSpam,
-                            aForceNoOpener, aForceNoReferrer, aPrintKind,
-                            aLoadState, aResult);
+  return OpenWindowInternal(aParent, aUrl, aName, aFeatures, aModifiers,
+                            aCalledFromScript, dialog, aNavigate, argv,
+                            aIsPopupSpam, aForceNoOpener, aForceNoReferrer,
+                            aPrintKind, aLoadState, aResult);
 }
 
 // This static function checks if the aDocShell uses an UserContextId equal to
@@ -473,12 +473,11 @@ static void MaybeDisablePersistence(const SizeSpec& aSizeSpec,
 }
 
 NS_IMETHODIMP
-nsWindowWatcher::OpenWindowWithRemoteTab(nsIRemoteTab* aRemoteTab,
-                                         const WindowFeatures& aFeatures,
-                                         bool aCalledFromJS,
-                                         float aOpenerFullZoom,
-                                         nsIOpenWindowInfo* aOpenWindowInfo,
-                                         nsIRemoteTab** aResult) {
+nsWindowWatcher::OpenWindowWithRemoteTab(
+    nsIRemoteTab* aRemoteTab, const WindowFeatures& aFeatures,
+    const UserActivation::Modifiers& aModifiers, bool aCalledFromJS,
+    float aOpenerFullZoom, nsIOpenWindowInfo* aOpenWindowInfo,
+    nsIRemoteTab** aResult) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(mWindowCreator);
 
@@ -545,7 +544,8 @@ nsWindowWatcher::OpenWindowWithRemoteTab(nsIRemoteTab* aRemoteTab,
   // don't need to propagate isPopupRequested out-parameter to the resulting
   // browsing context.
   bool unused = false;
-  uint32_t chromeFlags = CalculateChromeFlagsForContent(aFeatures, &unused);
+  uint32_t chromeFlags =
+      CalculateChromeFlagsForContent(aFeatures, aModifiers, &unused);
 
   if (isPrivateBrowsingWindow) {
     chromeFlags |= nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW;
@@ -609,10 +609,12 @@ nsWindowWatcher::OpenWindowWithRemoteTab(nsIRemoteTab* aRemoteTab,
 
 nsresult nsWindowWatcher::OpenWindowInternal(
     mozIDOMWindowProxy* aParent, const nsACString& aUrl,
-    const nsACString& aName, const nsACString& aFeatures, bool aCalledFromJS,
-    bool aDialog, bool aNavigate, nsIArray* aArgv, bool aIsPopupSpam,
-    bool aForceNoOpener, bool aForceNoReferrer, PrintKind aPrintKind,
-    nsDocShellLoadState* aLoadState, BrowsingContext** aResult) {
+    const nsACString& aName, const nsACString& aFeatures,
+    const mozilla::dom::UserActivation::Modifiers& aModifiers,
+    bool aCalledFromJS, bool aDialog, bool aNavigate, nsIArray* aArgv,
+    bool aIsPopupSpam, bool aForceNoOpener, bool aForceNoReferrer,
+    PrintKind aPrintKind, nsDocShellLoadState* aLoadState,
+    BrowsingContext** aResult) {
   MOZ_ASSERT_IF(aForceNoReferrer, aForceNoOpener);
 
   nsresult rv = NS_OK;
@@ -759,7 +761,8 @@ nsresult nsWindowWatcher::OpenWindowInternal(
   } else {
     MOZ_DIAGNOSTIC_ASSERT(parentBC && parentBC->IsContent(),
                           "content caller must provide content parent");
-    chromeFlags = CalculateChromeFlagsForContent(features, &isPopupRequested);
+    chromeFlags =
+        CalculateChromeFlagsForContent(features, aModifiers, &isPopupRequested);
 
     if (aDialog) {
       MOZ_ASSERT(XRE_IsParentProcess());
@@ -938,10 +941,11 @@ nsresult nsWindowWatcher::OpenWindowInternal(
 
       nsCOMPtr<nsIWindowProvider> provider = do_GetInterface(parentTreeOwner);
       if (provider) {
-        rv = provider->ProvideWindow(
-            openWindowInfo, chromeFlags, aCalledFromJS, uriToLoad, name,
-            featuresStr, aForceNoOpener, aForceNoReferrer, isPopupRequested,
-            aLoadState, &windowIsNew, getter_AddRefs(targetBC));
+        rv = provider->ProvideWindow(openWindowInfo, chromeFlags, aCalledFromJS,
+                                     uriToLoad, name, featuresStr, aModifiers,
+                                     aForceNoOpener, aForceNoReferrer,
+                                     isPopupRequested, aLoadState, &windowIsNew,
+                                     getter_AddRefs(targetBC));
 
         if (NS_SUCCEEDED(rv) && targetBC) {
           nsCOMPtr<nsIDocShell> newDocShell = targetBC->GetDocShell();
@@ -1784,47 +1788,6 @@ nsresult nsWindowWatcher::URIfromURL(const nsACString& aURL,
 }
 
 // static
-uint32_t nsWindowWatcher::CalculateChromeFlagsHelper(
-    uint32_t aInitialFlags, const WindowFeatures& aFeatures,
-    bool* presenceFlag) {
-  uint32_t chromeFlags = aInitialFlags;
-
-  if (aFeatures.GetBoolWithDefault("titlebar", false, presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_TITLEBAR;
-  }
-  if (aFeatures.GetBoolWithDefault("close", false, presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_WINDOW_CLOSE;
-  }
-  if (aFeatures.GetBoolWithDefault("toolbar", false, presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_TOOLBAR;
-  }
-  if (aFeatures.GetBoolWithDefault("location", false, presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_LOCATIONBAR;
-  }
-  if (aFeatures.GetBoolWithDefault("personalbar", false, presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_PERSONAL_TOOLBAR;
-  }
-  if (aFeatures.GetBoolWithDefault("status", false, presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_STATUSBAR;
-  }
-  if (aFeatures.GetBoolWithDefault("menubar", false, presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_MENUBAR;
-  }
-  if (aFeatures.GetBoolWithDefault("resizable", false, presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_WINDOW_RESIZE;
-  }
-  if (aFeatures.GetBoolWithDefault("minimizable", false, presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_WINDOW_MIN;
-  }
-
-  if (aFeatures.GetBoolWithDefault("scrollbars", true, presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_SCROLLBARS;
-  }
-
-  return chromeFlags;
-}
-
-// static
 bool nsWindowWatcher::ShouldOpenPopup(const WindowFeatures& aFeatures) {
   if (aFeatures.IsEmpty()) {
     return false;
@@ -1871,10 +1834,20 @@ bool nsWindowWatcher::ShouldOpenPopup(const WindowFeatures& aFeatures) {
  */
 // static
 uint32_t nsWindowWatcher::CalculateChromeFlagsForContent(
-    const WindowFeatures& aFeatures, bool* aIsPopupRequested) {
+    const WindowFeatures& aFeatures,
+    const mozilla::dom::UserActivation::Modifiers& aModifiers,
+    bool* aIsPopupRequested) {
   if (aFeatures.IsEmpty() || !ShouldOpenPopup(aFeatures)) {
     // Open the current/new tab in the current/new window
     // (depends on browser.link.open_newwindow).
+    return nsIWebBrowserChrome::CHROME_ALL;
+  }
+
+  int32_t unused;
+  if (IsWindowOpenLocationModified(aModifiers, &unused)) {
+    // If modifier keys are held when `window.open` is called, open a new
+    // foreground/background tab in the current window, or open a new tab in a
+    // new window, depending on the modifiers combination.
     return nsIWebBrowserChrome::CHROME_ALL;
   }
 
@@ -1925,8 +1898,36 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForSystem(
   }
 
   /* Next, allow explicitly named options to override the initial settings */
-  chromeFlags =
-      CalculateChromeFlagsHelper(chromeFlags, aFeatures, &presenceFlag);
+  if (aFeatures.GetBoolWithDefault("titlebar", false, &presenceFlag)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_TITLEBAR;
+  }
+  if (aFeatures.GetBoolWithDefault("close", false, &presenceFlag)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_WINDOW_CLOSE;
+  }
+  if (aFeatures.GetBoolWithDefault("toolbar", false, &presenceFlag)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_TOOLBAR;
+  }
+  if (aFeatures.GetBoolWithDefault("location", false, &presenceFlag)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_LOCATIONBAR;
+  }
+  if (aFeatures.GetBoolWithDefault("personalbar", false, &presenceFlag)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_PERSONAL_TOOLBAR;
+  }
+  if (aFeatures.GetBoolWithDefault("status", false, &presenceFlag)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_STATUSBAR;
+  }
+  if (aFeatures.GetBoolWithDefault("menubar", false, &presenceFlag)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_MENUBAR;
+  }
+  if (aFeatures.GetBoolWithDefault("resizable", false, &presenceFlag)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_WINDOW_RESIZE;
+  }
+  if (aFeatures.GetBoolWithDefault("minimizable", false, &presenceFlag)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_WINDOW_MINIMIZE;
+  }
+  if (aFeatures.GetBoolWithDefault("scrollbars", true, &presenceFlag)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_SCROLLBARS;
+  }
 
   // Determine whether the window is a private browsing window
   if (aFeatures.GetBoolWithDefault("private", false, &presenceFlag)) {
@@ -1963,10 +1964,6 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForSystem(
     chromeFlags |= nsIWebBrowserChrome::CHROME_FISSION_WINDOW;
   }
 
-  if (aFeatures.GetBoolWithDefault("popup", false, &presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_WINDOW_POPUP;
-  }
-
   /* OK.
      Normal browser windows, in spite of a stated pattern of turning off
      all chrome not mentioned explicitly, will want the new OS chrome (window
@@ -1975,13 +1972,11 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForSystem(
      to mean "OS' choice." */
 
   // default titlebar and closebox to "on," if not mentioned at all
-  if (!(chromeFlags & nsIWebBrowserChrome::CHROME_WINDOW_POPUP)) {
-    if (!aFeatures.Exists("titlebar")) {
-      chromeFlags |= nsIWebBrowserChrome::CHROME_TITLEBAR;
-    }
-    if (!aFeatures.Exists("close")) {
-      chromeFlags |= nsIWebBrowserChrome::CHROME_WINDOW_CLOSE;
-    }
+  if (!aFeatures.Exists("titlebar")) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_TITLEBAR;
+  }
+  if (!aFeatures.Exists("close")) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_WINDOW_CLOSE;
   }
 
   if (aDialog && !aFeatures.IsEmpty() && !presenceFlag) {
@@ -2024,6 +2019,9 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForSystem(
   if (aFeatures.GetBoolWithDefault("dialog", false)) {
     chromeFlags |= nsIWebBrowserChrome::CHROME_OPENAS_DIALOG;
   }
+  if (aFeatures.GetBoolWithDefault("alert", false)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_ALERT;
+  }
 
   /* dialogs need to have the last word. assume dialogs are dialogs,
      and opened as chrome, unless explicitly told otherwise. */
@@ -2035,10 +2033,6 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForSystem(
       chromeFlags |= nsIWebBrowserChrome::CHROME_OPENAS_CHROME;
     }
   }
-
-  /* missing
-     chromeFlags->copy_history
-   */
 
   return chromeFlags;
 }
@@ -2444,14 +2438,47 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
 }
 
 /* static */
-int32_t nsWindowWatcher::GetWindowOpenLocation(nsPIDOMWindowOuter* aParent,
-                                               uint32_t aChromeFlags,
-                                               bool aCalledFromJS,
-                                               bool aIsForPrinting) {
+bool nsWindowWatcher::IsWindowOpenLocationModified(
+    const mozilla::dom::UserActivation::Modifiers& aModifiers,
+    int32_t* aLocation) {
+  // Perform the subset of BrowserUtils.whereToOpenLink in
+  // toolkit/modules/BrowserUtils.sys.mjs
+#ifdef XP_MACOSX
+  bool metaKey = aModifiers.IsMeta();
+#else
+  bool metaKey = aModifiers.IsControl();
+#endif
+  bool shiftKey = aModifiers.IsShift();
+  if (metaKey) {
+    if (shiftKey) {
+      *aLocation = nsIBrowserDOMWindow::OPEN_NEWTAB;
+      return true;
+    }
+    *aLocation = nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND;
+    return true;
+  }
+  if (shiftKey) {
+    *aLocation = nsIBrowserDOMWindow::OPEN_NEWWINDOW;
+    return true;
+  }
+
+  return false;
+}
+
+/* static */
+int32_t nsWindowWatcher::GetWindowOpenLocation(
+    nsPIDOMWindowOuter* aParent, uint32_t aChromeFlags,
+    const mozilla::dom::UserActivation::Modifiers& aModifiers,
+    bool aCalledFromJS, bool aIsForPrinting) {
   // These windows are not actually visible to the user, so we return the thing
   // that we can always handle.
   if (aIsForPrinting) {
     return nsIBrowserDOMWindow::OPEN_PRINT_BROWSER;
+  }
+
+  int32_t modifiedLocation = 0;
+  if (IsWindowOpenLocationModified(aModifiers, &modifiedLocation)) {
+    return modifiedLocation;
   }
 
   // Where should we open this?

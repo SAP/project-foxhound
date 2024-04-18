@@ -269,7 +269,9 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
   void SetGraphImpl(MediaTrackGraph* aGraph);
 
   // Control API.
-  void AddAudioOutput(void* aKey);
+  void AddAudioOutput(void* aKey, const AudioDeviceInfo* aSink);
+  void AddAudioOutput(void* aKey, CubebUtils::AudioDeviceID aDeviceID,
+                      TrackRate aPreferredSampleRate);
   void SetAudioOutputVolume(void* aKey, float aVolume);
   void RemoveAudioOutput(void* aKey);
   // Explicitly suspend. Useful for example if a media element is pausing
@@ -401,9 +403,6 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
    */
   virtual void DestroyImpl();
   TrackTime GetEnd() const;
-  void SetAudioOutputVolumeImpl(void* aKey, float aVolume);
-  void AddAudioOutputImpl(void* aKey);
-  void RemoveAudioOutputImpl(void* aKey);
 
   /**
    * Removes all direct listeners and signals to them that they have been
@@ -1079,10 +1078,10 @@ class MediaTrackGraph {
   // Main thread only
   static MediaTrackGraph* GetInstanceIfExists(
       nsPIDOMWindowInner* aWindow, TrackRate aSampleRate,
-      CubebUtils::AudioDeviceID aOutputDeviceID);
+      CubebUtils::AudioDeviceID aPrimaryOutputDeviceID);
   static MediaTrackGraph* GetInstance(
       GraphDriverType aGraphDriverRequested, nsPIDOMWindowInner* aWindow,
-      TrackRate aSampleRate, CubebUtils::AudioDeviceID aOutputDeviceID);
+      TrackRate aSampleRate, CubebUtils::AudioDeviceID aPrimaryOutputDeviceID);
   static MediaTrackGraph* CreateNonRealtimeInstance(TrackRate aSampleRate);
 
   // Idempotent
@@ -1124,15 +1123,17 @@ class MediaTrackGraph {
   void AddTrack(MediaTrack* aTrack);
 
   /* From the main thread, ask the MTG to resolve the returned promise when
-   * the device has started.
-   * The promise is rejected with NS_ERROR_NOT_AVAILABLE if aTrack
-   * is destroyed, or NS_ERROR_ILLEGAL_DURING_SHUTDOWN if the graph is shut
-   * down, before the promise could be resolved.
-   * (Audio is initially processed in the FallbackDriver's thread while the
-   * device is starting up.)
+   * the device specified has started.
+   * A null aDeviceID indicates the default audio output device.
+   * The promise is rejected with NS_ERROR_INVALID_ARG if aSink does not
+   * correspond to any output devices used by the graph, or
+   * NS_ERROR_NOT_AVAILABLE if outputs to the device are removed or
+   * NS_ERROR_ILLEGAL_DURING_SHUTDOWN if the graph is force shut down
+   * before the promise could be resolved.
    */
   using GraphStartedPromise = GenericPromise;
-  RefPtr<GraphStartedPromise> NotifyWhenDeviceStarted(MediaTrack* aTrack);
+  virtual RefPtr<GraphStartedPromise> NotifyWhenDeviceStarted(
+      CubebUtils::AudioDeviceID aDeviceID) = 0;
 
   /* From the main thread, suspend, resume or close an AudioContext.  Calls
    * are not counted.  Even Resume calls can be more frequent than Suspend
@@ -1189,6 +1190,14 @@ class MediaTrackGraph {
    * Returns graph sample rate in Hz.
    */
   TrackRate GraphRate() const { return mSampleRate; }
+  /**
+   * Returns the ID of the device used for audio output through an
+   * AudioCallbackDriver.  This is the device specified when creating the
+   * graph.  Can be called on any thread.
+   */
+  CubebUtils::AudioDeviceID PrimaryOutputDeviceID() const {
+    return mPrimaryOutputDeviceID;
+  }
 
   double AudioOutputLatency();
 
@@ -1231,7 +1240,10 @@ class MediaTrackGraph {
   NativeInputTrack* GetNativeInputTrackMainThread();
 
  protected:
-  explicit MediaTrackGraph(TrackRate aSampleRate) : mSampleRate(aSampleRate) {
+  explicit MediaTrackGraph(TrackRate aSampleRate,
+                           CubebUtils::AudioDeviceID aPrimaryOutputDeviceID)
+      : mSampleRate(aSampleRate),
+        mPrimaryOutputDeviceID(aPrimaryOutputDeviceID) {
     MOZ_COUNT_CTOR(MediaTrackGraph);
   }
   MOZ_COUNTED_DTOR_VIRTUAL(MediaTrackGraph)
@@ -1250,6 +1262,11 @@ class MediaTrackGraph {
    * at construction.
    */
   const TrackRate mSampleRate;
+  /**
+   * Device to use for audio output through an AudioCallbackDriver.
+   * This is the device specified when creating the graph.
+   */
+  const CubebUtils::AudioDeviceID mPrimaryOutputDeviceID;
 };
 
 inline void MediaTrack::AssertOnGraphThread() const {

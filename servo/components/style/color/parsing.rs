@@ -8,6 +8,10 @@
 //! Relative colors, color-mix, system colors, and other such things require better calc() support
 //! and integration.
 
+use super::{
+    convert::{hsl_to_rgb, hwb_to_rgb, normalize_hue},
+    ColorComponents,
+};
 use crate::values::normalize;
 use cssparser::color::{
     clamp_floor_256_f32, clamp_unit_f32, parse_hash_color, serialize_color_alpha,
@@ -120,9 +124,10 @@ fn parse_alpha_component<'i, 't, P>(
 where
     P: ColorParser<'i>,
 {
+    // Percent reference range for alpha: 0% = 0.0, 100% = 1.0
     let alpha = color_parser
         .parse_number_or_percentage(arguments)?
-        .unit_value();
+        .to_number(1.0);
     Ok(normalize(alpha).clamp(0.0, OPAQUE))
 }
 
@@ -230,6 +235,10 @@ fn parse_hsl<'i, 't, P>(
 where
     P: ColorParser<'i>,
 {
+    // Percent reference range for S and L: 0% = 0.0, 100% = 100.0
+    const LIGHTNESS_RANGE: f32 = 100.0;
+    const SATURATION_RANGE: f32 = 100.0;
+
     let maybe_hue = parse_none_or(arguments, |p| color_parser.parse_angle_or_number(p))?;
 
     // If the hue is not "none" and is followed by a comma, then we are parsing
@@ -240,20 +249,21 @@ where
     let lightness: Option<f32>;
 
     let alpha = if is_legacy_syntax {
-        saturation = Some(color_parser.parse_percentage(arguments)?);
+        saturation = Some(color_parser.parse_percentage(arguments)? * SATURATION_RANGE);
         arguments.expect_comma()?;
-        lightness = Some(color_parser.parse_percentage(arguments)?);
+        lightness = Some(color_parser.parse_percentage(arguments)? * LIGHTNESS_RANGE);
         Some(parse_legacy_alpha(color_parser, arguments)?)
     } else {
-        saturation = parse_none_or(arguments, |p| color_parser.parse_percentage(p))?;
-        lightness = parse_none_or(arguments, |p| color_parser.parse_percentage(p))?;
-
+        saturation = parse_none_or(arguments, |p| color_parser.parse_number_or_percentage(p))?
+            .map(|v| v.to_number(SATURATION_RANGE));
+        lightness = parse_none_or(arguments, |p| color_parser.parse_number_or_percentage(p))?
+            .map(|v| v.to_number(LIGHTNESS_RANGE));
         parse_modern_alpha(color_parser, arguments)?
     };
 
     let hue = maybe_hue.map(|h| normalize_hue(h.degrees()));
-    let saturation = saturation.map(|s| s.clamp(0.0, 1.0));
-    let lightness = lightness.map(|l| l.clamp(0.0, 1.0));
+    let saturation = saturation.map(|s| s.clamp(0.0, SATURATION_RANGE));
+    let lightness = lightness.map(|l| l.clamp(0.0, LIGHTNESS_RANGE));
 
     Ok(P::Output::from_hsl(hue, saturation, lightness, alpha))
 }
@@ -269,72 +279,23 @@ fn parse_hwb<'i, 't, P>(
 where
     P: ColorParser<'i>,
 {
+    // Percent reference range for W and B: 0% = 0.0, 100% = 100.0
+    const WHITENESS_RANGE: f32 = 100.0;
+    const BLACKNESS_RANGE: f32 = 100.0;
+
     let (hue, whiteness, blackness, alpha) = parse_components(
         color_parser,
         arguments,
         P::parse_angle_or_number,
-        P::parse_percentage,
-        P::parse_percentage,
+        P::parse_number_or_percentage,
+        P::parse_number_or_percentage,
     )?;
 
     let hue = hue.map(|h| normalize_hue(h.degrees()));
-    let whiteness = whiteness.map(|w| w.clamp(0.0, 1.0));
-    let blackness = blackness.map(|b| b.clamp(0.0, 1.0));
+    let whiteness = whiteness.map(|w| w.to_number(WHITENESS_RANGE).clamp(0.0, WHITENESS_RANGE));
+    let blackness = blackness.map(|b| b.to_number(BLACKNESS_RANGE).clamp(0.0, BLACKNESS_RANGE));
 
     Ok(P::Output::from_hwb(hue, whiteness, blackness, alpha))
-}
-
-/// <https://drafts.csswg.org/css-color-4/#hwb-to-rgb>
-#[inline]
-pub fn hwb_to_rgb(h: f32, w: f32, b: f32) -> (f32, f32, f32) {
-    if w + b >= 1.0 {
-        let gray = w / (w + b);
-        return (gray, gray, gray);
-    }
-
-    // hue is expected in the range [0..1].
-    let (mut red, mut green, mut blue) = hsl_to_rgb(h, 1.0, 0.5);
-    let x = 1.0 - w - b;
-    red = red * x + w;
-    green = green * x + w;
-    blue = blue * x + w;
-    (red, green, blue)
-}
-
-/// <https://drafts.csswg.org/css-color/#hsl-color>
-/// except with h pre-multiplied by 3, to avoid some rounding errors.
-#[inline]
-pub fn hsl_to_rgb(hue: f32, saturation: f32, lightness: f32) -> (f32, f32, f32) {
-    debug_assert!((0.0..=1.0).contains(&hue));
-
-    fn hue_to_rgb(m1: f32, m2: f32, mut h3: f32) -> f32 {
-        if h3 < 0. {
-            h3 += 3.
-        }
-        if h3 > 3. {
-            h3 -= 3.
-        }
-        if h3 * 2. < 1. {
-            m1 + (m2 - m1) * h3 * 2.
-        } else if h3 * 2. < 3. {
-            m2
-        } else if h3 < 2. {
-            m1 + (m2 - m1) * (2. - h3) * 2.
-        } else {
-            m1
-        }
-    }
-    let m2 = if lightness <= 0.5 {
-        lightness * (saturation + 1.)
-    } else {
-        lightness + saturation - lightness * saturation
-    };
-    let m1 = lightness * 2. - m2;
-    let hue_times_3 = hue * 3.;
-    let red = hue_to_rgb(m1, m2, hue_times_3 + 1.);
-    let green = hue_to_rgb(m1, m2, hue_times_3);
-    let blue = hue_to_rgb(m1, m2, hue_times_3 - 1.);
-    (red, green, blue)
 }
 
 type IntoColorFn<Output> =
@@ -359,9 +320,9 @@ where
         P::parse_number_or_percentage,
     )?;
 
-    let lightness = lightness.map(|l| l.value(lightness_range));
-    let a = a.map(|a| a.value(a_b_range));
-    let b = b.map(|b| b.value(a_b_range));
+    let lightness = lightness.map(|l| l.to_number(lightness_range));
+    let a = a.map(|a| a.to_number(a_b_range));
+    let b = b.map(|b| b.to_number(a_b_range));
 
     Ok(into_color(lightness, a, b, alpha))
 }
@@ -385,8 +346,8 @@ where
         P::parse_angle_or_number,
     )?;
 
-    let lightness = lightness.map(|l| l.value(lightness_range));
-    let chroma = chroma.map(|c| c.value(chroma_range));
+    let lightness = lightness.map(|l| l.to_number(lightness_range));
+    let chroma = chroma.map(|c| c.to_number(chroma_range));
     let hue = hue.map(|h| normalize_hue(h.degrees()));
 
     Ok(into_color(lightness, chroma, hue, alpha))
@@ -417,9 +378,9 @@ where
         P::parse_number_or_percentage,
     )?;
 
-    let c1 = c1.map(|c| c.unit_value());
-    let c2 = c2.map(|c| c.unit_value());
-    let c3 = c3.map(|c| c.unit_value());
+    let c1 = c1.map(|c| c.to_number(1.0));
+    let c2 = c2.map(|c| c.to_number(1.0));
+    let c3 = c3.map(|c| c.to_number(1.0));
 
     Ok(P::Output::from_color_function(
         color_space,
@@ -492,13 +453,6 @@ impl<'a> ToCss for ModernComponent<'a> {
             dest.write_str("none")
         }
     }
-}
-
-// Guaratees hue in [0..360)
-fn normalize_hue(hue: f32) -> f32 {
-    // <https://drafts.csswg.org/css-values/#angles>
-    // Subtract an integer before rounding, to avoid some rounding errors:
-    hue - 360.0 * (hue / 360.0).floor()
 }
 
 /// A color with red, green, blue, and alpha components, in a byte each.
@@ -618,11 +572,11 @@ impl ToCss for Hsl {
         W: fmt::Write,
     {
         // HSL serializes to RGB, so we have to convert it.
-        let (red, green, blue) = hsl_to_rgb(
+        let ColorComponents(red, green, blue) = hsl_to_rgb(&ColorComponents(
             self.hue.unwrap_or(0.0) / 360.0,
             self.saturation.unwrap_or(0.0),
             self.lightness.unwrap_or(0.0),
-        );
+        ));
 
         RgbaLegacy::from_floats(red, green, blue, self.alpha.unwrap_or(OPAQUE)).to_css(dest)
     }
@@ -685,11 +639,11 @@ impl ToCss for Hwb {
         W: fmt::Write,
     {
         // HWB serializes to RGB, so we have to convert it.
-        let (red, green, blue) = hwb_to_rgb(
+        let ColorComponents(red, green, blue) = hwb_to_rgb(&ColorComponents(
             self.hue.unwrap_or(0.0) / 360.0,
             self.whiteness.unwrap_or(0.0),
             self.blackness.unwrap_or(0.0),
-        );
+        ));
 
         RgbaLegacy::from_floats(red, green, blue, self.alpha.unwrap_or(OPAQUE)).to_css(dest)
     }
@@ -1024,17 +978,9 @@ pub enum NumberOrPercentage {
 }
 
 impl NumberOrPercentage {
-    /// Return the value as a percentage.
-    pub fn unit_value(&self) -> f32 {
-        match *self {
-            NumberOrPercentage::Number { value } => value,
-            NumberOrPercentage::Percentage { unit_value } => unit_value,
-        }
-    }
-
-    /// Return the value as a number with a percentage adjusted to the
-    /// `percentage_basis`.
-    pub fn value(&self, percentage_basis: f32) -> f32 {
+    /// Return the value as a number. Percentages will be adjusted to the range
+    /// [0..percent_basis].
+    pub fn to_number(&self, percentage_basis: f32) -> f32 {
         match *self {
             Self::Number { value } => value,
             Self::Percentage { unit_value } => unit_value * percentage_basis,

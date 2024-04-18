@@ -64,7 +64,6 @@ BROWSER_CHROME_MANIFESTS += [
     "content/test/webextensions/browser.toml",
     "content/test/webrtc/browser.toml",
     "content/test/webrtc/gracePeriod/browser.toml",
-    "content/test/webrtc/legacyIndicator/browser.toml",
     "content/test/zoom/browser.toml",
 ]
 
@@ -72,7 +71,7 @@ DIRS += [
     "content/test/performance/",
 ]
 
-PERFTESTS_MANIFESTS += ["content/test/perftest.ini"]
+PERFTESTS_MANIFESTS += ["content/test/perftest.toml"]
 
 DEFINES["MOZ_APP_VERSION"] = CONFIG["MOZ_APP_VERSION"]
 DEFINES["MOZ_APP_VERSION_DISPLAY"] = CONFIG["MOZ_APP_VERSION_DISPLAY"]

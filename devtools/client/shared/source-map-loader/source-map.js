@@ -25,6 +25,7 @@ const {
 const assert = require("resource://devtools/client/shared/source-map-loader/utils/assert.js");
 const {
   fetchSourceMap,
+  resolveSourceMapURL,
   hasOriginalURL,
   clearOriginalURLs,
 } = require("resource://devtools/client/shared/source-map-loader/utils/fetchSourceMap.js");
@@ -45,15 +46,87 @@ const {
   clearWasmXScopes,
 } = require("resource://devtools/client/shared/source-map-loader/wasm-dwarf/wasmXScopes.js");
 
-async function getOriginalURLs(generatedSource) {
-  await fetchSourceMap(generatedSource);
-  const data = await getSourceMapWithMetadata(generatedSource.id);
-  return data ? data.sources : null;
+/**
+ * Create "original source info" objects being handed over to the main thread
+ * to describe original sources referenced in a source map
+ */
+function mapToOriginalSourceInfos(generatedId, urls) {
+  return urls.map(url => {
+    return {
+      id: generatedToOriginalId(generatedId, url),
+      url,
+    };
+  });
 }
 
-async function getSourceMapIgnoreList(generatedSourceId) {
-  const data = await getSourceMapWithMetadata(generatedSourceId);
-  return data ? data.ignoreListUrls : [];
+/**
+ * Load the source map and retrieved infos about all the original sources
+ * referenced in that source map.
+ *
+ * @param {Object} generatedSource
+ *        Source object for a bundle referencing a source map
+ * @return {Array<Object>|null}
+ *        List of object with id and url attributes describing the original sources.
+ */
+async function getOriginalURLs(generatedSource) {
+  const { resolvedSourceMapURL, baseURL } =
+    resolveSourceMapURL(generatedSource);
+  const map = await fetchSourceMap(
+    generatedSource,
+    resolvedSourceMapURL,
+    baseURL
+  );
+  return map ? mapToOriginalSourceInfos(generatedSource.id, map.sources) : null;
+}
+
+/**
+ * Load the source map for a given bundle and return information
+ * about the related original sources and the source map itself.
+ *
+ * @param {Object} generatedSource
+ *        Source object for the bundle.
+ * @return {Object}
+ *  - {Array<Object>} sources
+ *    Object with id and url attributes, refering to the related original sources
+ *    referenced in the source map.
+ *  - [String} resolvedSourceMapURL
+ *    Absolute URL for the source map file.
+ *  - {Array<String>} ignoreListUrls
+ *    List of URLs of sources, designated by the source map, to be ignored in the debugger.
+ *  - {String} exception
+ *    In case of error, a string describing the situation.
+ */
+async function loadSourceMap(generatedSource) {
+  const { resolvedSourceMapURL, baseURL } =
+    resolveSourceMapURL(generatedSource);
+  try {
+    const map = await fetchSourceMap(
+      generatedSource,
+      resolvedSourceMapURL,
+      baseURL
+    );
+    if (!map.sources.length) {
+      throw new Error("No sources are declared in this source map.");
+    }
+    let ignoreListUrls = [];
+    if (map.x_google_ignoreList?.length) {
+      ignoreListUrls = map.x_google_ignoreList.map(
+        sourceIndex => map.sources[sourceIndex]
+      );
+    }
+    return {
+      sources: mapToOriginalSourceInfos(generatedSource.id, map.sources),
+      resolvedSourceMapURL,
+      ignoreListUrls,
+    };
+  } catch (e) {
+    return {
+      sources: [],
+      resolvedSourceMapURL,
+      ignoreListUrls: [],
+      exception: e.message,
+    };
+  }
 }
 
 const COMPUTED_SPANS = new WeakSet();
@@ -255,16 +328,50 @@ async function getOriginalLocations(breakpointPositions, sourceId) {
   return breakpointPositions;
 }
 
-function getOriginalLocationSync(map, location) {
+/**
+ * Query the source map for a mapping from bundle location to original location.
+ *
+ * @param {SourceMapConsumer} map
+ *        The source map for the bundle source.
+ * @param {Object} location
+ *        A location within a bundle to map to an original location.
+ * @param {Object} options
+ * @param {Boolean} options.looseSearch
+ *        Optional, if true, will do a loose search on first column and next lines
+ *        until a mapping is found.
+ * @return {location}
+ *        The mapped location in the original source.
+ */
+function getOriginalLocationSync(map, location, { looseSearch = false } = {}) {
   // First check for an exact match
-  const {
-    source: sourceUrl,
-    line,
-    column,
-  } = map.originalPositionFor({
+  let match = map.originalPositionFor({
     line: location.line,
     column: location.column == null ? 0 : location.column,
   });
+
+  // Then check for a loose match by sliding to first column and next lines
+  if (match.sourceUrl == null && looseSearch) {
+    let line = location.line;
+    // if a non-0 column was passed, we want to do the search from the beginning of the line,
+    // otherwise, we can start looking into next lines
+    let firstLineChecked = (location.column || 0) !== 0;
+
+    // Avoid looping through the whole file and limit the sliding search to the next 10 lines.
+    while (match.sourceUrl === null && line < location.line + 10) {
+      if (firstLineChecked) {
+        line++;
+      } else {
+        firstLineChecked = true;
+      }
+      match = map.originalPositionFor({
+        line,
+        column: 0,
+        bias: SourceMapConsumer.LEAST_UPPER_BOUND,
+      });
+    }
+  }
+
+  const { source: sourceUrl, line, column } = match;
 
   if (sourceUrl == null) {
     // No url means the location didn't map.
@@ -279,7 +386,17 @@ function getOriginalLocationSync(map, location) {
   };
 }
 
-async function getOriginalLocation(location) {
+/**
+ * Map a bundle location to an original one.
+ *
+ * @param {Object} location
+ *        Bundle location
+ * @param {Object} options
+ *        See getORiginalLocationSync.
+ * @return {Object}
+ *        Original location
+ */
+async function getOriginalLocation(location, options) {
   if (!isGeneratedId(location.sourceId)) {
     return null;
   }
@@ -289,7 +406,7 @@ async function getOriginalLocation(location) {
     return null;
   }
 
-  return getOriginalLocationSync(map, location);
+  return getOriginalLocationSync(map, location, options);
 }
 
 async function getOriginalSourceText(originalSourceId) {
@@ -514,6 +631,7 @@ function clearSourceMaps() {
 
 module.exports = {
   getOriginalURLs,
+  loadSourceMap,
   hasOriginalURL,
   getOriginalRanges,
   getGeneratedRanges,
@@ -523,7 +641,6 @@ module.exports = {
   getOriginalSourceText,
   getGeneratedRangesForOriginal,
   getFileGeneratedRange,
-  getSourceMapIgnoreList,
   setSourceMapForGeneratedSources,
   clearSourceMaps,
 };

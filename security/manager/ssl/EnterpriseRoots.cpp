@@ -10,6 +10,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Unused.h"
 #include "mozpkix/Result.h"
+#include "nsNSSCertHelper.h"
 #include "nsThreadUtils.h"
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -30,33 +31,33 @@ extern mozilla::LazyLogModule gPIPNSSLog;
 
 using namespace mozilla;
 
-nsresult EnterpriseCert::Init(const uint8_t* data, size_t len, bool isRoot) {
-  mDER.clear();
-  if (!mDER.append(data, len)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  mIsRoot = isRoot;
-
-  return NS_OK;
-}
-
-nsresult EnterpriseCert::Init(const EnterpriseCert& orig) {
-  return Init(orig.mDER.begin(), orig.mDER.length(), orig.mIsRoot);
-}
-
-nsresult EnterpriseCert::CopyBytes(nsTArray<uint8_t>& dest) const {
-  dest.Clear();
-  // XXX(Bug 1631371) Check if this should use a fallible operation as it
-  // pretended earlier, or change the return type to void.
-  dest.AppendElements(mDER.begin(), mDER.length());
-  return NS_OK;
+void EnterpriseCert::CopyBytes(nsTArray<uint8_t>& dest) const {
+  dest.Assign(mDER);
 }
 
 pkix::Result EnterpriseCert::GetInput(pkix::Input& input) const {
-  return input.Init(mDER.begin(), mDER.length());
+  return input.Init(mDER.Elements(), mDER.Length());
 }
 
 bool EnterpriseCert::GetIsRoot() const { return mIsRoot; }
+
+bool EnterpriseCert::IsKnownRoot(UniqueSECMODModule& rootsModule) {
+  if (!rootsModule) {
+    return false;
+  }
+
+  SECItem certItem = {siBuffer, mDER.Elements(),
+                      static_cast<unsigned int>(mDER.Length())};
+  AutoSECMODListReadLock lock;
+  for (int i = 0; i < rootsModule->slotCount; i++) {
+    PK11SlotInfo* slot = rootsModule->slots[i];
+    if (PK11_FindEncodedCertInSlot(slot, &certItem, nullptr) !=
+        CK_INVALID_HANDLE) {
+      return true;
+    }
+  }
+  return false;
+}
 
 #ifdef XP_WIN
 const wchar_t* kWindowsDefaultRootStoreNames[] = {L"ROOT", L"CA"};
@@ -149,7 +150,8 @@ class ScopedCertStore final {
 //   CERT_SYSTEM_STORE_CURRENT_USER_GROUP_POLICY
 //     (for HKCU\SOFTWARE\Policy\Microsoft\SystemCertificates)
 static void GatherEnterpriseCertsForLocation(DWORD locationFlag,
-                                             Vector<EnterpriseCert>& certs) {
+                                             nsTArray<EnterpriseCert>& certs,
+                                             UniqueSECMODModule& rootsModule) {
   MOZ_ASSERT(locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE ||
                  locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_GROUP_POLICY ||
                  locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE ||
@@ -192,52 +194,227 @@ static void GatherEnterpriseCertsForLocation(DWORD locationFlag,
                 ("skipping cert not trusted for TLS server auth"));
         continue;
       }
-      EnterpriseCert enterpriseCert;
-      if (NS_FAILED(enterpriseCert.Init(certificate->pbCertEncoded,
-                                        certificate->cbCertEncoded, isRoot))) {
-        // Best-effort. We probably ran out of memory.
-        continue;
+      EnterpriseCert enterpriseCert(certificate->pbCertEncoded,
+                                    certificate->cbCertEncoded, isRoot);
+      if (!enterpriseCert.IsKnownRoot(rootsModule)) {
+        certs.AppendElement(std::move(enterpriseCert));
+        numImported++;
+      } else {
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("skipping known root cert"));
       }
-      if (!certs.append(std::move(enterpriseCert))) {
-        // Best-effort again.
-        continue;
-      }
-      numImported++;
     }
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("imported %u certs from %S", numImported, name));
   }
 }
 
-static void GatherEnterpriseCertsWindows(Vector<EnterpriseCert>& certs) {
-  GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE, certs);
+static void GatherEnterpriseCertsWindows(nsTArray<EnterpriseCert>& certs,
+                                         UniqueSECMODModule& rootsModule) {
+  GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE, certs,
+                                   rootsModule);
   GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE_GROUP_POLICY,
-                                   certs);
+                                   certs, rootsModule);
   GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
-                                   certs);
-  GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_CURRENT_USER, certs);
+                                   certs, rootsModule);
+  GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_CURRENT_USER, certs,
+                                   rootsModule);
   GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_CURRENT_USER_GROUP_POLICY,
-                                   certs);
+                                   certs, rootsModule);
 }
 #endif  // XP_WIN
 
 #ifdef XP_MACOSX
-OSStatus GatherEnterpriseCertsMacOS(Vector<EnterpriseCert>& certs) {
+enum class CertificateTrustResult {
+  CanUseAsIntermediate,
+  CanUseAsTrustAnchor,
+  DoNotUse,
+};
+
+ScopedCFType<CFArrayRef> GetCertificateTrustSettingsInDomain(
+    const SecCertificateRef certificate, SecTrustSettingsDomain domain) {
+  CFArrayRef trustSettingsRaw;
+  OSStatus rv =
+      SecTrustSettingsCopyTrustSettings(certificate, domain, &trustSettingsRaw);
+  if (rv != errSecSuccess || !trustSettingsRaw) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("  SecTrustSettingsCopyTrustSettings failed (or not found) for "
+             "domain %" PRIu32,
+             domain));
+    return nullptr;
+  }
+  ScopedCFType<CFArrayRef> trustSettings(trustSettingsRaw);
+  return trustSettings;
+}
+
+// This function processes trust settings returned by
+// SecTrustSettingsCopyTrustSettings. See the documentation at
+// https://developer.apple.com/documentation/security/1400261-sectrustsettingscopytrustsetting
+// `trustSettings` is an array of CFDictionaryRef. Each dictionary may impose
+// a constraint.
+CertificateTrustResult ProcessCertificateTrustSettings(
+    ScopedCFType<CFArrayRef>& trustSettings) {
+  // If the array is empty, the certificate is a trust anchor.
+  const CFIndex numTrustDictionaries = CFArrayGetCount(trustSettings.get());
+  if (numTrustDictionaries == 0) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("  empty trust settings -> trust anchor"));
+    return CertificateTrustResult::CanUseAsTrustAnchor;
+  }
+  CertificateTrustResult currentTrustSettings =
+      CertificateTrustResult::CanUseAsIntermediate;
+  for (CFIndex i = 0; i < numTrustDictionaries; i++) {
+    CFDictionaryRef trustDictionary = reinterpret_cast<CFDictionaryRef>(
+        CFArrayGetValueAtIndex(trustSettings.get(), i));
+    // kSecTrustSettingsApplication specifies an external application that
+    // determines the certificate's trust settings.
+    // kSecTrustSettingsPolicyString appears to be a mechanism like name
+    // constraints.
+    // These are not supported, so conservatively assume this certificate is
+    // distrusted if either are present.
+    if (CFDictionaryContainsKey(trustDictionary,
+                                kSecTrustSettingsApplication) ||
+        CFDictionaryContainsKey(trustDictionary,
+                                kSecTrustSettingsPolicyString)) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+              ("  found unsupported policy -> assuming distrusted"));
+      return CertificateTrustResult::DoNotUse;
+    }
+
+    // kSecTrustSettingsKeyUsage seems to be essentially the equivalent of the
+    // x509 keyUsage extension. For parity, we allow
+    // kSecTrustSettingsKeyUseSignature, kSecTrustSettingsKeyUseSignCert, and
+    // kSecTrustSettingsKeyUseAny.
+    if (CFDictionaryContainsKey(trustDictionary, kSecTrustSettingsKeyUsage)) {
+      CFNumberRef keyUsage = (CFNumberRef)CFDictionaryGetValue(
+          trustDictionary, kSecTrustSettingsKeyUsage);
+      int32_t keyUsageValue;
+      if (!keyUsage ||
+          CFNumberGetValue(keyUsage, kCFNumberSInt32Type, &keyUsageValue) ||
+          keyUsageValue < 0) {
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                ("  no trust settings key usage or couldn't get value"));
+        return CertificateTrustResult::DoNotUse;
+      }
+      switch ((uint64_t)keyUsageValue) {
+        case kSecTrustSettingsKeyUseSignature:  // fall-through
+        case kSecTrustSettingsKeyUseSignCert:   // fall-through
+        case kSecTrustSettingsKeyUseAny:
+          break;
+        default:
+          return CertificateTrustResult::DoNotUse;
+      }
+    }
+
+    // If there is a specific policy, ensure that it's for the
+    // 'kSecPolicyAppleSSL' policy, which is the TLS server auth policy (i.e.
+    // x509 + domain name checking).
+    if (CFDictionaryContainsKey(trustDictionary, kSecTrustSettingsPolicy)) {
+      SecPolicyRef policy = (SecPolicyRef)CFDictionaryGetValue(
+          trustDictionary, kSecTrustSettingsPolicy);
+      if (!policy) {
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                ("  kSecTrustSettingsPolicy present, but null?"));
+        continue;
+      }
+      ScopedCFType<CFDictionaryRef> policyProperties(
+          SecPolicyCopyProperties(policy));
+      CFStringRef policyOid = (CFStringRef)CFDictionaryGetValue(
+          policyProperties.get(), kSecPolicyOid);
+      if (!CFEqual(policyOid, kSecPolicyAppleSSL)) {
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("  policy doesn't match"));
+        continue;
+      }
+    }
+
+    // By default, the trust setting result value is
+    // kSecTrustSettingsResultTrustRoot.
+    int32_t trustSettingsValue = kSecTrustSettingsResultTrustRoot;
+    if (CFDictionaryContainsKey(trustDictionary, kSecTrustSettingsResult)) {
+      CFNumberRef trustSetting = (CFNumberRef)CFDictionaryGetValue(
+          trustDictionary, kSecTrustSettingsResult);
+      if (!trustSetting || !CFNumberGetValue(trustSetting, kCFNumberSInt32Type,
+                                             &trustSettingsValue)) {
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                ("  no trust settings result or couldn't get value"));
+        continue;
+      }
+    }
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("  trust setting: %d", trustSettingsValue));
+    if (trustSettingsValue == kSecTrustSettingsResultDeny) {
+      return CertificateTrustResult::DoNotUse;
+    }
+    if (trustSettingsValue == kSecTrustSettingsResultTrustRoot ||
+        trustSettingsValue == kSecTrustSettingsResultTrustAsRoot) {
+      currentTrustSettings = CertificateTrustResult::CanUseAsTrustAnchor;
+    }
+  }
+  return currentTrustSettings;
+}
+
+CertificateTrustResult GetCertificateTrustResult(
+    const SecCertificateRef certificate) {
+  ScopedCFType<CFStringRef> subject(
+      SecCertificateCopySubjectSummary(certificate));
+  MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+          ("determining trust for '%s'",
+           CFStringGetCStringPtr(subject.get(), kCFStringEncodingUTF8)));
+  // There are three trust settings domains: kSecTrustSettingsDomainUser,
+  // kSecTrustSettingsDomainAdmin, and kSecTrustSettingsDomainSystem. User
+  // overrides admin and admin overrides system. However, if the given
+  // certificate has trust settings in the system domain, it shipped with the
+  // OS, so we don't want to use it.
+  ScopedCFType<CFArrayRef> systemTrustSettings(
+      GetCertificateTrustSettingsInDomain(certificate,
+                                          kSecTrustSettingsDomainSystem));
+  if (systemTrustSettings) {
+    return CertificateTrustResult::DoNotUse;
+  }
+
+  // At this point, if there is no trust information regarding this
+  // certificate, it can be used as an intermediate.
+  CertificateTrustResult certificateTrustResult =
+      CertificateTrustResult::CanUseAsIntermediate;
+
+  // Process trust information in the user domain, if any.
+  ScopedCFType<CFArrayRef> userTrustSettings(
+      GetCertificateTrustSettingsInDomain(certificate,
+                                          kSecTrustSettingsDomainUser));
+  if (userTrustSettings) {
+    certificateTrustResult = ProcessCertificateTrustSettings(userTrustSettings);
+    // If there is definite information one way or another (either indicating
+    // this is a trusted root or a distrusted certificate), use that
+    // information.
+    if (certificateTrustResult !=
+        CertificateTrustResult::CanUseAsIntermediate) {
+      return certificateTrustResult;
+    }
+  }
+
+  // Process trust information in the admin domain, if any.
+  ScopedCFType<CFArrayRef> adminTrustSettings(
+      GetCertificateTrustSettingsInDomain(certificate,
+                                          kSecTrustSettingsDomainAdmin));
+  if (adminTrustSettings) {
+    certificateTrustResult =
+        ProcessCertificateTrustSettings(adminTrustSettings);
+  }
+
+  // Use whatever result we ended up with.
+  return certificateTrustResult;
+}
+
+OSStatus GatherEnterpriseCertsMacOS(nsTArray<EnterpriseCert>& certs,
+                                    UniqueSECMODModule& rootsModule) {
   // The following builds a search dictionary corresponding to:
   // { class: "certificate",
-  //   match limit: "match all",
-  //   policy: "SSL (TLS)",
-  //   only include trusted certificates: true }
+  //   match limit: "match all" }
   // This operates on items that have been added to the keychain and thus gives
-  // us all 3rd party certificates that have been trusted for SSL (TLS), which
-  // is what we want (thus we don't import built-in root certificates that ship
-  // with the OS).
-  const CFStringRef keys[] = {kSecClass, kSecMatchLimit, kSecMatchPolicy,
-                              kSecMatchTrustedOnly};
-  // https://developer.apple.com/documentation/security/1392592-secpolicycreatessl
-  ScopedCFType<SecPolicyRef> sslPolicy(SecPolicyCreateSSL(true, nullptr));
-  const void* values[] = {kSecClassCertificate, kSecMatchLimitAll,
-                          sslPolicy.get(), kCFBooleanTrue};
+  // us all 3rd party certificates. Unfortunately, if a root that shipped with
+  // the OS has had its trust settings changed, it can also be returned from
+  // this query. Further work (below) filters such certificates out.
+  const CFStringRef keys[] = {kSecClass, kSecMatchLimit};
+  const void* values[] = {kSecClassCertificate, kSecMatchLimitAll};
   static_assert(ArrayLength(keys) == ArrayLength(values),
                 "mismatched SecItemCopyMatching key/value array sizes");
   // https://developer.apple.com/documentation/corefoundation/1516782-cfdictionarycreate
@@ -257,46 +434,34 @@ OSStatus GatherEnterpriseCertsMacOS(Vector<EnterpriseCert>& certs) {
   CFIndex count = CFArrayGetCount(arr.get());
   uint32_t numImported = 0;
   for (CFIndex i = 0; i < count; i++) {
-    const CFTypeRef c = CFArrayGetValueAtIndex(arr.get(), i);
-    SecTrustRef trust;
-    rv = SecTrustCreateWithCertificates(c, sslPolicy.get(), &trust);
-    if (rv != errSecSuccess) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-              ("SecTrustCreateWithCertificates failed"));
-      continue;
-    }
-    ScopedCFType<SecTrustRef> trustHandle(trust);
-    // Disable AIA chasing to avoid network I/O.
-    rv = SecTrustSetNetworkFetchAllowed(trustHandle.get(), false);
-    if (rv != errSecSuccess) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-              ("SecTrustSetNetworkFetchAllowed failed"));
-      continue;
-    }
-
-    if (!SecTrustEvaluateWithError(trustHandle.get(), nullptr)) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("skipping cert not trusted"));
-      continue;
-    }
-
-    CFIndex count = SecTrustGetCertificateCount(trustHandle.get());
-    bool isRoot = count == 1;
-
     // Because we asked for certificates, each CFTypeRef in the array is really
     // a SecCertificateRef.
-    const SecCertificateRef s = (const SecCertificateRef)c;
-    ScopedCFType<CFDataRef> der(SecCertificateCopyData(s));
-    EnterpriseCert enterpriseCert;
-    if (NS_FAILED(enterpriseCert.Init(CFDataGetBytePtr(der.get()),
-                                      CFDataGetLength(der.get()), isRoot))) {
-      // Best-effort. We probably ran out of memory.
+    const SecCertificateRef certificate =
+        (const SecCertificateRef)CFArrayGetValueAtIndex(arr.get(), i);
+    CertificateTrustResult certificateTrustResult =
+        GetCertificateTrustResult(certificate);
+    if (certificateTrustResult == CertificateTrustResult::DoNotUse) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("skipping distrusted cert"));
       continue;
     }
-    if (!certs.append(std::move(enterpriseCert))) {
-      // Best-effort again.
+    ScopedCFType<CFDataRef> der(SecCertificateCopyData(certificate));
+    if (!der) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+              ("couldn't get bytes of certificate?"));
       continue;
     }
-    numImported++;
+    bool isRoot =
+        certificateTrustResult == CertificateTrustResult::CanUseAsTrustAnchor;
+    EnterpriseCert enterpriseCert(CFDataGetBytePtr(der.get()),
+                                  CFDataGetLength(der.get()), isRoot);
+    if (!enterpriseCert.IsKnownRoot(rootsModule)) {
+      certs.AppendElement(std::move(enterpriseCert));
+      numImported++;
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+              ("importing as %s", isRoot ? "root" : "intermediate"));
+    } else {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("skipping known root cert"));
+    }
   }
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("imported %u certs", numImported));
   return errSecSuccess;
@@ -304,45 +469,52 @@ OSStatus GatherEnterpriseCertsMacOS(Vector<EnterpriseCert>& certs) {
 #endif  // XP_MACOSX
 
 #ifdef MOZ_WIDGET_ANDROID
-void GatherEnterpriseCertsAndroid(Vector<EnterpriseCert>& certs) {
+void GatherEnterpriseCertsAndroid(nsTArray<EnterpriseCert>& certs,
+                                  UniqueSECMODModule& rootsModule) {
   if (!jni::IsAvailable()) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("JNI not available"));
     return;
   }
   jni::ObjectArray::LocalRef roots =
       java::EnterpriseRoots::GatherEnterpriseRoots();
+  uint32_t numImported = 0;
   for (size_t i = 0; i < roots->Length(); i++) {
     jni::ByteArray::LocalRef root = roots->GetElement(i);
-    EnterpriseCert cert;
     // Currently we treat all certificates gleaned from the Android
     // CA store as roots.
-    if (NS_SUCCEEDED(cert.Init(
-            reinterpret_cast<uint8_t*>(root->GetElements().Elements()),
-            root->Length(), true))) {
-      Unused << certs.append(std::move(cert));
+    EnterpriseCert enterpriseCert(
+        reinterpret_cast<uint8_t*>(root->GetElements().Elements()),
+        root->Length(), true);
+    if (!enterpriseCert.IsKnownRoot(rootsModule)) {
+      certs.AppendElement(std::move(enterpriseCert));
+      numImported++;
+    } else {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("skipping known root cert"));
     }
   }
+  MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("imported %u certs", numImported));
 }
 #endif  // MOZ_WIDGET_ANDROID
 
-nsresult GatherEnterpriseCerts(Vector<EnterpriseCert>& certs) {
+nsresult GatherEnterpriseCerts(nsTArray<EnterpriseCert>& certs) {
   MOZ_ASSERT(!NS_IsMainThread());
   if (NS_IsMainThread()) {
     return NS_ERROR_NOT_SAME_THREAD;
   }
 
-  certs.clear();
+  certs.Clear();
+  UniqueSECMODModule rootsModule(SECMOD_FindModule(kRootModuleName));
 #ifdef XP_WIN
-  GatherEnterpriseCertsWindows(certs);
+  GatherEnterpriseCertsWindows(certs, rootsModule);
 #endif  // XP_WIN
 #ifdef XP_MACOSX
-  OSStatus rv = GatherEnterpriseCertsMacOS(certs);
+  OSStatus rv = GatherEnterpriseCertsMacOS(certs, rootsModule);
   if (rv != errSecSuccess) {
     return NS_ERROR_FAILURE;
   }
 #endif  // XP_MACOSX
 #ifdef MOZ_WIDGET_ANDROID
-  GatherEnterpriseCertsAndroid(certs);
+  GatherEnterpriseCertsAndroid(certs, rootsModule);
 #endif  // MOZ_WIDGET_ANDROID
   return NS_OK;
 }

@@ -9,13 +9,11 @@
 #ifndef nsCaret_h__
 #define nsCaret_h__
 
-#include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/Selection.h"
 #include "nsCoord.h"
 #include "nsISelectionListener.h"
 #include "nsIWeakReferenceUtils.h"
-#include "CaretAssociationHint.h"
 #include "nsPoint.h"
 #include "nsRect.h"
 
@@ -27,6 +25,7 @@ class nsITimer;
 
 namespace mozilla {
 class PresShell;
+enum class CaretAssociationHint;
 namespace gfx {
 class DrawTarget;
 }  // namespace gfx
@@ -45,7 +44,7 @@ class nsCaret final : public nsISelectionListener {
  public:
   NS_DECL_ISUPPORTS
 
-  typedef mozilla::CaretAssociationHint CaretAssociationHint;
+  using CaretAssociationHint = mozilla::CaretAssociationHint;
 
   nsresult Init(mozilla::PresShell* aPresShell);
   void Terminate();
@@ -178,11 +177,7 @@ class nsCaret final : public nsISelectionListener {
    */
   static nsIFrame* GetGeometry(const mozilla::dom::Selection* aSelection,
                                nsRect* aRect);
-  static nsIFrame* GetCaretFrameForNodeOffset(
-      nsFrameSelection* aFrameSelection, nsIContent* aContentNode,
-      int32_t aOffset, CaretAssociationHint aFrameHint,
-      mozilla::intl::BidiEmbeddingLevel aBidiLevel,
-      nsIFrame** aReturnUnadjustedFrame, int32_t* aReturnOffset);
+
   static nsRect GetGeometryForFrame(nsIFrame* aFrame, int32_t aFrameOffset,
                                     nscoord* aBidiIndicatorSize);
 

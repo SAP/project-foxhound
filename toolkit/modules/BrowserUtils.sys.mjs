@@ -23,6 +23,11 @@ XPCOMUtils.defineLazyPreferenceGetter(
     return new Set(val.split("|"));
   }
 );
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "FXVIEW_SEARCH_ENABLED",
+  "browser.firefox-view.search.enabled"
+);
 
 ChromeUtils.defineLazyGetter(lazy, "gLocalization", () => {
   return new Localization(["toolkit/global/browser-utils.ftl"], true);
@@ -107,7 +112,8 @@ export var BrowserUtils = {
   canFindInPage(location) {
     return (
       !location.startsWith("about:preferences") &&
-      !location.startsWith("about:logins")
+      !location.startsWith("about:logins") &&
+      !(location.startsWith("about:firefoxview") && lazy.FXVIEW_SEARCH_ENABLED)
     );
   },
 
@@ -363,6 +369,9 @@ export var BrowserUtils = {
 
     // Don't do anything special with right-mouse clicks.  They're probably clicks on context menu items.
 
+    // See also nsWindowWatcher::GetWindowOpenLocation in
+    // toolkit/components/windowwatcher/nsWindowWatcher.cpp
+
     var metaKey = AppConstants.platform == "macosx" ? meta : ctrl;
     if (metaKey || (middle && middleUsesTabs)) {
       return shift ? "tabshifted" : "tab";
@@ -508,7 +517,7 @@ let PromoInfo = {
       },
       disallowedRegions: {
         name: "browser.vpn_promo.disallowed_regions",
-        default: "ae,by,cn,cu,iq,ir,kp,om,ru,sd,sy,tm,tr,ua",
+        default: "ae,by,cn,cu,iq,ir,kp,om,ru,sd,sy,tm,tr",
       },
     },
     //See https://github.com/search?q=repo%3Amozilla%2Fbedrock+VPN_EXCLUDED_COUNTRY_CODES&type=code

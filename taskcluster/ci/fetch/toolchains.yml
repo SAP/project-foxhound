@@ -203,9 +203,9 @@ wine:
     description: wine source code
     fetch:
         type: static-url
-        url: https://dl.winehq.org/wine/source/8.0/wine-8.0.tar.xz
-        sha256: 0272c20938f8721ae4510afaa8b36037457dd57661e4d664231079b9e91c792e
-        size: 29054044
+        url: https://dl.winehq.org/wine/source/8.0/wine-8.0.2.tar.xz
+        sha256: 6ec8fb6f2c72d576cb11f52b2f8d59af64404802154651d122b98466d91dc847
+        size: 29060452
         gpg-signature:
             sig-url: "{url}.sign"
             key-path: build/unix/build-gcc/DA23579A74D4AD9AF9D3F945CEFAC8EAAF17519D.key
@@ -297,8 +297,8 @@ sccache:
     fetch:
         type: git
         repo: https://github.com/mozilla/sccache
-        # 0.5.4 release + a few patches
-        revision: a21e9f89e161d38cb078fcdb42cdcff1d7c0356b
+        # 0.7.4 release
+        revision: fb0ab0c42268c2ea9bbc1ec9bc848330cfdf08ec
 
 fxc2:
     description: fxc2 source code
@@ -312,7 +312,7 @@ mingw-w64:
     fetch:
         type: git
         repo: https://git.code.sf.net/p/mingw-w64/mingw-w64
-        revision: 319de5d6e83f23171aea3257b2bd1435d6dbfe89
+        revision: 95a2cf4b7260200c4a60f4f1d1127e72799a3541
 
 mingw-w64-trunk:
     description: mingw-w64 master branch source code
@@ -334,6 +334,10 @@ android-ndk-rs:
     description: android-ndk-rs source code
     fetch:
         type: git
+        # Until there's a version of cargo-apk published on crates.io that has
+        # https://github.com/rust-windowing/android-ndk-rs/pull/236, we need to use
+        # an unpublished version. Additionally, until we update the NDK version used
+        # in gecko we must use our own patched version. See bug 1615148.
         repo: https://github.com/jamienicol/android-ndk-rs
         revision: 595f4e14a78371e3ab59b12f7bd8131f2ec5b4a1
 
@@ -352,11 +356,11 @@ clang-14:
         revision: 4bc1d0b51c8e488d78ab69c8b19cfbcd1f7db6a4
 
 clang-17:
-    description: clang 17.0.2 source code
+    description: clang 17.0.6 source code
     fetch:
         type: git
         repo: https://github.com/llvm/llvm-project
-        revision: b2417f51dbbd7435eb3aaf203de24de6754da50e
+        revision: 6009708b4367171ccdbf4b5905cb6a803753fe18
 
 clang-trunk:
     description: clang main branch source code
@@ -370,13 +374,13 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.73.0:
-    description: Rust 1.73.0 source code
+rust-1.75.0:
+    description: Rust 1.75.0 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: cc66ad468955717ab92600c770da8c1601a4ff33
+        revision: 82e1608dfa6e0b5569232559e3d385fea5a93112
 
 wasi-sdk-11:
     description: wasi-sdk-11 source code
@@ -421,11 +425,11 @@ dump-syms:
         revision: b1951e4ccec48a2e97460a7ec40be35aa79e0037
 
 rust-minidump:
-    description: rust-minidump 0.15.2 source code (for minidump-stackwalk)
+    description: rust-minidump 0.19.1 source code (for minidump-stackwalk)
     fetch:
         type: git
         repo: https://github.com/rust-minidump/rust-minidump/
-        revision: 0d782e53650f4059ede143e10686c6ce9947dbc4
+        revision: c3de84b061339c686a572fb9f059e7ba3fad38d6
 
 fix-stacks:
     description: fix-stacks source code
@@ -467,8 +471,8 @@ makecab:
     description: makecab source code
     fetch:
         type: git
-        repo: https://github.com/glandium/rust-makecab/
-        revision: 73a4605b97123bf7221533c671f27f234d974b02
+        repo: https://github.com/luser/rust-makecab/
+        revision: 236cd02baefa754fc7a61b161c71d2aa13a87c2a
 
 nodejs-12-linux64:
     description: nodejs 12 for x64 linux
@@ -610,14 +614,14 @@ cargo-vet:
     fetch:
         type: git
         repo: https://github.com/mozilla/cargo-vet
-        revision: 8c8b6d7a5237544c613de616a031586587f49a42
+        revision: 67e92b6d03f48802907b2c80119ed328289a114d
 
 symbol-scrapers:
     description: Linux distribution symbol scraper source
     fetch:
         type: git
-        repo: http://github.com/mozilla/symbol-scrapers
-        revision: 6142272b22aea3496fab8ff7a33d92d7c20caa5d
+        repo: https://github.com/mozilla/symbol-scrapers
+        revision: f3778f70e2c34315b4759b58c8284b76a6d71dfc
 
 xz-5.4.4:
     description: xz 5.4.4 source code
@@ -650,13 +654,22 @@ cpython-3.8.10.exe:
         size: 28296784
         artifact-name: python-3.8.10-amd64.exe
 
-cpython-3.7.15:
-    description: cpython 3.7.15 source code
+cpython-3.11.7:
+    description: cpython 3.11.7 source code
     fetch:
         type: static-url
-        url: https://www.python.org/ftp/python/3.7.15/Python-3.7.15.tgz
-        sha256: cf2993798ae8430f3af3a00d96d9fdf320719f4042f039380dca79967c25e436
-        size: 24033532
+        url: https://www.python.org/ftp/python/3.11.7/Python-3.11.7.tgz
+        sha256: 068c05f82262e57641bd93458dfa883128858f5f4997aad7a36fd25b13b29209
+        size: 26601929
         artifact-name: cpython-source.tar.zst
         strip-components: 1
         add-prefix: cpython-source/
+
+cpython-3.11.7.exe:
+    description: cpython 3.11.7 installer
+    fetch:
+        type: static-url
+        url: https://www.python.org/ftp/python/3.11.7/python-3.11.7-amd64.exe
+        sha256: c117c6444494bbe4cc937e8a5a61899d53f7f5c5bc573c5d130304e457d54024
+        size: 26009544
+        artifact-name: python-3.11.7-amd64.exe

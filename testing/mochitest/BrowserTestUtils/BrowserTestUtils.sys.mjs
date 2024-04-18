@@ -292,12 +292,12 @@ export var BrowserTestUtils = {
    *
    * @return {boolean}
    */
-  is_hidden(element) {
+  isHidden(element) {
     if (
       element.nodeType == Node.DOCUMENT_FRAGMENT_NODE &&
       element.containingShadowRoot == element
     ) {
-      return BrowserTestUtils.is_hidden(element.getRootNode().host);
+      return BrowserTestUtils.isHidden(element.getRootNode().host);
     }
 
     let win = element.ownerGlobal;
@@ -314,7 +314,7 @@ export var BrowserTestUtils = {
 
     // Hiding a parent element will hide all its children
     if (element.parentNode != element.ownerDocument) {
-      return BrowserTestUtils.is_hidden(element.parentNode);
+      return BrowserTestUtils.isHidden(element.parentNode);
     }
 
     return false;
@@ -328,12 +328,12 @@ export var BrowserTestUtils = {
    *
    * @return {boolean}
    */
-  is_visible(element) {
+  isVisible(element) {
     if (
       element.nodeType == Node.DOCUMENT_FRAGMENT_NODE &&
       element.containingShadowRoot == element
     ) {
-      return BrowserTestUtils.is_visible(element.getRootNode().host);
+      return BrowserTestUtils.isVisible(element.getRootNode().host);
     }
 
     let win = element.ownerGlobal;
@@ -350,7 +350,7 @@ export var BrowserTestUtils = {
 
     // Hiding a parent element will hide all its children
     if (element.parentNode != element.ownerDocument) {
-      return BrowserTestUtils.is_visible(element.parentNode);
+      return BrowserTestUtils.isVisible(element.parentNode);
     }
 
     return true;
@@ -738,6 +738,8 @@ export var BrowserTestUtils = {
    * @param {boolean} [waitForAnyTab = false]
    *        True to wait for the url to be loaded in any new tab, not just the next
    *        one opened.
+   * @param {boolean} [maybeErrorPage = false]
+   *        See ``browserLoaded`` function.
    *
    * @return {Promise}
    * @resolves With the {xul:tab} when a tab is opened and its location changes
@@ -750,7 +752,8 @@ export var BrowserTestUtils = {
     tabbrowser,
     wantLoad = null,
     waitForLoad = false,
-    waitForAnyTab = false
+    waitForAnyTab = false,
+    maybeErrorPage = false
   ) {
     let urlMatches;
     if (wantLoad && typeof wantLoad == "function") {
@@ -779,7 +782,8 @@ export var BrowserTestUtils = {
             result = BrowserTestUtils.browserLoaded(
               newBrowser,
               false,
-              urlMatches
+              urlMatches,
+              maybeErrorPage
             ).then(() => newTab);
           } else {
             // If not waiting for load, just resolve with the new tab.

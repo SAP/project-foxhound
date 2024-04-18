@@ -8,6 +8,8 @@
 
 #include <unordered_map>
 
+#include "mozilla/AppShutdown.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/MediaKeySession.h"
 #include "mozilla/dom/KeySystemNames.h"
 
@@ -15,73 +17,53 @@ namespace mozilla {
 
 /* static */
 bool WMFCDMImpl::Supports(const nsAString& aKeySystem) {
-  static std::map<nsString, bool> supports;
+  MOZ_ASSERT(NS_IsMainThread());
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+    return false;
+  }
+
+  static std::map<nsString, bool> sSupports;
+  static bool sSetRunOnShutdown = false;
+  if (!sSetRunOnShutdown) {
+    GetMainThreadSerialEventTarget()->Dispatch(
+        NS_NewRunnableFunction("WMFCDMImpl::Supports", [&] {
+          RunOnShutdown([&] { sSupports.clear(); },
+                        ShutdownPhase::XPCOMShutdown);
+        }));
+    sSetRunOnShutdown = true;
+  }
 
   nsString key(aKeySystem);
-  if (const auto& s = supports.find(key); s != supports.end()) {
+  if (const auto& s = sSupports.find(key); s != sSupports.end()) {
     return s->second;
   }
 
   RefPtr<WMFCDMImpl> cdm = MakeRefPtr<WMFCDMImpl>(aKeySystem);
   nsTArray<KeySystemConfig> configs;
   bool s = cdm->GetCapabilities(configs);
-  supports[key] = s;
+  sSupports[key] = s;
   return s;
 }
 
-static void MFCDMCapabilitiesIPDLToKeySystemConfig(
-    const MFCDMCapabilitiesIPDL& aCDMConfig,
-    KeySystemConfig& aKeySystemConfig) {
-  aKeySystemConfig.mKeySystem = aCDMConfig.keySystem();
-
-  for (const auto& type : aCDMConfig.initDataTypes()) {
-    aKeySystemConfig.mInitDataTypes.AppendElement(type);
-  }
-
-  for (const auto& type : aCDMConfig.sessionTypes()) {
-    aKeySystemConfig.mSessionTypes.AppendElement(type);
-  }
-
-  for (const auto& c : aCDMConfig.videoCapabilities()) {
-    if (!c.robustness().IsEmpty() &&
-        !aKeySystemConfig.mVideoRobustness.Contains(c.robustness())) {
-      aKeySystemConfig.mVideoRobustness.AppendElement(c.robustness());
-    }
-    aKeySystemConfig.mMP4.SetCanDecryptAndDecode(
-        NS_ConvertUTF16toUTF8(c.contentType()));
-  }
-  for (const auto& c : aCDMConfig.audioCapabilities()) {
-    if (!c.robustness().IsEmpty() &&
-        !aKeySystemConfig.mAudioRobustness.Contains(c.robustness())) {
-      aKeySystemConfig.mAudioRobustness.AppendElement(c.robustness());
-    }
-    aKeySystemConfig.mMP4.SetCanDecryptAndDecode(
-        NS_ConvertUTF16toUTF8(c.contentType()));
-  }
-  aKeySystemConfig.mPersistentState = aCDMConfig.persistentState();
-  aKeySystemConfig.mDistinctiveIdentifier = aCDMConfig.distinctiveID();
-  EME_LOG("New Capabilities=%s",
-          NS_ConvertUTF16toUTF8(aKeySystemConfig.GetDebugInfo()).get());
-}
-
-static const char* EncryptionSchemeStr(const CryptoScheme aScheme) {
-  switch (aScheme) {
-    case CryptoScheme::None:
-      return "none";
-    case CryptoScheme::Cenc:
-      return "cenc";
-    case CryptoScheme::Cbcs:
-      return "cbcs";
-  }
-}
-
 bool WMFCDMImpl::GetCapabilities(nsTArray<KeySystemConfig>& aOutConfigs) {
-  nsCOMPtr<nsISerialEventTarget> backgroundTaskQueue;
-  NS_CreateBackgroundTaskQueue(__func__, getter_AddRefs(backgroundTaskQueue));
+  MOZ_ASSERT(NS_IsMainThread());
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+    return false;
+  }
 
-  // Retrieve result from our cached key system
   static std::unordered_map<std::string, nsTArray<KeySystemConfig>>
       sKeySystemConfigs{};
+  static bool sSetRunOnShutdown = false;
+  if (!sSetRunOnShutdown) {
+    GetMainThreadSerialEventTarget()->Dispatch(
+        NS_NewRunnableFunction("WMFCDMImpl::GetCapabilities", [&] {
+          RunOnShutdown([&] { sKeySystemConfigs.clear(); },
+                        ShutdownPhase::XPCOMShutdown);
+        }));
+    sSetRunOnShutdown = true;
+  }
+
+  // Retrieve result from our cached key system
   auto keySystem = std::string{NS_ConvertUTF16toUTF8(mKeySystem).get()};
   if (auto rv = sKeySystemConfigs.find(keySystem);
       rv != sKeySystemConfigs.end()) {
@@ -95,6 +77,8 @@ bool WMFCDMImpl::GetCapabilities(nsTArray<KeySystemConfig>& aOutConfigs) {
   }
 
   // Not cached result, ask the remote process.
+  nsCOMPtr<nsISerialEventTarget> backgroundTaskQueue;
+  NS_CreateBackgroundTaskQueue(__func__, getter_AddRefs(backgroundTaskQueue));
   if (!mCDM) {
     mCDM = MakeRefPtr<MFCDMChild>(mKeySystem);
   }

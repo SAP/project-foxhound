@@ -24,17 +24,14 @@ IPCResult ClientManagerParent::RecvTeardown() {
   return IPC_OK();
 }
 
-void ClientManagerParent::ActorDestroy(ActorDestroyReason aReason) {}
-
-PClientHandleParent* ClientManagerParent::AllocPClientHandleParent(
-    const IPCClientInfo& aClientInfo) {
-  return new ClientHandleParent();
+void ClientManagerParent::ActorDestroy(ActorDestroyReason aReason) {
+  mService->RemoveManager(this);
 }
 
-bool ClientManagerParent::DeallocPClientHandleParent(
-    PClientHandleParent* aActor) {
-  delete aActor;
-  return true;
+already_AddRefed<PClientHandleParent>
+ClientManagerParent::AllocPClientHandleParent(
+    const IPCClientInfo& aClientInfo) {
+  return MakeAndAddRef<ClientHandleParent>();
 }
 
 IPCResult ClientManagerParent::RecvPClientHandleConstructor(
@@ -75,7 +72,8 @@ bool ClientManagerParent::DeallocPClientNavigateOpParent(
   return true;
 }
 
-PClientSourceParent* ClientManagerParent::AllocPClientSourceParent(
+already_AddRefed<PClientSourceParent>
+ClientManagerParent::AllocPClientSourceParent(
     const ClientSourceConstructorArgs& aArgs) {
   Maybe<ContentParentId> contentParentId;
 
@@ -84,13 +82,7 @@ PClientSourceParent* ClientManagerParent::AllocPClientSourceParent(
     contentParentId = Some(ContentParentId(childID));
   }
 
-  return new ClientSourceParent(aArgs, contentParentId);
-}
-
-bool ClientManagerParent::DeallocPClientSourceParent(
-    PClientSourceParent* aActor) {
-  delete aActor;
-  return true;
+  return MakeAndAddRef<ClientSourceParent>(aArgs, contentParentId);
 }
 
 IPCResult ClientManagerParent::RecvPClientSourceConstructor(
@@ -103,7 +95,7 @@ IPCResult ClientManagerParent::RecvPClientSourceConstructor(
 ClientManagerParent::ClientManagerParent()
     : mService(ClientManagerService::GetOrCreateInstance()) {}
 
-ClientManagerParent::~ClientManagerParent() { mService->RemoveManager(this); }
+ClientManagerParent::~ClientManagerParent() = default;
 
 void ClientManagerParent::Init() { mService->AddManager(this); }
 

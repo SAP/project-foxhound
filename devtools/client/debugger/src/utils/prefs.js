@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-const { PrefsHelper } = require("devtools/client/shared/prefs");
+const { PrefsHelper } = require("resource://devtools/client/shared/prefs.js");
 
 import { isNode } from "./environment";
 
@@ -45,6 +45,8 @@ if (isNode()) {
   pref("devtools.debugger.log-actions", true);
   pref("devtools.debugger.log-event-breakpoints", false);
   pref("devtools.debugger.javascript-tracing-log-method", "console");
+  pref("devtools.debugger.javascript-tracing-values", false);
+  pref("devtools.debugger.javascript-tracing-on-next-interaction", false);
   pref("devtools.debugger.hide-ignored-sources", false);
   pref("devtools.debugger.source-map-ignore-list-enabled", true);
   pref("devtools.debugger.features.wasm", true);
@@ -56,6 +58,8 @@ if (isNode()) {
   pref("devtools.debugger.features.inline-preview", true);
   pref("devtools.debugger.features.javascript-tracing", false);
   pref("devtools.editor.tabsize", 2);
+  pref("devtools.editor.expandtab", false);
+  pref("devtools.editor.autoclosebrackets", false);
 }
 
 export const prefs = new PrefsHelper("devtools", {
@@ -104,6 +108,11 @@ export const prefs = new PrefsHelper("devtools", {
     "String",
     "debugger.javascript-tracing-log-method",
   ],
+  javascriptTracingValues: ["Bool", "debugger.javascript-tracing-values"],
+  javascriptTracingOnNextInteraction: [
+    "Bool",
+    "debugger.javascript-tracing-on-next-interaction",
+  ],
   hideIgnoredSources: ["Bool", "debugger.hide-ignored-sources"],
   sourceMapIgnoreListEnabled: [
     "Bool",
@@ -130,7 +139,7 @@ export const features = new PrefsHelper("devtools.debugger.features", {
 });
 
 // Import the asyncStore already spawned by the TargetMixin class
-const ThreadUtils = require("devtools/client/shared/thread-utils");
+const ThreadUtils = require("resource://devtools/client/shared/thread-utils.js");
 export const asyncStore = ThreadUtils.asyncStore;
 
 export function resetSchemaVersion() {

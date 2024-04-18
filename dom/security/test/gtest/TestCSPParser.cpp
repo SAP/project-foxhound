@@ -150,14 +150,12 @@ nsresult runTestSuite(const PolicyTest* aPolicies, uint32_t aPolicyCount,
                       uint32_t aExpectedPolicyCount) {
   nsresult rv;
   nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  bool navigateTo = false;
-  bool wasmUnsafeEval = false;
+
+  // Add prefs you need to set to parse CSP here, see comments for example
+  // bool examplePref = false;
   if (prefs) {
-    prefs->GetBoolPref("security.csp.enableNavigateTo", &navigateTo);
-    prefs->SetBoolPref("security.csp.enableNavigateTo", true);
-    prefs->GetBoolPref("security.csp.wasm-unsafe-eval.enabled",
-                       &wasmUnsafeEval);
-    prefs->SetBoolPref("security.csp.wasm-unsafe-eval.enabled", true);
+    // prefs->GetBoolPref("security.csp.examplePref", &examplePref);
+    // prefs->SetBoolPref("security.csp.examplePref", true);
   }
 
   for (uint32_t i = 0; i < aPolicyCount; i++) {
@@ -167,8 +165,7 @@ nsresult runTestSuite(const PolicyTest* aPolicies, uint32_t aPolicyCount,
   }
 
   if (prefs) {
-    prefs->SetBoolPref("security.csp.enableNavigateTo", navigateTo);
-    prefs->SetBoolPref("security.csp.wasm-unsafe-eval.enabled", wasmUnsafeEval);
+    // prefs->SetBoolPref("security.csp.examplePref", examplePref);
   }
 
   return NS_OK;
@@ -222,10 +219,6 @@ TEST(CSPParser, Directives)
       "worker-src https://example.com" },
     { "worker-src http://worker.com; frame-src http://frame.com; child-src http://child.com",
       "worker-src http://worker.com; frame-src http://frame.com; child-src http://child.com" },
-    { "navigate-to http://example.com",
-      "navigate-to http://example.com"},
-    { "navigate-to 'unsafe-allow-redirects' http://example.com",
-      "navigate-to 'unsafe-allow-redirects' http://example.com"},
     { "script-src 'unsafe-allow-redirects' http://example.com",
       "script-src http://example.com"},
       // clang-format on

@@ -13,6 +13,7 @@
 #include "mozilla/dom/CSSImportRule.h"
 #include "mozilla/dom/CSSRuleList.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/MediaList.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReferrerInfo.h"
@@ -36,7 +37,6 @@ using namespace dom;
 StyleSheet::StyleSheet(css::SheetParsingMode aParsingMode, CORSMode aCORSMode,
                        const dom::SRIMetadata& aIntegrity)
     : mParentSheet(nullptr),
-      mRelevantGlobal(nullptr),
       mConstructorDocument(nullptr),
       mDocumentOrShadowRoot(nullptr),
       mParsingMode(aParsingMode),
@@ -49,7 +49,6 @@ StyleSheet::StyleSheet(const StyleSheet& aCopy, StyleSheet* aParentSheetToUse,
                        dom::DocumentOrShadowRoot* aDocOrShadowRootToUse,
                        dom::Document* aConstructorDocToUse)
     : mParentSheet(aParentSheetToUse),
-      mRelevantGlobal(nullptr),
       mConstructorDocument(aConstructorDocToUse),
       mTitle(aCopy.mTitle),
       mDocumentOrShadowRoot(aDocOrShadowRootToUse),
@@ -127,9 +126,6 @@ already_AddRefed<StyleSheet> StyleSheet::Constructor(
   auto referrerInfo = MakeRefPtr<ReferrerInfo>(*constructorDocument);
   sheet->SetReferrerInfo(referrerInfo);
   sheet->mConstructorDocument = constructorDocument;
-  if (constructorDocument) {
-    sheet->mRelevantGlobal = constructorDocument->GetParentObject();
-  }
 
   // 2. Set the sheet's media according to aOptions.
   if (aOptions.mMedia.IsUTF8String()) {
@@ -169,6 +165,15 @@ dom::DocumentOrShadowRoot* StyleSheet::GetAssociatedDocumentOrShadowRoot()
     return outer.mConstructorDocument;
   }
   return nullptr;
+}
+
+void StyleSheet::UpdateRelevantGlobal() {
+  if (mRelevantGlobal || !IsComplete()) {
+    return;
+  }
+  if (Document* doc = GetAssociatedDocument()) {
+    mRelevantGlobal = doc->GetScopeObject();
+  }
 }
 
 Document* StyleSheet::GetKeptAliveByDocument() const {
@@ -294,6 +299,9 @@ void StyleSheet::SetComplete() {
              "Can't complete a sheet that's already been forced unique.");
   MOZ_ASSERT(!IsComplete(), "Already complete?");
   mState |= State::Complete;
+
+  UpdateRelevantGlobal();
+
   if (!Disabled()) {
     ApplicableStateChanged(true);
   }
@@ -677,7 +685,7 @@ void StyleSheet::MaybeRejectReplacePromise() {
   mReplacePromise = nullptr;
 }
 
-// https://wicg.github.io/construct-stylesheets/#dom-cssstylesheet-replace
+// https://drafts.csswg.org/cssom/#dom-cssstylesheet-replace
 already_AddRefed<dom::Promise> StyleSheet::Replace(const nsACString& aText,
                                                    ErrorResult& aRv) {
   nsIGlobalObject* globalObject = nullptr;
@@ -722,7 +730,7 @@ already_AddRefed<dom::Promise> StyleSheet::Replace(const nsACString& aText,
       css::Loader::UseSystemPrincipal::No, css::StylePreloadKind::None,
       /* aPreloadEncoding */ nullptr, /* aObserver */ nullptr,
       mConstructorDocument->NodePrincipal(), GetReferrerInfo(),
-      /* aNonce */ u""_ns);
+      /* aNonce */ u""_ns, FetchPriority::Auto);
 
   // In parallel
   // 5.1 Parse aText into rules.
@@ -966,11 +974,7 @@ void StyleSheet::SetAssociatedDocumentOrShadowRoot(
 
   // not ref counted
   mDocumentOrShadowRoot = aDocOrShadowRoot;
-
-  if (Document* doc = GetAssociatedDocument()) {
-    MOZ_ASSERT(!mRelevantGlobal);
-    mRelevantGlobal = doc->GetScopeObject();
-  }
+  UpdateRelevantGlobal();
 }
 
 void StyleSheet::AppendStyleSheet(StyleSheet& aSheet) {

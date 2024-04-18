@@ -18,8 +18,8 @@ import {relative, resolve} from 'path';
 
 import {getSystemPath, normalize, strings} from '@angular-devkit/core';
 import {
-  SchematicContext,
-  Tree,
+  type SchematicContext,
+  type Tree,
   apply,
   applyTemplates,
   chain,
@@ -28,7 +28,7 @@ import {
   url,
 } from '@angular-devkit/schematics';
 
-import {AngularProject, TestRunner} from './types.js';
+import type {AngularProject, TestRunner} from './types.js';
 
 export interface FilesOptions {
   options: {
@@ -107,14 +107,25 @@ function getProjectBaseUrl(project: any, port: number): string {
     options.protocol = projectOptions.ssl ? 'https' : 'http';
   }
 
-  return `${options.protocol}://${options.host}:${options.port}`;
+  return `${options.protocol}://${options.host}:${options.port}/`;
 }
 
 function getTsConfigPath(project: AngularProject): string {
+  const filename = 'tsconfig.json';
+
   if (!project.root) {
-    return '../tsconfig.json';
+    return `../${filename}`;
   }
-  return `../tsconfig.app.json`;
+
+  const nested = project.root
+    .split('/')
+    .map(() => {
+      return '../';
+    })
+    .join('');
+
+  // Prepend a single `../` as we put the test inside `e2e` folder
+  return `../${nested}${filename}`;
 }
 
 export function addCommonFiles(

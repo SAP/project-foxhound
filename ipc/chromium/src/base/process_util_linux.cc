@@ -16,6 +16,10 @@
 
 #include "mozilla/ipc/LaunchError.h"
 
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+#  include "mozilla/SandboxLaunch.h"
+#endif
+
 #if defined(MOZ_ENABLE_FORKSERVER)
 #  include <stdlib.h>
 #  include <fcntl.h>
@@ -84,7 +88,7 @@ static void ReplaceEnviroment(const LaunchOptions& options) {
 }
 
 bool AppProcessBuilder::ForkProcess(const std::vector<std::string>& argv,
-                                    const LaunchOptions& options,
+                                    LaunchOptions&& options,
                                     ProcessHandle* process_handle) {
   auto cleanFDs = mozilla::MakeScopeExit([&] {
     for (auto& elt : options.fds_to_remap) {
@@ -92,6 +96,17 @@ bool AppProcessBuilder::ForkProcess(const std::vector<std::string>& argv,
       close(fd);
     }
   });
+
+#  if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+  mozilla::SandboxLaunch launcher;
+  if (!launcher.Prepare(&options)) {
+    return false;
+  }
+#  else
+  struct {
+    pid_t Fork() { return fork(); }
+  } launcher;
+#  endif
 
   argv_ = argv;
   if (!shuffle_.Init(options.fds_to_remap)) {
@@ -103,16 +118,12 @@ bool AppProcessBuilder::ForkProcess(const std::vector<std::string>& argv,
   fflush(stdout);
   fflush(stderr);
 
-#  ifdef XP_LINUX
-  pid_t pid = options.fork_delegate ? options.fork_delegate->Fork() : fork();
+  pid_t pid = launcher.Fork();
   // WARNING: if pid == 0, only async signal safe operations are permitted from
   // here until exec or _exit.
   //
   // Specifically, heap allocation is not safe: the sandbox's fork substitute
   // won't run the pthread_atfork handlers that fix up the malloc locks.
-#  else
-  pid_t pid = fork();
-#  endif
 
   if (pid < 0) {
     return false;
@@ -209,29 +220,37 @@ static Result<Ok, LaunchError> LaunchAppWithForkServer(
     ProcessHandle* process_handle) {
   MOZ_ASSERT(ForkServiceChild::Get());
 
-  nsTArray<nsCString> _argv(argv.size());
-  nsTArray<mozilla::EnvVar> env(options.env_map.size());
-  nsTArray<mozilla::FdMapping> fdsremap(options.fds_to_remap.size());
+  // Check for unsupported options
+  MOZ_ASSERT(options.workdir.empty());
+  MOZ_ASSERT(!options.full_env);
+  MOZ_ASSERT(!options.wait);
+
+  ForkServiceChild::Args forkArgs;
+
+#  if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+  forkArgs.mForkFlags = options.fork_flags;
+  forkArgs.mChroot = options.sandbox_chroot;
+#  endif
 
   for (auto& arg : argv) {
-    _argv.AppendElement(arg.c_str());
+    forkArgs.mArgv.AppendElement(arg.c_str());
   }
   for (auto& vv : options.env_map) {
-    env.AppendElement(mozilla::EnvVar(nsCString(vv.first.c_str()),
-                                      nsCString(vv.second.c_str())));
+    forkArgs.mEnv.AppendElement(mozilla::EnvVar(nsCString(vv.first.c_str()),
+                                                nsCString(vv.second.c_str())));
   }
   for (auto& fdmapping : options.fds_to_remap) {
-    fdsremap.AppendElement(mozilla::FdMapping(
+    forkArgs.mFdsRemap.AppendElement(mozilla::FdMapping(
         mozilla::ipc::FileDescriptor(fdmapping.first), fdmapping.second));
   }
 
-  return ForkServiceChild::Get()->SendForkNewSubprocess(_argv, env, fdsremap,
+  return ForkServiceChild::Get()->SendForkNewSubprocess(forkArgs,
                                                         process_handle);
 }
 #endif  // MOZ_ENABLE_FORKSERVER
 
 Result<Ok, LaunchError> LaunchApp(const std::vector<std::string>& argv,
-                                  const LaunchOptions& options,
+                                  LaunchOptions&& options,
                                   ProcessHandle* process_handle) {
 #if defined(MOZ_ENABLE_FORKSERVER)
   if (options.use_forkserver && ForkServiceChild::Get()) {
@@ -240,6 +259,17 @@ Result<Ok, LaunchError> LaunchApp(const std::vector<std::string>& argv,
 #endif
 
   mozilla::UniquePtr<char*[]> argv_cstr(new char*[argv.size() + 1]);
+
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+  mozilla::SandboxLaunch launcher;
+  if (!launcher.Prepare(&options)) {
+    return Err(LaunchError("SL::Prepare", errno));
+  }
+#else
+  struct {
+    pid_t Fork() { return fork(); }
+  } launcher;
+#endif
 
   EnvironmentArray env_storage;
   const EnvironmentArray& envp =
@@ -267,16 +297,12 @@ Result<Ok, LaunchError> LaunchApp(const std::vector<std::string>& argv,
   const char* gcov_child_prefix = PR_GetEnv("GCOV_CHILD_PREFIX");
 #endif
 
-#ifdef XP_LINUX
-  pid_t pid = options.fork_delegate ? options.fork_delegate->Fork() : fork();
+  pid_t pid = launcher.Fork();
   // WARNING: if pid == 0, only async signal safe operations are permitted from
   // here until exec or _exit.
   //
   // Specifically, heap allocation is not safe: the sandbox's fork substitute
   // won't run the pthread_atfork handlers that fix up the malloc locks.
-#else
-  pid_t pid = fork();
-#endif
 
   if (pid < 0) {
     CHROMIUM_LOG(WARNING) << "fork() failed: " << strerror(errno);
@@ -347,12 +373,6 @@ Result<Ok, LaunchError> LaunchApp(const std::vector<std::string>& argv,
   if (process_handle) *process_handle = pid;
 
   return Ok();
-}
-
-Result<Ok, LaunchError> LaunchApp(const CommandLine& cl,
-                                  const LaunchOptions& options,
-                                  ProcessHandle* process_handle) {
-  return LaunchApp(cl.argv(), options, process_handle);
 }
 
 }  // namespace base

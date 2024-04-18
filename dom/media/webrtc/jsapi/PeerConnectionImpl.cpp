@@ -2293,13 +2293,17 @@ void PeerConnectionImpl::GetCapabilities(
 
   GetDefaultRtpExtensions(headers);
 
+  const bool redUlpfecEnabled =
+      Preferences::GetBool("media.navigator.video.red_ulpfec_enabled", false);
+
   // Use the codecs for kind to fill out the RTCRtpCodecCapability
   for (const auto& codec : codecs) {
     // To avoid misleading information on codec capabilities skip those
     // not signaled for audio/video (webrtc-datachannel)
-    // and any disabled by default (ulpfec and red).
-    if (codec->mName == "webrtc-datachannel" || codec->mName == "ulpfec" ||
-        codec->mName == "red") {
+    // and any disabled by pref (ulpfec and red).
+    if (codec->mName == "webrtc-datachannel" ||
+        (codec->mName == "ulpfec" && !redUlpfecEnabled) ||
+        (codec->mName == "red" && !redUlpfecEnabled)) {
       continue;
     }
 
@@ -2943,6 +2947,14 @@ void PeerConnectionImpl::DoSetDescriptionSuccessPostProcessing(
           }
         }
 
+        auto oldIceCredentials = mJsepSession->GetLocalIceCredentials();
+        auto newIceCredentials =
+            mUncommittedJsepSession->GetLocalIceCredentials();
+
+        bool iceRestartDetected =
+            (!oldIceCredentials.empty() && !newIceCredentials.empty() &&
+             (oldIceCredentials != newIceCredentials));
+
         mJsepSession = std::move(mUncommittedJsepSession);
 
         auto newSignalingState = GetSignalingState();
@@ -2973,7 +2985,7 @@ void PeerConnectionImpl::DoSetDescriptionSuccessPostProcessing(
           // that state change.  We need to detect the ice restart here and
           // reset the PeerConnectionImpl's stun addresses so they are
           // regathered when PeerConnectionImpl::GatherIfReady is called.
-          if (mJsepSession->IsIceRestarting()) {
+          if (iceRestartDetected || mJsepSession->IsIceRestarting()) {
             ResetStunAddrsForIceRestart();
           }
           EnsureTransports(*mJsepSession);

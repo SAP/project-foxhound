@@ -260,12 +260,12 @@ class ServoStyleSet {
   size_t SheetCount(Origin) const;
   StyleSheet* SheetAt(Origin, size_t aIndex) const;
 
-  struct FirstPageSizeAndOrientation {
+  struct PageSizeAndOrientation {
     Maybe<StylePageSizeOrientation> orientation;
     Maybe<nsSize> size;
   };
-  // Gets the specified orientation and size used when the first page printed
-  // has the name |aFirstPageName|, based on the page-size property.
+  // Gets the default page size and orientation (the size/orientation specified
+  // by @page rules without a selector list), if any.
   //
   // If the specified size is just an orientation, then the size will be set to
   // nothing and the orientation will be set accordingly.
@@ -273,8 +273,7 @@ class ServoStyleSet {
   // to nothing.
   // Otherwise, the size will and orientation is determined by the specified
   // page size.
-  FirstPageSizeAndOrientation GetFirstPageSizeAndOrientation(
-      const nsAtom* aFirstPageName);
+  PageSizeAndOrientation GetDefaultPageSizeAndOrientation();
 
   void AppendAllNonDocumentAuthorSheets(nsTArray<StyleSheet*>& aArray) const;
 
@@ -521,18 +520,18 @@ class ServoStyleSet {
   void MaybeInvalidateForElementInsertion(const dom::Element&);
 
   /**
-   * Maybe invalidate if a DOM element append might require us to restyle
-   * the relative selector to ancestors/previous siblings.
+   * Maybe invalidate if a series of nodes is appended, among which may
+   * be element(s) that might require us to restyle the relative selector
+   * to ancestors/previous siblings.
    */
-  void MaybeInvalidateForElementAppend(const dom::Element&);
+  void MaybeInvalidateForElementAppend(const nsIContent&);
 
   /**
    * Maybe invalidate if a DOM element removal might require us to restyle
    * the relative selector to ancestors/previous siblings.
    */
   void MaybeInvalidateForElementRemove(const dom::Element& aElement,
-                                       const dom::Element* aPrevSibling,
-                                       const dom::Element* aNextSibling);
+                                       const nsIContent* aFollowingSibling);
 
   /**
    * Returns true if a change in event state on an element might require

@@ -69,7 +69,8 @@ class BrowsingContextGroup;
   FIELD(HasBeforeUnload, bool)                                           \
   /* Controls whether the WindowContext is currently considered to be    \
    * activated by a gesture */                                           \
-  FIELD(UserActivationState, UserActivation::State)                      \
+  FIELD(UserActivationStateAndModifiers,                                 \
+        UserActivation::StateAndModifiers::DataT)                        \
   FIELD(EmbedderPolicy, nsILoadInfo::CrossOriginEmbedderPolicy)          \
   /* True if this document tree contained at least a HTMLMediaElement.   \
    * This should only be set on top level context. */                    \
@@ -194,9 +195,16 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   // 'MIXED' state flags, and should only be called on the top window context.
   void AddSecurityState(uint32_t aStateFlags);
 
+  UserActivation::State GetUserActivationState() const {
+    return UserActivation::StateAndModifiers(
+               GetUserActivationStateAndModifiers())
+        .GetState();
+  }
+
   // This function would be called when its corresponding window is activated
   // by user gesture.
-  void NotifyUserGestureActivation();
+  void NotifyUserGestureActivation(
+      UserActivation::Modifiers aModifiers = UserActivation::Modifiers::None());
 
   // This function would be called when we want to reset the user gesture
   // activation flag.
@@ -218,6 +226,9 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   // activation and the transient user gesture activation had been consumed
   // successfully.
   bool ConsumeTransientUserGestureActivation();
+
+  bool GetTransientUserGestureActivationModifiers(
+      UserActivation::Modifiers* aModifiers);
 
   bool CanShowPopup();
 
@@ -310,8 +321,9 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_DelegatedExactHostMatchPermissions>,
               const PermissionDelegateHandler::DelegatedPermissionList& aValue,
               ContentParent* aSource);
-  bool CanSet(FieldIndex<IDX_UserActivationState>,
-              const UserActivation::State& aUserActivationState,
+  bool CanSet(FieldIndex<IDX_UserActivationStateAndModifiers>,
+              const UserActivation::StateAndModifiers::DataT&
+                  aUserActivationStateAndModifiers,
               ContentParent* aSource) {
     return true;
   }
@@ -344,7 +356,7 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   void DidSet(FieldIndex<I>) {}
   template <size_t I, typename T>
   void DidSet(FieldIndex<I>, T&& aOldValue) {}
-  void DidSet(FieldIndex<IDX_UserActivationState>);
+  void DidSet(FieldIndex<IDX_UserActivationStateAndModifiers>);
 
   // Recomputes whether we can execute scripts in this WindowContext based on
   // the value of AllowJavascript() and whether scripts are allowed in the

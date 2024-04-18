@@ -25,12 +25,10 @@ from mach.decorators import (
     Command,
     CommandArgument,
     CommandArgumentGroup,
-    SettingsProvider,
     SubCommand,
 )
 from mozfile import load_source
 
-import mozbuild.settings  # noqa need @SettingsProvider hook to execute
 from mozbuild.base import (
     BinaryNotFoundException,
     BuildEnvironmentNotFoundException,
@@ -1216,21 +1214,6 @@ def install(command_context, **kwargs):
     if ret == 0:
         command_context.notify("Install complete")
     return ret
-
-
-@SettingsProvider
-class RunSettings:
-    config_settings = [
-        (
-            "runprefs.*",
-            "string",
-            """
-Pass a pref into Firefox when using `mach run`, of the form `foo.bar=value`.
-Prefs will automatically be cast into the appropriate type. Integers can be
-single quoted to force them to be strings.
-""".strip(),
-        )
-    ]
 
 
 def _get_android_run_parser():
@@ -2708,8 +2691,8 @@ def repackage_msix(
     if not arch:
         # Only try to guess the arch when this is clearly a local build.
         if input.endswith("bin"):
-            if command_context.substs["TARGET_CPU"] in ("i686", "x86_64", "aarch64"):
-                arch = command_context.substs["TARGET_CPU"].replace("i686", "x86")
+            if command_context.substs["TARGET_CPU"] in ("x86", "x86_64", "aarch64"):
+                arch = command_context.substs["TARGET_CPU"]
 
         if not arch:
             command_context.log(

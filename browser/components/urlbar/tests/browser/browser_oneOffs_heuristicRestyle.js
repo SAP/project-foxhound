@@ -99,12 +99,12 @@ async function heuristicIsNotRestyled(expectedType, resultDetails) {
   }
 
   Assert.equal(
-    BrowserTestUtils.is_visible(resultDetails.element.separator),
+    BrowserTestUtils.isVisible(resultDetails.element.separator),
     !!actionText,
     "The title separator is " + (actionText ? "visible" : "hidden")
   );
   Assert.equal(
-    BrowserTestUtils.is_visible(resultDetails.element.action),
+    BrowserTestUtils.isVisible(resultDetails.element.action),
     !!actionText,
     "The action text is " + (actionText ? "visible" : "hidden")
   );
@@ -177,18 +177,18 @@ async function heuristicIsRestyled(
   );
 
   Assert.ok(
-    BrowserTestUtils.is_visible(resultDetails.element.separator),
+    BrowserTestUtils.isVisible(resultDetails.element.separator),
     "The restyled result's title separator should be visible"
   );
   Assert.ok(
-    BrowserTestUtils.is_visible(resultDetails.element.action),
+    BrowserTestUtils.isVisible(resultDetails.element.action),
     "The restyled result's action text should be visible"
   );
 
   if (engine) {
     Assert.equal(
       resultDetails.image,
-      engine.iconURI?.spec || UrlbarUtils.ICON.SEARCH_GLASS,
+      engine.getIconURL() || UrlbarUtils.ICON.SEARCH_GLASS,
       "The restyled result's icon should be the engine's icon."
     );
   } else if (source) {

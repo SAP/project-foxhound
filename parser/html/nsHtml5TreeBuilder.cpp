@@ -1761,6 +1761,18 @@ starttagloop:
             attributes = nullptr;
             NS_HTML5_BREAK(starttagloop);
           }
+          case HR: {
+            if (isCurrent(nsGkAtoms::option)) {
+              pop();
+            }
+            if (isCurrent(nsGkAtoms::optgroup)) {
+              pop();
+            }
+            appendVoidElementToCurrent(elementName, attributes);
+            selfClosing = false;
+            attributes = nullptr;
+            NS_HTML5_BREAK(starttagloop);
+          }
           default: {
             errStrayStartTag(name);
             NS_HTML5_BREAK(starttagloop);
@@ -2081,6 +2093,23 @@ bool nsHtml5TreeBuilder::isSpecialParentInForeign(nsHtml5StackNode* stackNode) {
   return (kNameSpaceID_XHTML == ns) || (stackNode->isHtmlIntegrationPoint()) ||
          ((kNameSpaceID_MathML == ns) &&
           (stackNode->getGroup() == MI_MO_MN_MS_MTEXT));
+}
+
+nsIContentHandle* nsHtml5TreeBuilder::getDeclarativeShadowRoot(
+    nsIContentHandle* currentNode, nsIContentHandle* templateNode,
+    nsHtml5HtmlAttributes* attributes) {
+  if (!isAllowDeclarativeShadowRoots()) {
+    return nullptr;
+  }
+  nsHtml5String shadowRootMode =
+      attributes->getValue(nsHtml5AttributeName::ATTR_SHADOWROOTMODE);
+  if (!shadowRootMode) {
+    return nullptr;
+  }
+  bool shadowRootDelegatesFocus =
+      attributes->contains(nsHtml5AttributeName::ATTR_SHADOWROOTDELEGATESFOCUS);
+  return getShadowRootFromHost(currentNode, templateNode, shadowRootMode,
+                               shadowRootDelegatesFocus);
 }
 
 nsHtml5String nsHtml5TreeBuilder::extractCharsetFromContent(
@@ -4209,9 +4238,18 @@ void nsHtml5TreeBuilder::appendToCurrentNodeAndPushElement(
   nsIContentHandle* elt =
       createElement(kNameSpaceID_XHTML, elementName->getName(), attributes,
                     currentNode, htmlCreator(elementName->getHtmlCreator()));
-  appendElement(elt, currentNode);
   if (nsHtml5ElementName::ELT_TEMPLATE == elementName) {
-    elt = getDocumentFragmentForTemplate(elt);
+    nsIContentHandle* root =
+        getDeclarativeShadowRoot(currentNode, elt, attributes);
+    if (root) {
+      setDocumentFragmentForTemplate(elt, root);
+      elt = root;
+    } else {
+      appendElement(elt, currentNode);
+      elt = getDocumentFragmentForTemplate(elt);
+    }
+  } else {
+    appendElement(elt, currentNode);
   }
   nsHtml5StackNode* node = createStackNode(elementName, elt);
   push(node);
@@ -4312,6 +4350,18 @@ void nsHtml5TreeBuilder::appendToCurrentNodeAndPushElementMayFoster(
   }
   nsHtml5StackNode* node = createStackNode(elementName, elt);
   push(node);
+}
+
+void nsHtml5TreeBuilder::appendVoidElementToCurrent(
+    nsHtml5ElementName* elementName, nsHtml5HtmlAttributes* attributes) {
+  nsAtom* popName = elementName->getName();
+  nsIContentHandle* currentNode = nodeFromStackWithBlinkCompat(currentPtr);
+  nsIContentHandle* elt =
+      createElement(kNameSpaceID_XHTML, popName, attributes, currentNode,
+                    htmlCreator(elementName->getHtmlCreator()));
+  appendElement(elt, currentNode);
+  elementPushed(kNameSpaceID_XHTML, popName, elt);
+  elementPopped(kNameSpaceID_XHTML, popName, elt);
 }
 
 void nsHtml5TreeBuilder::appendVoidElementToCurrentMayFoster(
@@ -4459,6 +4509,14 @@ void nsHtml5TreeBuilder::setForceNoQuirks(bool forceNoQuirks) {
 
 void nsHtml5TreeBuilder::setIsSrcdocDocument(bool isSrcdocDocument) {
   this->setForceNoQuirks(isSrcdocDocument);
+}
+
+bool nsHtml5TreeBuilder::isAllowDeclarativeShadowRoots() {
+  return allowDeclarativeShadowRoots;
+}
+
+void nsHtml5TreeBuilder::setAllowDeclarativeShadowRoots(bool allow) {
+  allowDeclarativeShadowRoots = allow;
 }
 
 void nsHtml5TreeBuilder::flushCharacters() {

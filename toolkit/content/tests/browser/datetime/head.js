@@ -303,7 +303,7 @@ async function testKeyOnSpinners(key, document, tabs = 1) {
     "Month-year button is expanded when the spinners are shown"
   );
   Assert.ok(
-    BrowserTestUtils.is_visible(helper.getElement(MONTH_YEAR_VIEW)),
+    BrowserTestUtils.isVisible(helper.getElement(MONTH_YEAR_VIEW)),
     "Month-year selection panel is visible"
   );
 
@@ -325,7 +325,7 @@ async function testKeyOnSpinners(key, document, tabs = 1) {
     "Month-year button is collapsed when the spinners are hidden"
   );
   Assert.ok(
-    BrowserTestUtils.is_hidden(helper.getElement(MONTH_YEAR_VIEW)),
+    BrowserTestUtils.isHidden(helper.getElement(MONTH_YEAR_VIEW)),
     "Month-year selection panel is not visible"
   );
   Assert.equal(

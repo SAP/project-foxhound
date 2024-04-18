@@ -15,6 +15,7 @@ if CONFIG["MOZ_WEBRTC"]:
     UNIFIED_SOURCES += [
         "CamerasChild.cpp",
         "CamerasParent.cpp",
+        "video_engine/video_capture_factory.cc",
         "VideoEngine.cpp",
         "VideoFrameUtils.cpp",
     ]
@@ -58,8 +59,9 @@ if CONFIG["MOZ_WEBRTC"]:
 
     if "WEBRTC_USE_PIPEWIRE" in DEFINES:
         UNIFIED_SOURCES += [
-            "video_engine/pipewire_camera_impl.cc",
+            "video_engine/placeholder_device_info.cc",
         ]
+        CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]
 
 if CONFIG["OS_TARGET"] == "Android":
     DEFINES["WEBRTC_ANDROID"] = True

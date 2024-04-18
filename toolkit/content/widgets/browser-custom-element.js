@@ -1228,7 +1228,7 @@
       }
     }
 
-    createAboutBlankContentViewer(aPrincipal, aPartitionedPrincipal) {
+    createAboutBlankDocumentViewer(aPrincipal, aPartitionedPrincipal) {
       let principal = lazy.BrowserUtils.principalWithMatchingOA(
         aPrincipal,
         this.contentPrincipal
@@ -1239,12 +1239,12 @@
       );
 
       if (this.isRemoteBrowser) {
-        this.frameLoader.remoteTab.createAboutBlankContentViewer(
+        this.frameLoader.remoteTab.createAboutBlankDocumentViewer(
           principal,
           partitionedPrincipal
         );
       } else {
-        this.docShell.createAboutBlankContentViewer(
+        this.docShell.createAboutBlankDocumentViewer(
           principal,
           partitionedPrincipal
         );
@@ -1677,11 +1677,11 @@
         return;
       }
 
-      if (!this.docShell || !this.docShell.contentViewer) {
+      if (!this.docShell || !this.docShell.docViewer) {
         aCallback(false);
         return;
       }
-      aCallback(this.docShell.contentViewer.inPermitUnload);
+      aCallback(this.docShell.docViewer.inPermitUnload);
     }
 
     async asyncPermitUnload(action) {
@@ -1753,11 +1753,11 @@
         throw result;
       }
 
-      if (!this.docShell || !this.docShell.contentViewer) {
+      if (!this.docShell || !this.docShell.docViewer) {
         return { permitUnload: true };
       }
       return {
-        permitUnload: this.docShell.contentViewer.permitUnload(),
+        permitUnload: this.docShell.docViewer.permitUnload(),
       };
     }
 

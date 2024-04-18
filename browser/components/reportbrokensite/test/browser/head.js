@@ -80,6 +80,7 @@ function isSelectedTab(win, tab) {
 function ensureReportBrokenSitePreffedOn() {
   Services.prefs.setBoolPref(PREFS.DATAREPORTING_ENABLED, true);
   Services.prefs.setBoolPref(PREFS.REPORTER_ENABLED, true);
+  ensureReasonDisabled();
 }
 
 function ensureReportBrokenSitePreffedOff() {
@@ -121,7 +122,7 @@ function isMenuItemEnabled(menuItem, itemDesc) {
 
 function isMenuItemHidden(menuItem, itemDesc) {
   ok(
-    !menuItem || menuItem.hidden || !BrowserTestUtils.is_visible(menuItem),
+    !menuItem || menuItem.hidden || !BrowserTestUtils.isVisible(menuItem),
     `${itemDesc} menu item is hidden`
   );
 }
@@ -140,16 +141,16 @@ class ReportBrokenSiteHelper {
     this.win = sourceMenu.win;
   }
 
+  getViewNode(id) {
+    return PanelMultiView.getViewNode(this.win.document, id);
+  }
+
   get mainView() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-mainView"
-    );
+    return this.getViewNode("report-broken-site-popup-mainView");
   }
 
   get sentView() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-reportSentView"
-    );
+    return this.getViewNode("report-broken-site-popup-reportSentView");
   }
 
   get openPanel() {
@@ -163,18 +164,18 @@ class ReportBrokenSiteHelper {
   async open(triggerMenuItem) {
     const window = triggerMenuItem.ownerGlobal;
     const shownPromise = BrowserTestUtils.waitForEvent(
-      window,
-      "ViewShown",
-      true,
-      e => e.target.classList.contains("report-broken-site-view")
+      this.mainView,
+      "ViewShown"
     );
+    const focusPromise = BrowserTestUtils.waitForEvent(this.URLInput, "focus");
     await EventUtils.synthesizeMouseAtCenter(triggerMenuItem, {}, window);
     await shownPromise;
+    await focusPromise;
   }
 
-  async #assertClickAndViewChanges(button, view, newView) {
+  async #assertClickAndViewChanges(button, view, newView, newFocus) {
     ok(view.closest("panel").hasAttribute("panelopen"), "Panel is open");
-    ok(BrowserTestUtils.is_visible(button), "Button is visible");
+    ok(BrowserTestUtils.isVisible(button), "Button is visible");
     ok(!button.disabled, "Button is enabled");
     const promises = [];
     if (newView) {
@@ -186,15 +187,26 @@ class ReportBrokenSiteHelper {
     } else {
       promises.push(BrowserTestUtils.waitForEvent(view, "ViewHiding"));
     }
+    if (newFocus) {
+      promises.push(BrowserTestUtils.waitForEvent(newFocus, "focus"));
+    }
     EventUtils.synthesizeMouseAtCenter(button, {}, this.win);
     await Promise.all(promises);
+  }
+
+  async awaitReportSentViewOpened() {
+    await Promise.all([
+      BrowserTestUtils.waitForEvent(this.sentView, "ViewShown"),
+      BrowserTestUtils.waitForEvent(this.okayButton, "focus"),
+    ]);
   }
 
   async clickSend() {
     await this.#assertClickAndViewChanges(
       this.sendButton,
       this.mainView,
-      this.sentView
+      this.sentView,
+      this.okayButton
     );
   }
 
@@ -237,7 +249,7 @@ class ReportBrokenSiteHelper {
   }
 
   isBackButtonEnabled() {
-    ok(BrowserTestUtils.is_visible(this.backButton), "Back button is visible");
+    ok(BrowserTestUtils.isVisible(this.backButton), "Back button is visible");
     ok(!this.backButton.disabled, "Back button is enabled");
   }
 
@@ -249,19 +261,16 @@ class ReportBrokenSiteHelper {
   }
 
   // UI element getters
-
   get URLInput() {
-    return this.win.document.getElementById("report-broken-site-popup-url");
+    return this.getViewNode("report-broken-site-popup-url");
   }
 
   get URLInvalidMessage() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-invalid-url-msg"
-    );
+    return this.getViewNode("report-broken-site-popup-invalid-url-msg");
   }
 
   get reasonInput() {
-    return this.win.document.getElementById("report-broken-site-popup-reason");
+    return this.getViewNode("report-broken-site-popup-reason");
   }
 
   get reasonDropdownPopup() {
@@ -269,33 +278,23 @@ class ReportBrokenSiteHelper {
   }
 
   get reasonRequiredMessage() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-missing-reason-msg"
-    );
+    return this.getViewNode("report-broken-site-popup-missing-reason-msg");
   }
 
   get reasonLabelRequired() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-reason-label"
-    );
+    return this.getViewNode("report-broken-site-popup-reason-label");
   }
 
   get reasonLabelOptional() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-reason-optional-label"
-    );
+    return this.getViewNode("report-broken-site-popup-reason-optional-label");
   }
 
   get descriptionTextarea() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-description"
-    );
+    return this.getViewNode("report-broken-site-popup-description");
   }
 
   get sendMoreInfoLink() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-send-more-info-link"
-    );
+    return this.getViewNode("report-broken-site-popup-send-more-info-link");
   }
 
   get backButton() {
@@ -303,21 +302,15 @@ class ReportBrokenSiteHelper {
   }
 
   get sendButton() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-send-button"
-    );
+    return this.getViewNode("report-broken-site-popup-send-button");
   }
 
   get cancelButton() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-cancel-button"
-    );
+    return this.getViewNode("report-broken-site-popup-cancel-button");
   }
 
   get okayButton() {
-    return this.win.document.getElementById(
-      "report-broken-site-popup-okay-button"
-    );
+    return this.getViewNode("report-broken-site-popup-okay-button");
   }
 
   // Test helpers
@@ -334,9 +327,7 @@ class ReportBrokenSiteHelper {
   }
 
   chooseReason(value) {
-    const item = this.win.document.getElementById(
-      `report-broken-site-popup-reason-${value}`
-    );
+    const item = this.getViewNode(`report-broken-site-popup-reason-${value}`);
     const input = this.reasonInput;
     input.selectedItem = item;
     input.dispatchEvent(
@@ -363,52 +354,52 @@ class ReportBrokenSiteHelper {
 
   isURLInvalidMessageShown() {
     ok(
-      BrowserTestUtils.is_visible(this.URLInvalidMessage),
+      BrowserTestUtils.isVisible(this.URLInvalidMessage),
       "'Please enter a valid URL' message is shown"
     );
   }
 
   isURLInvalidMessageHidden() {
     ok(
-      !BrowserTestUtils.is_visible(this.URLInvalidMessage),
+      !BrowserTestUtils.isVisible(this.URLInvalidMessage),
       "'Please enter a valid URL' message is hidden"
     );
   }
 
   isReasonNeededMessageShown() {
     ok(
-      BrowserTestUtils.is_visible(this.reasonRequiredMessage),
+      BrowserTestUtils.isVisible(this.reasonRequiredMessage),
       "'Please choose a reason' message is shown"
     );
   }
 
   isReasonNeededMessageHidden() {
     ok(
-      !BrowserTestUtils.is_visible(this.reasonRequiredMessage),
+      !BrowserTestUtils.isVisible(this.reasonRequiredMessage),
       "'Please choose a reason' message is hidden"
     );
   }
 
   isSendButtonEnabled() {
-    ok(BrowserTestUtils.is_visible(this.sendButton), "Send button is visible");
+    ok(BrowserTestUtils.isVisible(this.sendButton), "Send button is visible");
     ok(!this.sendButton.disabled, "Send button is enabled");
   }
 
   isSendButtonDisabled() {
-    ok(BrowserTestUtils.is_visible(this.sendButton), "Send button is visible");
+    ok(BrowserTestUtils.isVisible(this.sendButton), "Send button is visible");
     ok(this.sendButton.disabled, "Send button is disabled");
   }
 
   isSendMoreInfoShown() {
     ok(
-      BrowserTestUtils.is_visible(this.sendMoreInfoLink),
+      BrowserTestUtils.isVisible(this.sendMoreInfoLink),
       "send more info is shown"
     );
   }
 
   isSendMoreInfoHidden() {
     ok(
-      !BrowserTestUtils.is_visible(this.sendMoreInfoLink),
+      !BrowserTestUtils.isVisible(this.sendMoreInfoLink),
       "send more info is hidden"
     );
   }
@@ -423,45 +414,45 @@ class ReportBrokenSiteHelper {
 
   isReasonHidden() {
     ok(
-      !BrowserTestUtils.is_visible(this.reasonInput),
+      !BrowserTestUtils.isVisible(this.reasonInput),
       "reason drop-down is hidden"
     );
     ok(
-      !BrowserTestUtils.is_visible(this.reasonLabelOptional),
+      !BrowserTestUtils.isVisible(this.reasonLabelOptional),
       "optional reason label is hidden"
     );
     ok(
-      !BrowserTestUtils.is_visible(this.reasonLabelRequired),
+      !BrowserTestUtils.isVisible(this.reasonLabelRequired),
       "required reason label is hidden"
     );
   }
 
   isReasonRequired() {
     ok(
-      BrowserTestUtils.is_visible(this.reasonInput),
+      BrowserTestUtils.isVisible(this.reasonInput),
       "reason drop-down is shown"
     );
     ok(
-      !BrowserTestUtils.is_visible(this.reasonLabelOptional),
+      !BrowserTestUtils.isVisible(this.reasonLabelOptional),
       "optional reason label is hidden"
     );
     ok(
-      BrowserTestUtils.is_visible(this.reasonLabelRequired),
+      BrowserTestUtils.isVisible(this.reasonLabelRequired),
       "required reason label is shown"
     );
   }
 
   isReasonOptional() {
     ok(
-      BrowserTestUtils.is_visible(this.reasonInput),
+      BrowserTestUtils.isVisible(this.reasonInput),
       "reason drop-down is shown"
     );
     ok(
-      BrowserTestUtils.is_visible(this.reasonLabelOptional),
+      BrowserTestUtils.isVisible(this.reasonLabelOptional),
       "optional reason label is shown"
     );
     ok(
-      !BrowserTestUtils.is_visible(this.reasonLabelRequired),
+      !BrowserTestUtils.isVisible(this.reasonLabelRequired),
       "required reason label is hidden"
     );
   }
@@ -496,6 +487,10 @@ class MenuHelper {
 
   constructor(win = window) {
     this.win = win;
+  }
+
+  getViewNode(id) {
+    return PanelMultiView.getViewNode(this.win.document, id);
   }
 
   get showsBackButton() {
@@ -567,10 +562,7 @@ class AppMenuHelper extends MenuHelper {
   menuDescription = "AppMenu";
 
   get reportBrokenSite() {
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "appMenu-report-broken-site-button"
-    );
+    return this.getViewNode("appMenu-report-broken-site-button");
   }
 
   get reportSiteIssue() {
@@ -578,10 +570,7 @@ class AppMenuHelper extends MenuHelper {
   }
 
   get popup() {
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "appMenu-popup"
-    );
+    return this.win.document.getElementById("appMenu-popup");
   }
 
   async open() {
@@ -599,24 +588,15 @@ class AppMenuHelpSubmenuHelper extends MenuHelper {
   menuDescription = "AppMenu help sub-menu";
 
   get reportBrokenSite() {
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "appMenu_help_reportBrokenSite"
-    );
+    return this.getViewNode("appMenu_help_reportBrokenSite");
   }
 
   get reportSiteIssue() {
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "appMenu_help_reportSiteIssue"
-    );
+    return this.getViewNode("appMenu_help_reportSiteIssue");
   }
 
   get popup() {
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "appMenu-popup"
-    );
+    return this.win.document.getElementById("appMenu-popup");
   }
 
   async open() {
@@ -625,8 +605,7 @@ class AppMenuHelpSubmenuHelper extends MenuHelper {
     const anchor = this.win.document.getElementById("PanelUI-menu-button");
     this.win.PanelUI.showHelpView(anchor);
 
-    const appMenuHelpSubview =
-      this.win.document.getElementById("PanelUI-helpView");
+    const appMenuHelpSubview = this.getViewNode("PanelUI-helpView");
     await BrowserTestUtils.waitForEvent(appMenuHelpSubview, "ViewShown");
   }
 
@@ -645,31 +624,19 @@ class HelpMenuHelper extends MenuHelper {
   }
 
   get reportBrokenSite() {
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "help_reportBrokenSite"
-    );
+    return this.win.document.getElementById("help_reportBrokenSite");
   }
 
   get reportSiteIssue() {
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "help_reportSiteIssue"
-    );
+    return this.win.document.getElementById("help_reportSiteIssue");
   }
 
   get popup() {
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "PanelUI-helpView"
-    );
+    return this.getViewNode("PanelUI-helpView");
   }
 
   get helpMenu() {
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "menu_HelpPopup"
-    );
+    return this.win.document.getElementById("menu_HelpPopup");
   }
 
   async openReportBrokenSite() {
@@ -720,10 +687,7 @@ class ProtectionsPanelHelper extends MenuHelper {
 
   get reportBrokenSite() {
     this.win.gProtectionsHandler._initializePopup();
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "protections-popup-report-broken-site-button"
-    );
+    return this.getViewNode("protections-popup-report-broken-site-button");
   }
 
   get reportSiteIssue() {
@@ -732,10 +696,7 @@ class ProtectionsPanelHelper extends MenuHelper {
 
   get popup() {
     this.win.gProtectionsHandler._initializePopup();
-    return this.win.PanelMultiView.getViewNode(
-      this.win.document,
-      "protections-popup"
-    );
+    return this.win.document.getElementById("protections-popup");
   }
 
   async open() {
@@ -753,7 +714,7 @@ class ProtectionsPanelHelper extends MenuHelper {
     if (this.opened) {
       const popup = this.popup;
       const promise = BrowserTestUtils.waitForEvent(popup, "popuphidden");
-      this.win.PanelMultiView.hidePopup(popup, false);
+      PanelMultiView.hidePopup(popup, false);
       await promise;
     }
   }
@@ -773,4 +734,34 @@ function HelpMenu(win = window) {
 
 function ProtectionsPanel(win = window) {
   return new ProtectionsPanelHelper(win);
+}
+
+function pressKeyAndAwait(event, key, config = {}) {
+  const win = config.window || window;
+  if (!event.then) {
+    event = BrowserTestUtils.waitForEvent(win, event, config.timeout || 200);
+  }
+  EventUtils.synthesizeKey(key, config, win);
+  return event;
+}
+
+async function pressKeyAndGetFocus(key, config = {}) {
+  return (await pressKeyAndAwait("focus", key, config)).target;
+}
+
+async function tabTo(match, win = window) {
+  const config = { window: win };
+  const { activeElement } = win.document;
+  if (activeElement?.matches(match)) {
+    return activeElement;
+  }
+  let initial = await pressKeyAndGetFocus("VK_TAB", config);
+  let target = initial;
+  do {
+    if (target.matches(match)) {
+      return target;
+    }
+    target = await pressKeyAndGetFocus("VK_TAB", config);
+  } while (target && target !== initial);
+  return undefined;
 }

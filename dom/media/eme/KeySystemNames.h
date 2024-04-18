@@ -29,12 +29,19 @@ inline constexpr char kWidevineExperimentKeySystemName[] =
 // hardware decryption with codecs that support clear lead.
 inline constexpr char kWidevineExperiment2KeySystemName[] =
     "com.widevine.alpha.experiment2";
+// API name used for searching GMP Wideivine L1 plugin.
+inline constexpr char kWidevineExperimentAPIName[] = "windows-mf-cdm";
 
 // https://learn.microsoft.com/en-us/playready/overview/key-system-strings
 inline constexpr char kPlayReadyKeySystemName[] =
     "com.microsoft.playready.recommendation";
 inline constexpr char kPlayReadyKeySystemHardware[] =
     "com.microsoft.playready.recommendation.3000";
+
+// A sub key system of `kPlayReadyKeySystemName` only used in experiments to
+// support hardware decryption with codecs that support clear lead.
+inline constexpr char kPlayReadyHardwareClearLeadKeySystemName[] =
+    "com.microsoft.playready.recommendation.3000.clearlead";
 #endif
 }  // namespace mozilla
 

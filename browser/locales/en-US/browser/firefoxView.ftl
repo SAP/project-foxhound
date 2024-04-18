@@ -19,6 +19,9 @@ firefoxview-close-button =
   .title = Close
   .aria-label = Close
 
+firefoxview-empty-state-icon =
+  .alt = Attention:
+
 # Used instead of the localized relative time when a timestamp is within a minute or so of now
 firefoxview-just-now-timestamp = Just now
 
@@ -177,13 +180,30 @@ firefoxview-opentabs-focus-tab =
 
 firefoxview-show-more = Show more
 firefoxview-show-less = Show less
+firefoxview-show-all = Show all
 
 firefoxview-search-text-box-clear-button =
   .title = Clear
 
+# Placeholder for the input field to search in recent browsing ("search" is a verb).
+firefoxview-search-text-box-recentbrowsing =
+  .placeholder = Search
+
 # Placeholder for the input field to search in history ("search" is a verb).
 firefoxview-search-text-box-history =
   .placeholder = Search history
+
+# Placeholder for the input field to search in recently closed tabs ("search" is a verb).
+firefoxview-search-text-box-recentlyclosed =
+  .placeholder = Search recently closed tabs
+
+# Placeholder for the input field to search in tabs from other devices ("search" is a verb).
+firefoxview-search-text-box-syncedtabs =
+  .placeholder = Search synced tabs
+
+# Placeholder for the input field to search in open tabs ("search" is a verb).
+firefoxview-search-text-box-opentabs =
+  .placeholder = Search open tabs
 
 # "Search" is a noun (as in "Results of the search for")
 # Variables:

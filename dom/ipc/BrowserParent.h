@@ -591,7 +591,8 @@ class BrowserParent final : public PBrowserParent,
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY bool SendHandleTap(
       TapType aType, const LayoutDevicePoint& aPoint, Modifiers aModifiers,
-      const ScrollableLayerGuid& aGuid, uint64_t aInputBlockId);
+      const ScrollableLayerGuid& aGuid, uint64_t aInputBlockId,
+      const Maybe<DoubleTapToZoomMetrics>& aDoubleTapToZoomMetrics);
 
   already_AddRefed<PFilePickerParent> AllocPFilePickerParent(
       const nsString& aTitle, const nsIFilePicker::Mode& aMode);
@@ -606,10 +607,7 @@ class BrowserParent final : public PBrowserParent,
 
   bool SendInsertText(const nsString& aStringToInsert);
 
-  bool SendPasteTransferable(IPCTransferableData&& aTransferableData,
-                             const bool& aIsPrivateData,
-                             nsIPrincipal* aRequestingPrincipal,
-                             const nsContentPolicyType& aContentPolicyType);
+  bool SendPasteTransferable(IPCTransferable&& aTransferable);
 
   // Helper for transforming a point
   LayoutDeviceIntPoint TransformPoint(
@@ -621,6 +619,7 @@ class BrowserParent final : public PBrowserParent,
 
   // Transform a coordinate from the parent process coordinate space to the
   // child process coordinate space.
+  LayoutDeviceIntPoint TransformParentToChild(const WidgetMouseEvent& aEvent);
   LayoutDeviceIntPoint TransformParentToChild(
       const LayoutDeviceIntPoint& aPoint);
   LayoutDevicePoint TransformParentToChild(const LayoutDevicePoint& aPoint);

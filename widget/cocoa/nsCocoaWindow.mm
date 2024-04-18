@@ -142,7 +142,7 @@ nsCocoaWindow::nsCocoaWindow()
       mSheetWindowParent(nil),
       mPopupContentView(nil),
       mFullscreenTransitionAnimation(nil),
-      mShadowStyle(StyleWindowShadow::Default),
+      mShadowStyle(WindowShadow::None),
       mBackingScaleFactor(0.0),
       mAnimationType(nsIWidget::eGenericWindowAnimation),
       mWindowMadeHere(false),
@@ -297,44 +297,6 @@ static NSScreen* FindTargetScreenForRect(const DesktopIntRect& aRect) {
   return targetScreen;
 }
 
-// fits the rect to the screen that contains the largest area of it,
-// or to aScreen if a screen is passed in
-// NB: this operates with aRect in desktop pixels
-static void FitRectToVisibleAreaForScreen(DesktopIntRect& aRect,
-                                          NSScreen* aScreen) {
-  if (!aScreen) {
-    aScreen = FindTargetScreenForRect(aRect);
-  }
-
-  DesktopIntRect screenBounds =
-      nsCocoaUtils::CocoaRectToGeckoRect([aScreen visibleFrame]);
-
-  if (aRect.width > screenBounds.width) {
-    aRect.width = screenBounds.width;
-  }
-  if (aRect.height > screenBounds.height) {
-    aRect.height = screenBounds.height;
-  }
-
-  if (aRect.x - screenBounds.x + aRect.width > screenBounds.width) {
-    aRect.x += screenBounds.width - (aRect.x - screenBounds.x + aRect.width);
-  }
-  if (aRect.y - screenBounds.y + aRect.height > screenBounds.height) {
-    aRect.y += screenBounds.height - (aRect.y - screenBounds.y + aRect.height);
-  }
-
-  // If the left/top edge of the window is off the screen in either direction,
-  // then set the window to start at the left/top edge of the screen.
-  if (aRect.x < screenBounds.x ||
-      aRect.x > (screenBounds.x + screenBounds.width)) {
-    aRect.x = screenBounds.x;
-  }
-  if (aRect.y < screenBounds.y ||
-      aRect.y > (screenBounds.y + screenBounds.height)) {
-    aRect.y = screenBounds.y;
-  }
-}
-
 DesktopToLayoutDeviceScale ParentBackingScaleFactor(nsIWidget* aParent,
                                                     NSView* aParentView) {
   if (aParent) {
@@ -392,9 +354,6 @@ nsresult nsCocoaWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
   // we have to provide an autorelease pool (see bug 559075).
   nsAutoreleasePool localPool;
 
-  DesktopIntRect newBounds = aRect;
-  FitRectToVisibleAreaForScreen(newBounds, nullptr);
-
   // Set defaults which can be overriden from aInitData in BaseCreate
   mWindowType = WindowType::TopLevel;
   mBorderStyle = BorderStyle::Default;
@@ -431,7 +390,7 @@ nsresult nsCocoaWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
     // now we can convert widgetRect to device pixels for the window we created,
     // as the child view expects a rect expressed in the dev pix of its parent
     LayoutDeviceIntRect devRect =
-        RoundedToInt(newBounds * GetDesktopToDeviceScale());
+        RoundedToInt(aRect * GetDesktopToDeviceScale());
     return CreatePopupContentView(devRect, aInitData);
   }
 
@@ -617,7 +576,7 @@ nsresult nsCocoaWindow::CreateNativeWindow(const NSRect& aRect,
 
   if (mWindowType == WindowType::Popup) {
     SetPopupWindowLevel();
-    [mWindow setBackgroundColor:[NSColor clearColor]];
+    [mWindow setBackgroundColor:NSColor.clearColor];
     [mWindow setOpaque:NO];
 
     // When multiple spaces are in use and the browser is assigned to a
@@ -1231,18 +1190,18 @@ TransparencyMode nsCocoaWindow::GetTransparencyMode() {
 void nsCocoaWindow::SetTransparencyMode(TransparencyMode aMode) {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
-  // Only respect calls for popup windows.
-  if (!mWindow || mWindowType != WindowType::Popup) {
+  if (!mWindow) {
     return;
   }
 
   BOOL isTransparent = aMode == TransparencyMode::Transparent;
-  BOOL currentTransparency = ![mWindow isOpaque];
-  if (isTransparent != currentTransparency) {
-    [mWindow setOpaque:!isTransparent];
-    [mWindow setBackgroundColor:(isTransparent ? [NSColor clearColor]
-                                               : [NSColor whiteColor])];
+  BOOL currentTransparency = !mWindow.isOpaque;
+  if (isTransparent == currentTransparency) {
+    return;
   }
+  [mWindow setOpaque:!isTransparent];
+  [mWindow setBackgroundColor:(isTransparent ? NSColor.clearColor
+                                             : NSColor.whiteColor)];
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -2170,10 +2129,6 @@ void nsCocoaWindow::DoResize(double aX, double aY, double aWidth,
                            NSToIntRound(width / scale),
                            NSToIntRound(height / scale));
 
-  // constrain to the screen that contains the largest area of the new rect
-  FitRectToVisibleAreaForScreen(
-      newBounds, aConstrainToCurrentScreen ? [mWindow screen] : nullptr);
-
   // convert requested bounds into Cocoa coordinate system
   NSRect newFrame = nsCocoaUtils::GeckoRectToCocoaRect(newBounds);
 
@@ -2681,8 +2636,12 @@ bool nsCocoaWindow::HasPendingInputEvent() {
   return nsChildView::DoHasPendingInputEvent();
 }
 
-void nsCocoaWindow::SetWindowShadowStyle(StyleWindowShadow aStyle) {
+void nsCocoaWindow::SetWindowShadowStyle(WindowShadow aStyle) {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
+
+  if (mShadowStyle == aStyle) {
+    return;
+  }
 
   mShadowStyle = aStyle;
 
@@ -2691,8 +2650,8 @@ void nsCocoaWindow::SetWindowShadowStyle(StyleWindowShadow aStyle) {
   }
 
   mWindow.shadowStyle = mShadowStyle;
-  [mWindow setUseMenuStyle:mShadowStyle == StyleWindowShadow::Menu];
-  [mWindow setHasShadow:aStyle != StyleWindowShadow::None];
+  [mWindow setEffectViewWrapperForStyle:mShadowStyle];
+  [mWindow setHasShadow:aStyle != WindowShadow::None];
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -3577,7 +3536,6 @@ static NSMutableSet* gSwizzledFrameViewClasses = nil;
   mDirtyRect = NSZeroRect;
   mBeingShown = NO;
   mDrawTitle = NO;
-  mUseMenuStyle = NO;
   mTouchBar = nil;
   mIsAnimationSuppressed = NO;
   [self updateTrackingArea];
@@ -3587,21 +3545,20 @@ static NSMutableSet* gSwizzledFrameViewClasses = nil;
 
 // Returns an autoreleased NSImage.
 static NSImage* GetMenuMaskImage() {
-  CGFloat radius = 4.0f;
-  NSEdgeInsets insets = {5, 5, 5, 5};
-  NSSize maskSize = {12, 12};
-  NSImage* maskImage = [NSImage
-       imageWithSize:maskSize
-             flipped:YES
-      drawingHandler:^BOOL(NSRect dstRect) {
-        NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:dstRect
-                                                             xRadius:radius
-                                                             yRadius:radius];
-        [[NSColor colorWithDeviceWhite:1.0 alpha:1.0] set];
-        [path fill];
-        return YES;
-      }];
-  [maskImage setCapInsets:insets];
+  const CGFloat radius = 6.0f;
+  const NSSize maskSize = {radius * 3.0f, radius * 3.0f};
+  NSImage* maskImage = [NSImage imageWithSize:maskSize
+                                      flipped:FALSE
+                               drawingHandler:^BOOL(NSRect dstRect) {
+                                 NSBezierPath* path = [NSBezierPath
+                                     bezierPathWithRoundedRect:dstRect
+                                                       xRadius:radius
+                                                       yRadius:radius];
+                                 [NSColor.blackColor set];
+                                 [path fill];
+                                 return YES;
+                               }];
+  maskImage.capInsets = NSEdgeInsetsMake(radius, radius, radius, radius);
   return maskImage;
 }
 
@@ -3614,22 +3571,26 @@ static NSImage* GetMenuMaskImage() {
   [super setContentView:aNewWrapper];
 }
 
-- (void)setUseMenuStyle:(BOOL)aValue {
-  if (aValue && !mUseMenuStyle) {
-    // Turn on rounded corner masking.
-    NSView* effectView =
-        VibrancyManager::CreateEffectView(VibrancyType::MENU, YES);
-    [effectView setMaskImage:GetMenuMaskImage()];
+- (void)setEffectViewWrapperForStyle:(WindowShadow)aStyle {
+  if (aStyle == WindowShadow::Menu || aStyle == WindowShadow::Tooltip) {
+    // Add an effect view wrapper so that the OS draws the appropriate
+    // vibrancy effect and window border.
+    BOOL isMenu = aStyle == WindowShadow::Menu;
+    NSView* effectView = VibrancyManager::CreateEffectView(
+        isMenu ? VibrancyType::MENU : VibrancyType::TOOLTIP, YES);
+    if (isMenu) {
+      // Turn on rounded corner masking.
+      [effectView setMaskImage:GetMenuMaskImage()];
+    }
     [self swapOutChildViewWrapper:effectView];
     [effectView release];
-  } else if (mUseMenuStyle && !aValue) {
-    // Turn off rounded corner masking.
+  } else {
+    // Remove the existing wrapper.
     NSView* wrapper = [[NSView alloc] initWithFrame:NSZeroRect];
     [wrapper setWantsLayer:YES];
     [self swapOutChildViewWrapper:wrapper];
     [wrapper release];
   }
-  mUseMenuStyle = aValue;
 }
 
 - (NSTouchBar*)makeTouchBar {
@@ -4427,20 +4388,36 @@ static const NSUInteger kWindowShadowOptionsNoShadow = 0;
 static const NSUInteger kWindowShadowOptionsMenu = 2;
 static const NSUInteger kWindowShadowOptionsTooltip = 4;
 
+- (NSDictionary*)shadowParameters {
+  NSDictionary* parent = [super shadowParameters];
+  // NSLog(@"%@", parent);
+  if (self.shadowStyle != WindowShadow::Panel) {
+    return parent;
+  }
+  NSMutableDictionary* copy = [parent mutableCopy];
+  for (auto* key : {@"com.apple.WindowShadowRimDensityActive",
+                    @"com.apple.WindowShadowRimDensityInactive"}) {
+    if ([parent objectForKey:key] != nil) {
+      [copy setValue:@(0) forKey:key];
+    }
+  }
+  return copy;
+}
+
 - (NSUInteger)shadowOptions {
   if (!self.hasShadow) {
     return kWindowShadowOptionsNoShadow;
   }
 
   switch (self.shadowStyle) {
-    case StyleWindowShadow::None:
+    case WindowShadow::None:
       return kWindowShadowOptionsNoShadow;
 
-    case StyleWindowShadow::Default:  // we treat "default" as "default panel"
-    case StyleWindowShadow::Menu:
+    case WindowShadow::Menu:
+    case WindowShadow::Panel:
       return kWindowShadowOptionsMenu;
 
-    case StyleWindowShadow::Tooltip:
+    case WindowShadow::Tooltip:
       return kWindowShadowOptionsTooltip;
   }
 }

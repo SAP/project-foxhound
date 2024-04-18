@@ -1038,6 +1038,9 @@ class ScriptSource {
   [[nodiscard]] bool setFilename(FrontendContext* fc, const char* filename);
   [[nodiscard]] bool setFilename(FrontendContext* fc, UniqueChars&& filename);
 
+  bool hasIntroducerFilename() const {
+    return introducerFilename_ ? true : false;
+  }
   const char* introducerFilename() const {
     return introducerFilename_ ? introducerFilename_.chars() : filename();
   }
@@ -1940,6 +1943,9 @@ class JSScript : public js::BaseScript {
   inline void incWarmUpCounter();
   inline void resetWarmUpCounterForGC();
 
+  inline void updateLastICStubCounter();
+  inline uint32_t warmUpCountAtLastICStub() const;
+
   void resetWarmUpCounterToDelayIonCompilation();
 
   unsigned getWarmUpResetCount() const {
@@ -2137,10 +2143,6 @@ class JSScript : public js::BaseScript {
   // See comment above 'debugMode' in Realm.h for explanation of
   // invariants of debuggee compartments, scripts, and frames.
   inline bool isDebuggee() const;
-
-  // Create an allocation site associated with this script/JitScript to track
-  // nursery allocations.
-  js::gc::AllocSite* createAllocSite();
 
   // A helper class to prevent relazification of the given function's script
   // while it's holding on to it.  This class automatically roots the script.

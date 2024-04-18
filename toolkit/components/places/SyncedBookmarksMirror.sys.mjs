@@ -2237,7 +2237,7 @@ class BookmarkObserverRecorder {
               IFNULL(h.hidden, 0) AS hidden,
               IFNULL(h.visit_count, 0) AS visit_count,
               h.last_visit_date,
-              (SELECT group_concat(pp.title)
+              (SELECT group_concat(pp.title ORDER BY pp.title)
                FROM moz_bookmarks bb
                JOIN moz_bookmarks pp ON pp.id = bb.parent
                JOIN moz_bookmarks gg ON gg.id = pp.parent
@@ -2303,8 +2303,8 @@ class BookmarkObserverRecorder {
               h.url AS url, IFNULL(b.title, '') AS title,
               IFNULL(h.frecency, 0) AS frecency, IFNULL(h.hidden, 0) AS hidden,
               IFNULL(h.visit_count, 0) AS visit_count,
-              h.last_visit_date,
-              (SELECT group_concat(pp.title)
+              b.dateAdded, h.last_visit_date,
+              (SELECT group_concat(pp.title ORDER BY pp.title)
                FROM moz_bookmarks bb
                JOIN moz_bookmarks pp ON pp.id = bb.parent
                JOIN moz_bookmarks gg ON gg.id = pp.parent
@@ -2338,6 +2338,9 @@ class BookmarkObserverRecorder {
           frecency: row.getResultByName("frecency"),
           hidden: row.getResultByName("hidden"),
           visitCount: row.getResultByName("visit_count"),
+          dateAdded: lazy.PlacesUtils.toDate(
+            row.getResultByName("dateAdded")
+          ).getTime(),
           lastVisitDate: lastVisitDate
             ? lazy.PlacesUtils.toDate(lastVisitDate).getTime()
             : null,
@@ -2468,6 +2471,7 @@ class BookmarkObserverRecorder {
         frecency: info.frecency,
         hidden: info.hidden,
         visitCount: info.visitCount,
+        dateAdded: info.dateAdded,
         lastVisitDate: info.lastVisitDate,
       })
     );

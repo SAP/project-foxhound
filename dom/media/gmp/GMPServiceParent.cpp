@@ -52,6 +52,10 @@
 #  include "mozilla/dom/MediaKeys.h"  // MediaKeys::kMediaKeysRequestTopic
 #endif
 
+#ifdef MOZ_WMF_CDM
+#  include "mozilla/MFCDMParent.h"
+#endif
+
 namespace mozilla::gmp {
 
 #ifdef __CLASS__
@@ -650,6 +654,12 @@ void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities(
           hasH264 = HAS_H264;
         }
       }
+#ifdef MOZ_WMF_CDM
+      if (name.Equals("gmp-widevinecdm-l1")) {
+        nsCOMPtr<nsIFile> pluginFile = gmp->GetDirectory();
+        MFCDMService::UpdateWidevineL1Path(pluginFile);
+      }
+#endif
       caps.AppendElement(std::move(x));
     }
   }
@@ -904,6 +914,33 @@ GeckoMediaPluginServiceParent::HasPluginForAPI(const nsACString& aAPI,
   return NS_OK;
 }
 
+NS_IMETHODIMP
+GeckoMediaPluginServiceParent::FindPluginDirectoryForAPI(
+    const nsACString& aAPI, const nsTArray<nsCString>& aTags,
+    nsIFile** aDirectory) {
+  NS_ENSURE_ARG(!aTags.IsEmpty());
+  NS_ENSURE_ARG(aDirectory);
+
+  nsresult rv = EnsurePluginsOnDiskScanned();
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Failed to load GMPs from disk.");
+    return rv;
+  }
+
+  {
+    MutexAutoLock lock(mMutex);
+    nsCString api(aAPI);
+    size_t index = 0;
+    RefPtr<GMPParent> gmp = FindPluginForAPIFrom(index, api, aTags, &index);
+    if (gmp) {
+      nsCOMPtr<nsIFile> dir = gmp->GetDirectory();
+      dir.forget(aDirectory);
+    }
+  }
+
+  return NS_OK;
+}
+
 nsresult GeckoMediaPluginServiceParent::EnsurePluginsOnDiskScanned() {
   const char* env = nullptr;
   if (!mScannedPluginOnDisk && (env = PR_GetEnv("MOZ_GMP_PATH")) && *env) {
@@ -1147,7 +1184,7 @@ void GeckoMediaPluginServiceParent::RemoveOnGMPThread(
       mMainThread->Dispatch(task.forget());
     }
   }
-}
+}  // Ignore mutex not held; MutexAutoUnlock is used above
 
 // May remove when Bug 1043671 is fixed
 static void Dummy(RefPtr<GMPParent> aOnDeathsDoor) {
@@ -1618,7 +1655,9 @@ void GeckoMediaPluginServiceParent::ClearNodeIdAndPlugin(
   }
 
   // Kill plugin instances that have node IDs being cleared.
+  MOZ_PUSH_IGNORE_THREAD_SAFETY
   KillPlugins(mPlugins, mMutex, NodeFilter(nodeIDsToClear));
+  MOZ_POP_THREAD_SAFETY
 
   // Clear all storage in $profileDir/gmp/$platform/$gmpName/storage/$nodeId/
   path = CloneAndAppend(aPluginStorageDir, u"storage"_ns);
@@ -1851,7 +1890,9 @@ void GeckoMediaPluginServiceParent::ClearStorage() {
   GMP_LOG_DEBUG("%s::%s", __CLASS__, __FUNCTION__);
 
   // Kill plugins with valid nodeIDs.
+  MOZ_PUSH_IGNORE_THREAD_SAFETY
   KillPlugins(mPlugins, mMutex, &IsNodeIdValid);
+  MOZ_POP_THREAD_SAFETY
 
   nsCOMPtr<nsIFile> path;  // $profileDir/gmp/$platform/
   nsresult rv = GetStorageDir(getter_AddRefs(path));

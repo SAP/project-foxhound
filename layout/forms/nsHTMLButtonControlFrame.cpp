@@ -8,14 +8,13 @@
 
 #include "mozilla/Baseline.h"
 #include "mozilla/PresShell.h"
+#include "nsIFrameInlines.h"
 #include "nsContainerFrame.h"
 #include "nsIFormControlFrame.h"
-#include "nsIFrameInlines.h"
 #include "nsPresContext.h"
+#include "nsLayoutUtils.h"
 #include "nsGkAtoms.h"
 #include "nsButtonFrameRenderer.h"
-#include "nsCSSAnonBoxes.h"
-#include "nsNameSpaceManager.h"
 #include "nsDisplayList.h"
 #include <algorithm>
 
@@ -69,7 +68,8 @@ nsresult nsHTMLButtonControlFrame::HandleEvent(nsPresContext* aPresContext,
 }
 
 bool nsHTMLButtonControlFrame::ShouldClipPaintingToBorderBox() {
-  return IsInput() || StyleDisplay()->mOverflowX != StyleOverflow::Visible;
+  // FIXME(emilio): probably should account for per-axis clipping...
+  return StyleDisplay()->mOverflowX != StyleOverflow::Visible;
 }
 
 void nsHTMLButtonControlFrame::BuildDisplayList(
@@ -248,18 +248,14 @@ void nsHTMLButtonControlFrame::ReflowButtonContents(
     // aButtonReflowInput.ComputedBSize()).  Note that we do this before
     // adjusting for borderpadding, since mComputedMaxBSize and
     // mComputedMinBSize are content bSizes.
-    buttonContentBox.BSize(wm) =
-        NS_CSS_MINMAX(bSize, aButtonReflowInput.ComputedMinBSize(),
-                      aButtonReflowInput.ComputedMaxBSize());
+    buttonContentBox.BSize(wm) = aButtonReflowInput.ApplyMinMaxBSize(bSize);
   }
   if (aButtonReflowInput.ComputedISize() != NS_UNCONSTRAINEDSIZE) {
     buttonContentBox.ISize(wm) = aButtonReflowInput.ComputedISize();
   } else {
     nscoord iSize = aButtonReflowInput.mFrame->ContainIntrinsicISize().valueOr(
         contentsDesiredSize.ISize(wm));
-    buttonContentBox.ISize(wm) =
-        NS_CSS_MINMAX(iSize, aButtonReflowInput.ComputedMinISize(),
-                      aButtonReflowInput.ComputedMaxISize());
+    buttonContentBox.ISize(wm) = aButtonReflowInput.ApplyMinMaxISize(iSize);
   }
 
   // Center child in the block-direction in the button

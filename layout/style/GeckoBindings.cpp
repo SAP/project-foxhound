@@ -497,21 +497,6 @@ bool Gecko_StyleViewTimelinesEquals(
   return *aA == *aB;
 }
 
-void Gecko_CopyAnimationNames(nsStyleAutoArray<StyleAnimation>* aDest,
-                              const nsStyleAutoArray<StyleAnimation>* aSrc) {
-  size_t srcLength = aSrc->Length();
-  aDest->EnsureLengthAtLeast(srcLength);
-
-  for (size_t index = 0; index < srcLength; index++) {
-    (*aDest)[index].SetName((*aSrc)[index].GetName());
-  }
-}
-
-void Gecko_SetAnimationName(StyleAnimation* aStyleAnimation, nsAtom* aAtom) {
-  MOZ_ASSERT(aStyleAnimation);
-  aStyleAnimation->SetName(already_AddRefed<nsAtom>(aAtom));
-}
-
 void Gecko_UpdateAnimations(const Element* aElement,
                             const ComputedStyle* aOldComputedData,
                             const ComputedStyle* aComputedData,
@@ -651,7 +636,7 @@ static CSSTransition* GetCurrentTransitionAt(const Element* aElement,
 nsCSSPropertyID Gecko_ElementTransitions_PropertyAt(const Element* aElement,
                                                     size_t aIndex) {
   CSSTransition* transition = GetCurrentTransitionAt(aElement, aIndex);
-  return transition ? transition->TransitionProperty()
+  return transition ? transition->TransitionProperty().mID
                     : nsCSSPropertyID::eCSSProperty_UNKNOWN;
 }
 
@@ -681,11 +666,11 @@ double Gecko_GetPositionInSegment(const AnimationPropertySegment* aSegment,
 }
 
 const StyleAnimationValue* Gecko_AnimationGetBaseStyle(
-    const RawServoAnimationValueTable* aBaseStyles, nsCSSPropertyID aProperty) {
-  auto base = reinterpret_cast<
-      const nsRefPtrHashtable<nsUint32HashKey, StyleAnimationValue>*>(
-      aBaseStyles);
-  return base->GetWeak(aProperty);
+    const RawServoAnimationValueTable* aBaseStyles,
+    const mozilla::AnimatedPropertyID* aProperty) {
+  const auto* base = reinterpret_cast<const nsRefPtrHashtable<
+      nsGenericHashKey<AnimatedPropertyID>, StyleAnimationValue>*>(aBaseStyles);
+  return base->GetWeak(*aProperty);
 }
 
 void Gecko_FillAllImageLayers(nsStyleImageLayers* aLayers, uint32_t aMaxLen) {
@@ -806,12 +791,6 @@ bool Gecko_IsTableBorderNonzero(const Element* aElement) {
   const nsAttrValue* val = aElement->GetParsedAttr(nsGkAtoms::border);
   return val &&
          (val->Type() != nsAttrValue::eInteger || val->GetIntegerValue() != 0);
-}
-
-bool Gecko_IsBrowserFrame(const Element* aElement) {
-  nsIMozBrowserFrame* browserFrame =
-      const_cast<Element*>(aElement)->GetAsMozBrowserFrame();
-  return browserFrame && browserFrame->GetReallyIsBrowser();
 }
 
 bool Gecko_IsSelectListBox(const Element* aElement) {
@@ -1050,13 +1029,7 @@ void Gecko_EnsureImageLayersLength(nsStyleImageLayers* aLayers, size_t aLen,
 
 template <typename StyleType>
 static void EnsureStyleAutoArrayLength(StyleType* aArray, size_t aLen) {
-  size_t oldLength = aArray->Length();
-
   aArray->EnsureLengthAtLeast(aLen);
-
-  for (size_t i = oldLength; i < aLen; ++i) {
-    (*aArray)[i].SetInitialValues();
-  }
 }
 
 void Gecko_EnsureStyleAnimationArrayLength(void* aArray, size_t aLen) {
@@ -1163,11 +1136,13 @@ Keyframe* Gecko_GetOrCreateFinalKeyframe(
 }
 
 PropertyValuePair* Gecko_AppendPropertyValuePair(
-    nsTArray<PropertyValuePair>* aProperties, nsCSSPropertyID aProperty) {
+    nsTArray<PropertyValuePair>* aProperties,
+    const mozilla::AnimatedPropertyID* aProperty) {
   MOZ_ASSERT(aProperties);
-  MOZ_ASSERT(aProperty == eCSSPropertyExtra_variable ||
-             !nsCSSProps::PropHasFlags(aProperty, CSSPropFlags::IsLogical));
-  return aProperties->AppendElement(PropertyValuePair{aProperty});
+  MOZ_ASSERT(
+      aProperty->IsCustom() ||
+      !nsCSSProps::PropHasFlags(aProperty->mID, CSSPropFlags::IsLogical));
+  return aProperties->AppendElement(PropertyValuePair{*aProperty});
 }
 
 void Gecko_GetComputedURLSpec(const StyleComputedUrl* aURL, nsCString* aOut) {
@@ -1653,6 +1628,10 @@ bool Gecko_ComputeBoolPrefMediaQuery(nsAtom* aPref) {
   // controlled by us so it's not expected to be big.
   static StaticAutoPtr<nsTHashMap<RefPtr<nsAtom>, bool>> sRegisteredPrefs;
   if (!sRegisteredPrefs) {
+    if (PastShutdownPhase(ShutdownPhase::XPCOMShutdownFinal)) {
+      // Styling doesn't really matter much at this point, don't bother.
+      return false;
+    }
     sRegisteredPrefs = new nsTHashMap<RefPtr<nsAtom>, bool>();
     ClearOnShutdown(&sRegisteredPrefs);
   }

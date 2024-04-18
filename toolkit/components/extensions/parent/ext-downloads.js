@@ -103,6 +103,7 @@ const FILTER_IMAGES_EXTENSIONS = [
   "psd",
   "raw",
   "webp",
+  "heic",
 ];
 
 const FILTER_XML_EXTENSIONS = ["xml"];
@@ -1203,7 +1204,7 @@ this.downloads = class extends ExtensionAPIPersistent {
             Services.appShell.createWindowlessBrowser(true);
           let systemPrincipal =
             Services.scriptSecurityManager.getSystemPrincipal();
-          windowlessBrowser.docShell.createAboutBlankContentViewer(
+          windowlessBrowser.docShell.createAboutBlankDocumentViewer(
             systemPrincipal,
             systemPrincipal
           );

@@ -13,6 +13,7 @@
 #include "AccessibleCaretLogger.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/CaretAssociationHint.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/NodeFilterBinding.h"
@@ -21,6 +22,7 @@
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/SelectionMovementUtils.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsCaret.h"
@@ -650,14 +652,14 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
   // If long tap point isn't selectable frame for caret and frame selection
   // can find a better frame for caret, we don't select a word.
   // See https://webcompat.com/issues/15953
-  nsIFrame::ContentOffsets offsets =
-      ptFrame->GetContentOffsetsFromPoint(ptInFrame, nsIFrame::SKIP_HIDDEN);
+  nsIFrame::ContentOffsets offsets = ptFrame->GetContentOffsetsFromPoint(
+      ptInFrame,
+      nsIFrame::SKIP_HIDDEN | nsIFrame::IGNORE_NATIVE_ANONYMOUS_SUBTREE);
   if (offsets.content) {
     RefPtr<nsFrameSelection> frameSelection = GetFrameSelection();
     if (frameSelection) {
-      int32_t offset;
-      nsIFrame* theFrame = nsFrameSelection::GetFrameForNodeOffset(
-          offsets.content, offsets.offset, offsets.associate, &offset);
+      nsIFrame* theFrame = SelectionMovementUtils::GetFrameForNodeOffset(
+          offsets.content, offsets.offset, offsets.associate);
       if (theFrame && theFrame != ptFrame) {
         SetSelectionDragState(true);
         frameSelection->HandleClick(
@@ -1066,19 +1068,21 @@ nsIFrame* AccessibleCaretManager::GetFrameForFirstRangeStartOrLastRangeEnd(
     startNode = range->GetStartContainer();
     endNode = range->GetEndContainer();
     nodeOffset = range->StartOffset();
-    hint = CARET_ASSOCIATE_AFTER;
+    hint = CaretAssociationHint::After;
   } else {
     MOZ_ASSERT(selection->RangeCount() > 0);
     range = selection->GetRangeAt(selection->RangeCount() - 1);
     startNode = range->GetEndContainer();
     endNode = range->GetStartContainer();
     nodeOffset = range->EndOffset();
-    hint = CARET_ASSOCIATE_BEFORE;
+    hint = CaretAssociationHint::Before;
   }
 
-  nsCOMPtr<nsIContent> startContent = do_QueryInterface(startNode);
-  nsIFrame* startFrame = nsFrameSelection::GetFrameForNodeOffset(
-      startContent, nodeOffset, hint, aOutOffset);
+  nsCOMPtr<nsIContent> startContent = nsIContent::FromNodeOrNull(startNode);
+  uint32_t outOffset = 0;
+  nsIFrame* startFrame = SelectionMovementUtils::GetFrameForNodeOffset(
+      startContent, nodeOffset, hint, &outOffset);
+  *aOutOffset = static_cast<int32_t>(outOffset);
 
   if (!startFrame) {
     ErrorResult err;
@@ -1157,7 +1161,7 @@ bool AccessibleCaretManager::RestrictCaretDraggingOffsets(
   // position. This is the limit for the active caret's new position.
   PeekOffsetStruct limit(
       eSelectCluster, dir, offset, nsPoint(0, 0),
-      {PeekOffsetOption::JumpLines, PeekOffsetOption::ScrollViewStop});
+      {PeekOffsetOption::JumpLines, PeekOffsetOption::StopAtScroller});
   nsresult rv = frame->PeekOffset(&limit);
   if (NS_FAILED(rv)) {
     limit.mResultContent = content;
@@ -1263,8 +1267,8 @@ nsresult AccessibleCaretManager::DragCaretInternal(const nsPoint& aPoint) {
     return NS_ERROR_FAILURE;
   }
 
-  nsIFrame::ContentOffsets offsets =
-      newFrame->GetContentOffsetsFromPoint(newPoint);
+  nsIFrame::ContentOffsets offsets = newFrame->GetContentOffsetsFromPoint(
+      newPoint, nsIFrame::IGNORE_NATIVE_ANONYMOUS_SUBTREE);
   if (offsets.IsNull()) {
     return NS_ERROR_FAILURE;
   }

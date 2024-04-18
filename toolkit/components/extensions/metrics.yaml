@@ -59,6 +59,40 @@ extensions:
       - technical
     telemetry_mirror: EXTENSIONS_STARTUPCACHE_LOAD_TIME
 
+  startup_cache_read_errors:
+    type: labeled_counter
+    expires: never
+    description: |
+      The number of times an unexpected error has been raised while reading
+      the extensions StartupCache file.
+    lifetime: application
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/1767336/
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1767336#c7
+    data_sensitivity:
+      - technical
+    telemetry_mirror: EXTENSIONS_STARTUPCACHE_READ_ERRORS
+
+  startup_cache_write_bytelength:
+    type: quantity
+    unit: bytes
+    expires: never
+    description: |
+       The amount of bytes written to the extensions StartupCache file.
+    lifetime: application
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/1767336/
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1767336#c7
+    data_sensitivity:
+      - technical
+    telemetry_mirror: EXTENSIONS_STARTUPCACHE_WRITE_BYTELENGTH
+
   process_event:
     type: labeled_counter
     expires: never
@@ -66,7 +100,7 @@ extensions:
       Counters for how many times the extension process has crashed or been created.
       The labels with "_fg" / "_bg" suffixes are only recorded in Android builds,
       while the "created" and "crashed" labels are recorded on both Desktop and Android
-      builds. 
+      builds.
     lifetime: application
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -238,6 +272,84 @@ extensions.apis.dnr:
       - technical
     telemetry_mirror: EXTENSIONS_APIS_DNR_EVALUATE_RULES_COUNT_MAX
 
+extensions.data:
+
+  migrate_result:
+    type: event
+    description: |
+      These events are sent when an extension is migrating its data to the new
+      IndexedDB backend.
+    bugs:
+      - https://bugzilla.mozilla.org/1470213
+      - https://bugzilla.mozilla.org/1553297
+      - https://bugzilla.mozilla.org/1590736
+      - https://bugzilla.mozilla.org/1630596
+      - https://bugzilla.mozilla.org/1672570
+      - https://bugzilla.mozilla.org/1714251
+      - https://bugzilla.mozilla.org/1749878
+      - https://bugzilla.mozilla.org/1781974
+      - https://bugzilla.mozilla.org/1817100
+      - https://bugzilla.mozilla.org/1861295
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1470213#c15
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    extra_keys:
+      addon_id:
+        description: Id of the addon.
+        type: string
+      backend:
+        description: The selected backend ("JSONFile" / "IndexedDB").
+        type: string
+      data_migrated:
+        description: The old extension data has been migrated ("y" / "n").
+        type: string
+      error_name:
+        description: |
+          A DOMException error name if any ("OtherError" for unknown errors).
+          The error has been fatal if the `backend` extra key is "JSONFile",
+          otherwise it is a non fatal error which didn't prevented the
+          extension from switching to the IndexedDB backend.
+        type: string
+      has_jsonfile:
+        description: The extension has a JSONFile ("y" / "n").
+        type: string
+      has_olddata:
+        description: Extension had some data stored in JSONFile ("y" / "n").
+        type: string
+    expires: 132
+
+  storage_local_error:
+    type: event
+    description: |
+      These events are collected when an extension triggers an unexpected error
+      while running a storage.local API call (e.g. because of some underlying
+      QuotaManager and/or IndexedDB error).
+    bugs:
+      - https://bugzilla.mozilla.org/1606903
+      - https://bugzilla.mozilla.org/1649948
+      - https://bugzilla.mozilla.org/1689255
+      - https://bugzilla.mozilla.org/1730038
+      - https://bugzilla.mozilla.org/1763523
+      - https://bugzilla.mozilla.org/1811148
+      - https://bugzilla.mozilla.org/1861297
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1606903#c3
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    extra_keys:
+      addon_id:
+        description: Id of the addon.
+        type: string
+      method:
+        description: The storage.local API method name.
+        type: string
+      error_name:
+        description: |
+          A DOMException error name if any ("OtherError" for unknown errors).
+        type: string
+    expires: 132
+
 extensions.quarantined_domains:
 
   listsize:
@@ -247,11 +359,12 @@ extensions.quarantined_domains:
       Number of domains listed in the quarantined domains list pref for the client during
       this session.
     lifetime: application
-    expires: 123
+    expires: 130
     notification_emails:
       - addons-dev-internal@mozilla.com
     bugs:
       - https://bugzilla.mozilla.org/1840615/
+      - https://bugzilla.mozilla.org/1866199/
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1840615
     data_sensitivity:
@@ -263,11 +376,12 @@ extensions.quarantined_domains:
     description: >
       SHA1 cryptographic hash of the quarantined domains string pref.
     lifetime: application
-    expires: 123
+    expires: 130
     notification_emails:
       - addons-dev-internal@mozilla.com
     bugs:
       - https://bugzilla.mozilla.org/1841683/
+      - https://bugzilla.mozilla.org/1866199/
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1840615#c2
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841683
@@ -284,11 +398,12 @@ extensions.quarantined_domains:
       startup and so this metric lifetime can be set to application and expect
       it to be always set to the value got from the RemoteSettings collection.
     lifetime: application
-    expires: 123
+    expires: 130
     notification_emails:
       - addons-dev-internal@mozilla.com
     bugs:
       - https://bugzilla.mozilla.org/1841683/
+      - https://bugzilla.mozilla.org/1866199/
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841683
     data_sensitivity:
@@ -303,7 +418,7 @@ extensions.counters:
       description: |
         Number of times an event page hit the idle timeout and results in one of the labels.
       # Keep these labels in sync with the ones in WEBEXT_BROWSERACTION_POPUP_PRELOAD_RESULT_COUNT
-      # as defined in Histograms.json 
+      # as defined in Histograms.json
       labels:
         - popupShown
         - clearAfterHover
@@ -334,7 +449,7 @@ extensions.counters:
       description: |
         Number of times an event page hit the idle timeout and results in one of the labels.
       # Keep these labels in sync with the ones in WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT
-      # as defined in Histograms.json 
+      # as defined in Histograms.json
       labels:
         - suspend
         - reset_other
@@ -455,7 +570,7 @@ extensions.timing:
         - addons-dev-internal@mozilla.com
       bugs:
         - https://bugzilla.mozilla.org/1353171
-        - https://bugzilla.mozilla.org/1489524 
+        - https://bugzilla.mozilla.org/1489524
         - https://bugzilla.mozilla.org/1820158
       data_reviews:
         - https://bugzilla.mozilla.org/show_bug.cgi?id=1820158#c8

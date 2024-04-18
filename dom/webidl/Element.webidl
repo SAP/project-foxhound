@@ -202,6 +202,9 @@ dictionary ScrollIntoViewOptions : ScrollOptions {
 dictionary CheckVisibilityOptions {
   boolean checkOpacity = false;
   boolean checkVisibilityCSS = false;
+  boolean contentVisibilityAuto = false;
+  boolean opacityProperty = false;
+  boolean visibilityProperty = false;
   [ChromeOnly] boolean flush = true;
 };
 
@@ -276,6 +279,8 @@ dictionary ShadowRootInit {
   required ShadowRootMode mode;
   boolean delegatesFocus = false;
   SlotAssignmentMode slotAssignment = "named";
+  [Pref="dom.webcomponents.shadowdom.declarative.enabled"]
+  boolean clonable = false;
 };
 
 // https://dom.spec.whatwg.org/#element
@@ -396,10 +401,16 @@ partial interface Element {
 
 // Sanitizer API, https://wicg.github.io/sanitizer-api/
 dictionary SetHTMLOptions {
-  Sanitizer sanitizer;
+  SanitizerConfig sanitizer;
 };
 
 partial interface Element {
   [SecureContext, UseCounter, Throws, Pref="dom.security.setHTML.enabled"]
   undefined setHTML(DOMString aInnerHTML, optional SetHTMLOptions options = {});
+};
+
+partial interface Element {
+  // https://html.spec.whatwg.org/#dom-element-sethtmlunsafe
+  [Pref="dom.webcomponents.shadowdom.declarative.enabled"]
+  undefined setHTMLUnsafe(DOMString html);
 };

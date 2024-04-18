@@ -15,7 +15,6 @@ ChromeUtils.defineLazyGetter(this, "QuickSuggestTestUtils", () => {
   return module;
 });
 
-const GROUP_ID = "searchbarGroup";
 const CHECKBOX_ID = "searchShowSearchTermCheckbox";
 const PREF_SEARCHTERMS = "browser.urlbar.showSearchTerms.enabled";
 const PREF_FEATUREGATE = "browser.urlbar.showSearchTerms.featureGate";
@@ -38,7 +37,7 @@ add_task(async function showSearchTermsVisibility_experiment_beforeOpen() {
       let doc = gBrowser.selectedBrowser.contentDocument;
       let container = doc.getElementById(CHECKBOX_ID);
       Assert.ok(
-        BrowserTestUtils.is_visible(container),
+        BrowserTestUtils.isVisible(container),
         "The option box is visible"
       );
       gBrowser.removeCurrentTab();
@@ -59,7 +58,7 @@ add_task(async function showSearchTermsVisibility_experiment_afterOpen() {
   let doc = gBrowser.selectedBrowser.contentDocument;
   let container = doc.getElementById(CHECKBOX_ID);
   Assert.ok(
-    BrowserTestUtils.is_hidden(container),
+    BrowserTestUtils.isHidden(container),
     "The option box is initially hidden."
   );
 
@@ -70,14 +69,14 @@ add_task(async function showSearchTermsVisibility_experiment_afterOpen() {
     },
     callback: async () => {
       Assert.ok(
-        BrowserTestUtils.is_visible(container),
+        BrowserTestUtils.isVisible(container),
         "The option box is visible"
       );
     },
   });
 
   Assert.ok(
-    BrowserTestUtils.is_hidden(container),
+    BrowserTestUtils.isHidden(container),
     "The option box is hidden again after the experiment is uninstalled."
   );
 
@@ -95,7 +94,6 @@ add_task(async function showSearchTerms_checkbox() {
   });
   await openPreferencesViaOpenPreferencesAPI("search", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
-  doc.getElementById(GROUP_ID).scrollIntoView();
 
   let option = doc.getElementById(CHECKBOX_ID);
 

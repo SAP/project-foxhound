@@ -233,8 +233,8 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   void StrokeText(const nsAString& aText, double aX, double aY,
                   const Optional<double>& aMaxWidth,
                   mozilla::ErrorResult& aError);
-  TextMetrics* MeasureText(const nsAString& aRawText,
-                           mozilla::ErrorResult& aError);
+  UniquePtr<TextMetrics> MeasureText(const nsAString& aRawText,
+                                     mozilla::ErrorResult& aError);
 
   void DrawImage(const CanvasImageSource& aImage, double aDx, double aDy,
                  mozilla::ErrorResult& aError) {
@@ -464,7 +464,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
    * Gets the pres shell from either the canvas element or the doc shell
    */
   PresShell* GetPresShell() final;
-  void Initialize() override;
+  nsresult Initialize() override;
   NS_IMETHOD SetDimensions(int32_t aWidth, int32_t aHeight) override;
   NS_IMETHOD InitializeWithDrawTarget(
       nsIDocShell* aShell, NotNull<gfx::DrawTarget*> aTarget) override;
@@ -565,7 +565,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   virtual UniquePtr<uint8_t[]> GetImageBuffer(
       int32_t* out_format, gfx::IntSize* out_imageSize) override;
 
-  virtual void OnShutdown();
+  void OnShutdown();
 
   /**
    * Update CurrentState().filter with the filter description for
@@ -831,11 +831,13 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   // Whether the application expects to use operations that perform poorly with
   // acceleration.
   bool mWillReadFrequently = false;
+  // Whether or not we have already shutdown.
+  bool mHasShutdown = false;
 
   RefPtr<CanvasShutdownObserver> mShutdownObserver;
-  virtual void AddShutdownObserver();
-  virtual void RemoveShutdownObserver();
-  virtual bool AlreadyShutDown() const { return !mShutdownObserver; }
+  bool AddShutdownObserver();
+  void RemoveShutdownObserver();
+  bool AlreadyShutDown() const { return mHasShutdown; }
 
   /**
    * Flag to avoid duplicate calls to InvalidateFrame. Set to true whenever
@@ -883,6 +885,10 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   RefPtr<mozilla::gfx::Path> mPath;
   RefPtr<mozilla::gfx::PathBuilder> mPathBuilder;
   bool mPathPruned = false;
+  mozilla::gfx::Matrix mPathTransform;
+  bool mPathTransformDirty = false;
+
+  void FlushPathTransform();
 
   /**
    * Number of times we've invalidated before calling redraw
@@ -946,9 +952,11 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
    * Returns a TextMetrics object _only_ if the operation is measure;
    * drawing operations (fill or stroke) always return nullptr.
    */
-  TextMetrics* DrawOrMeasureText(const nsAString& aText, float aX, float aY,
-                                 const Optional<double>& aMaxWidth,
-                                 TextDrawOperation aOp, ErrorResult& aError);
+  UniquePtr<TextMetrics> DrawOrMeasureText(const nsAString& aText, float aX,
+                                           float aY,
+                                           const Optional<double>& aMaxWidth,
+                                           TextDrawOperation aOp,
+                                           ErrorResult& aError);
 
   // A clip or a transform, recorded and restored in order.
   struct ClipState {
@@ -1114,6 +1122,8 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   ColorStyleCache mColorStyleCache;
 
   ColorStyleCacheEntry ParseColorSlow(const nsACString&);
+
+  mozilla::gfx::PaletteCache mPaletteCache;
 
   friend class CanvasGeneralPattern;
   friend class AdjustedTarget;

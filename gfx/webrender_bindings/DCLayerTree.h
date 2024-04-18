@@ -143,6 +143,7 @@ class DCLayerTree {
   gl::GLContext* GetGLContext() const { return mGL; }
   EGLConfig GetEGLConfig() const { return mEGLConfig; }
   ID3D11Device* GetDevice() const { return mDevice; }
+  ID3D11DeviceContext* GetDeviceContext() const { return mCtx; }
   IDCompositionDevice2* GetCompositionDevice() const {
     return mCompositionDevice;
   }
@@ -405,6 +406,8 @@ class DCSurfaceVideo : public DCSurface {
   RefPtr<RenderTextureHost> mRenderTextureHost;
   RefPtr<RenderTextureHost> mPrevTexture;
   int mSlowPresentCount = 0;
+  bool mFirstPresent = true;
+  const UINT mSwapChainBufferCount;
 };
 
 /**

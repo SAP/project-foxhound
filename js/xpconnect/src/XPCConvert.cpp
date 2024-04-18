@@ -43,12 +43,12 @@ using namespace JS;
 
 // #define STRICT_CHECK_OF_UNICODE
 #ifdef STRICT_CHECK_OF_UNICODE
-#  define ILLEGAL_RANGE(c) (0 != ((c)&0xFF80))
+#  define ILLEGAL_RANGE(c) (0 != ((c) & 0xFF80))
 #else  // STRICT_CHECK_OF_UNICODE
-#  define ILLEGAL_RANGE(c) (0 != ((c)&0xFF00))
+#  define ILLEGAL_RANGE(c) (0 != ((c) & 0xFF00))
 #endif  // STRICT_CHECK_OF_UNICODE
 
-#define ILLEGAL_CHAR_RANGE(c) (0 != ((c)&0x80))
+#define ILLEGAL_CHAR_RANGE(c) (0 != ((c) & 0x80))
 
 /***************************************************************************/
 
@@ -320,15 +320,14 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
         return true;
       }
 
-      // c-strings (binary blobs) are deliberately not converted from
-      // UTF-8 to UTF-16. T_UTF8Sting is for UTF-8 encoded strings
-      // with automatic conversion.
-      JSString* str = JS_NewStringCopyN(cx, cString->Data(), cString->Length());
-      if (!str) {
+      // c-strings (binary blobs) are Latin1 string in JSAPI.
+      nsStringBuffer* buf;
+      if (!XPCStringConvert::Latin1ToJSVal(cx, *cString, &buf, d)) {
         return false;
       }
-
-      d.setString(str);
+      if (buf) {
+        buf->AddRef();
+      }
       return true;
     }
 
@@ -699,19 +698,38 @@ bool XPCConvert::JSData2Native(JSContext* cx, void* d, HandleValue s,
       }
 
       // The JS val is neither null nor void...
-      JSString* str = ToString(cx, s);
-      if (!str) {
-        return false;
-      }
 
-      size_t length = JS_GetStringEncodingLength(cx, str);
-      if (length == size_t(-1)) {
-        return false;
-      }
+      JSString* str;
+      size_t length;
+      if (s.isString()) {
+        str = s.toString();
 
-      if (!length) {
-        rs->Truncate();
-        return true;
+        length = JS::GetStringLength(str);
+        if (!length) {
+          rs->Truncate();
+          return true;
+        }
+
+        // The string can be an external latin-1 string created in
+        // XPCConvert::NativeData2JS's nsXPTType::T_CSTRING case.
+        if (XPCStringConvert::MaybeAssignLatin1StringChars(str, length, *rs)) {
+          return true;
+        }
+      } else {
+        str = ToString(cx, s);
+        if (!str) {
+          return false;
+        }
+
+        length = JS_GetStringEncodingLength(cx, str);
+        if (length == size_t(-1)) {
+          return false;
+        }
+
+        if (!length) {
+          rs->Truncate();
+          return true;
+        }
       }
 
       if (!rs->SetLength(uint32_t(length), fallible)) {
@@ -1162,7 +1180,8 @@ static nsresult JSErrorToXPCException(JSContext* cx, const char* toStringResult,
         bestMessage, NS_ConvertUTF8toUTF16(report->filename.c_str()),
         linebuf ? nsDependentString(linebuf, report->linebufLength())
                 : EmptyString(),
-        report->lineno, report->tokenOffset(), flags, "XPConnect JavaScript"_ns,
+        report->lineno, report->column.oneOriginValue(), flags,
+        "XPConnect JavaScript"_ns,
         nsJSUtils::GetCurrentlyRunningCodeInnerWindowID(cx));
   }
 

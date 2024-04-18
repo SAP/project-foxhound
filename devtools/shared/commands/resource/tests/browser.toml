@@ -94,9 +94,13 @@ skip-if = [
 skip-if = [
   "os == 'linux' && bits == 64", # Bug 1744565
   "win10_2004 && !debug", # Bug 1744565
+  "win11_2009", # Bug 1767772
+  "apple_catalina", # Bug 1767772
 ]
 
 ["browser_resources_stylesheets.js"]
+
+["browser_resources_stylesheets_header.js"]
 
 ["browser_resources_stylesheets_import.js"]
 

@@ -7,7 +7,6 @@
  * diverse inputs which drive the Firefox View synced tabs setup flow
  */
 
-import { PromiseUtils } from "resource://gre/modules/PromiseUtils.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -33,8 +32,6 @@ ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
 
 const SYNC_TABS_PREF = "services.sync.engine.tabs";
 const TOPIC_TABS_CHANGED = "services.sync.tabs.changed";
-const MOBILE_PROMO_DISMISSED_PREF =
-  "browser.tabs.firefox-view.mobilePromo.dismissed";
 const LOGGING_PREF = "browser.tabs.firefox-view.logLevel";
 const TOPIC_SETUPSTATE_CHANGED = "firefox-view.setupstate.changed";
 const TOPIC_DEVICESTATE_CHANGED = "firefox-view.devicestate.changed";
@@ -45,17 +42,11 @@ const FXA_DEVICE_CONNECTED = "fxaccounts:device_connected";
 const FXA_DEVICE_DISCONNECTED = "fxaccounts:device_disconnected";
 const SYNC_SERVICE_FINISHED = "weave:service:sync:finish";
 const PRIMARY_PASSWORD_UNLOCKED = "passwordmgr-crypto-login";
-const TAB_PICKUP_OPEN_STATE_PREF =
-  "browser.tabs.firefox-view.ui-state.tab-pickup.open";
 
 function openTabInWindow(window, url) {
   const { switchToTabHavingURI } =
     window.docShell.chromeEventHandler.ownerGlobal;
   switchToTabHavingURI(url, true, {});
-}
-
-function isFirefoxViewNext(window) {
-  return window.location.pathname === "firefoxview-next";
 }
 
 export const TabsSetupFlowManager = new (class {
@@ -120,15 +111,6 @@ export const TabsSetupFlowManager = new (class {
       this,
       "syncTabsPrefEnabled",
       SYNC_TABS_PREF,
-      false,
-      () => {
-        this.maybeUpdateUI(true);
-      }
-    );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "mobilePromoDismissedPref",
-      MOBILE_PROMO_DISMISSED_PREF,
       false,
       () => {
         this.maybeUpdateUI(true);
@@ -387,9 +369,6 @@ export const TabsSetupFlowManager = new (class {
       return;
     }
 
-    // Set Tab pickup open state pref to true when signing in
-    Services.prefs.setBoolPref(TAB_PICKUP_OPEN_STATE_PREF, true);
-
     // Now we need to figure out if we have recently synced tabs to show
     // Or, if we are going to need to trigger a tab sync for them
     const recentTabs = await lazy.SyncedTabs.getRecentTabs(50);
@@ -523,7 +502,6 @@ export const TabsSetupFlowManager = new (class {
       this._deviceStateSnapshot.mobileDeviceConnected
     ) {
       // no mobile device connected now, reset
-      Services.prefs.clearUserPref(MOBILE_PROMO_DISMISSED_PREF);
       this._shouldShowSuccessConfirmation = false;
     }
     this._deviceStateSnapshot = {
@@ -589,9 +567,11 @@ export const TabsSetupFlowManager = new (class {
       if (uiStateIndex == 0) {
         // Use idleDispatch() to give observers a chance to resolve before
         // determining the new state.
-        errorState = await PromiseUtils.idleDispatch(() =>
-          lazy.SyncedTabsErrorHandler.getErrorType()
-        );
+        errorState = await new Promise(resolve => {
+          ChromeUtils.idleDispatch(() => {
+            resolve(lazy.SyncedTabsErrorHandler.getErrorType());
+          });
+        });
         this.logger.debug("maybeUpdateUI, in error state:", errorState);
       }
       Services.obs.notifyObservers(null, TOPIC_SETUPSTATE_CHANGED, errorState);
@@ -599,16 +579,6 @@ export const TabsSetupFlowManager = new (class {
     if ("function" == typeof setupState.enter) {
       setupState.enter();
     }
-  }
-
-  dismissMobilePromo() {
-    Services.prefs.setBoolPref(MOBILE_PROMO_DISMISSED_PREF, true);
-  }
-
-  dismissMobileConfirmation() {
-    this._shouldShowSuccessConfirmation = false;
-    this._didShowMobilePromo = false;
-    this.maybeUpdateUI(true);
   }
 
   async openFxASignup(window) {
@@ -621,10 +591,12 @@ export const TabsSetupFlowManager = new (class {
       );
     this.didFxaTabOpen = true;
     openTabInWindow(window, url, true);
-    const category = isFirefoxViewNext(window)
-      ? "firefoxview_next"
-      : "firefoxview";
-    Services.telemetry.recordEvent(category, "fxa_continue", "sync", null);
+    Services.telemetry.recordEvent(
+      "firefoxview_next",
+      "fxa_continue",
+      "sync",
+      null
+    );
   }
 
   async openFxAPairDevice(window) {
@@ -633,12 +605,15 @@ export const TabsSetupFlowManager = new (class {
     });
     this.didFxaTabOpen = true;
     openTabInWindow(window, url, true);
-    const category = isFirefoxViewNext(window)
-      ? "firefoxview_next"
-      : "firefoxview";
-    Services.telemetry.recordEvent(category, "fxa_mobile", "sync", null, {
-      has_devices: this.secondaryDeviceConnected.toString(),
-    });
+    Services.telemetry.recordEvent(
+      "firefoxview_next",
+      "fxa_mobile",
+      "sync",
+      null,
+      {
+        has_devices: this.secondaryDeviceConnected.toString(),
+      }
+    );
   }
 
   syncOpenTabs(containerElem) {

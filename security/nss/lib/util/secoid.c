@@ -10,6 +10,7 @@
 #include "plhash.h"
 #include "nssrwlk.h"
 #include "nssutil.h"
+#include "secoidt.h"
 
 /* Library identity and versioning */
 
@@ -1815,6 +1816,9 @@ const static SECOidData oids[SEC_OID_TOTAL] = {
     OD(hmac_sha3_256, SEC_OID_HMAC_SHA3_256, "HMAC SHA3-256", CKM_SHA3_256_HMAC, INVALID_CERT_EXTENSION),
     OD(hmac_sha3_384, SEC_OID_HMAC_SHA3_384, "HMAC SHA3-384", CKM_SHA3_384_HMAC, INVALID_CERT_EXTENSION),
     OD(hmac_sha3_512, SEC_OID_HMAC_SHA3_512, "HMAC SHA3-512", CKM_SHA3_512_HMAC, INVALID_CERT_EXTENSION),
+
+    ODE(SEC_OID_XYBER768D00,
+        "X25519+Kyber768 key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
 };
 
 /* PRIVATE EXTENDED SECOID Table
@@ -2087,6 +2091,9 @@ SECOID_Init(void)
     if (oidhash) {
         return SECSuccess; /* already initialized */
     }
+
+    /* xyber768d00 must be enabled explicitly */
+    xOids[SEC_OID_XYBER768D00].notPolicyFlags = NSS_USE_ALG_IN_SSL_KX;
 
     if (!PR_GetEnvSecure("NSS_ALLOW_WEAK_SIGNATURE_ALG")) {
         /* initialize any policy flags that are disabled by default */

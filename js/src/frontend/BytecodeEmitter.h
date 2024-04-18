@@ -333,8 +333,6 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
                   SharedContext* sc, const ErrorReporter& errorReporter,
                   CompilationState& compilationState, EmitterMode emitterMode);
 
-  BytecodeEmitter(BytecodeEmitter* parent, SharedContext* sc);
-
   void initFromBodyPosition(TokenPos bodyPosition);
 
  public:
@@ -348,6 +346,8 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
                   EmitterMode emitterMode = Normal)
       : BytecodeEmitter(fc, EitherParser(parser), sc, compilationState,
                         emitterMode) {}
+
+  BytecodeEmitter(BytecodeEmitter* parent, SharedContext* sc);
 
   [[nodiscard]] bool init();
   [[nodiscard]] bool init(TokenPos bodyPosition);
@@ -1068,6 +1068,10 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
                                          ListNode* classMembers);
 
   [[nodiscard]] js::UniquePtr<ImmutableScriptData> createImmutableScriptData();
+
+#ifdef ENABLE_DECORATORS
+  [[nodiscard]] bool emitCheckIsCallable();
+#endif
 
  private:
   [[nodiscard]] SelfHostedIter getSelfHostedIterFor(ParseNode* parseNode);

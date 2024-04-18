@@ -4,11 +4,11 @@
 
 ## The address and credit card autofill management dialog in browser preferences
 
-autofill-manage-addresses-title = Saved Addresses
+autofill-manage-addresses-title = Saved addresses
 autofill-manage-addresses-list-header = Addresses
 
-autofill-manage-credit-cards-title = Saved Credit Cards
-autofill-manage-credit-cards-list-header = Credit Cards
+autofill-manage-payment-methods-title = Saved payment methods
+autofill-manage-cards-list-header = Cards
 
 autofill-manage-dialog =
     .style = min-width: 560px
@@ -39,12 +39,16 @@ address-capture-manage-address-button =
     .label = Address settings
 address-capture-learn-more-button =
     .label = Learn more
+address-capture-open-menu-button =
+    .aria-label = Open menu
+address-capture-edit-address-button =
+    .aria-label = Edit address
 
 
 # The dialog title for creating addresses in browser preferences.
-autofill-add-new-address-title = Add New Address
+autofill-add-address-title = Add address
 # The dialog title for editing addresses in browser preferences.
-autofill-edit-address-title = Edit Address
+autofill-edit-address-title = Edit address
 
 autofill-address-name = Name
 autofill-address-given-name = First Name
@@ -114,19 +118,12 @@ autofill-address-email = Email
 autofill-cancel-button = Cancel
 autofill-save-button = Save
 autofill-country-warning-message = Form Autofill is currently available only for certain countries.
+autofill-message-tooltip = View message about autofill
 
 # The dialog title for creating credit cards in browser preferences.
-autofill-add-new-card-title = Add New Credit Card
+autofill-add-card-title = Add card
 # The dialog title for editing credit cards in browser preferences.
-autofill-edit-card-title = Edit Credit Card
-
-# In macOS, this string is preceded by the operating system with "Firefox is trying to ",
-# and has a period added to its end. Make sure to test in your locale.
-autofill-edit-card-password-prompt = { PLATFORM() ->
-    [macos] show credit card information
-    [windows] { -brand-short-name } is trying to show credit card information. Confirm access to this Windows account below.
-   *[other] { -brand-short-name } is trying to show credit card information.
-}
+autofill-edit-card-title2 = Edit card
 
 autofill-card-number = Card Number
 autofill-card-invalid-number = Please enter a valid card number

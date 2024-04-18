@@ -138,8 +138,6 @@ user_pref("identity.fxaccounts.auth.uri", "https://{server}/fxa-dummy/");
 user_pref("identity.fxaccounts.remote.root", "https://{server}/");
 // Make sure CSS error reporting is enabled for tests
 user_pref("layout.css.report_errors", true);
-// Disable spammy layout warnings because they pollute test logs
-user_pref("layout.spammy_warnings.enabled", false);
 user_pref("media.cache_size", 1000);
 user_pref("media.dormant-on-pause-timeout-ms", 0); // Enter dormant immediately without waiting for timeout.
 // Set the number of shmems the PChromiumCDM protocol pre-allocates to 0,
@@ -218,6 +216,9 @@ user_pref("toolkit.telemetry.test.pref1", true);
 user_pref("toolkit.telemetry.test.pref2", false);
 // Disable the caret blinking so we get stable snapshot
 user_pref("ui.caretBlinkTime", -1);
+// Disable scrollbar animations. Tests that count paints / refresh driver ticks
+// shouldn't need to account for them.
+user_pref("ui.scrollbarFadeDuration", 0);
 user_pref("webextensions.tests", true);
 // Disable intermittent telemetry collection
 user_pref("toolkit.telemetry.initDelay", 99999999);

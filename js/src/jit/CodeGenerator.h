@@ -80,7 +80,9 @@ class OutOfLineAbortingWasmTrap;
 class OutOfLineGuardNumberToIntPtrIndex;
 class OutOfLineBoxNonStrictThis;
 class OutOfLineArrayPush;
+class OutOfLineAtomizeSlot;
 class OutOfLineWasmCallPostWriteBarrier;
+class OutOfLineWasmNewStruct;
 
 class CodeGenerator final : public CodeGeneratorSpecific {
   [[nodiscard]] bool generateBody();
@@ -122,7 +124,6 @@ class CodeGenerator final : public CodeGeneratorSpecific {
 
   void emitOOLTestObject(Register objreg, Label* ifTruthy, Label* ifFalsy,
                          Register scratch);
-  void emitIntToString(Register input, Register output, Label* ool);
 
   void emitTypeOfCheck(JSValueType type, Register tag, Register output,
                        Label* done, Label* oolObject);
@@ -183,8 +184,14 @@ class CodeGenerator final : public CodeGeneratorSpecific {
 
   void visitOutOfLineArrayPush(OutOfLineArrayPush* ool);
 
+  void visitOutOfLineAtomizeSlot(OutOfLineAtomizeSlot* ool);
+
   void visitOutOfLineWasmCallPostWriteBarrier(
       OutOfLineWasmCallPostWriteBarrier* ool);
+
+  void callWasmStructAllocFun(LInstruction* lir, wasm::SymbolicAddress fun,
+                              Register typeDefData, Register output);
+  void visitOutOfLineWasmNewStruct(OutOfLineWasmNewStruct* ool);
 
  private:
   void emitPostWriteBarrier(const LAllocation* obj);
@@ -230,6 +237,9 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   template <class GetInlinedArgument>
   void emitGetInlinedArgument(GetInlinedArgument* lir, Register index,
                               ValueOperand output);
+
+  void emitMaybeAtomizeSlot(LInstruction* ins, Register stringReg,
+                            Address slotAddr, TypedOrValueRegister dest);
 
   using RegisterOrInt32 = mozilla::Variant<Register, int32_t>;
 

@@ -14,6 +14,7 @@
 #endif
 #if defined(MOZ_WAYLAND)
 #  include "nsClipboardWayland.h"
+#  include "nsWaylandDisplay.h"
 #endif
 #include "nsGtkUtils.h"
 #include "nsIURI.h"
@@ -194,7 +195,13 @@ nsRetrievalContext::~nsRetrievalContext() {
 
 nsClipboard::nsClipboard()
     : nsBaseClipboard(mozilla::dom::ClipboardCapabilities(
-          true /* supportsSelectionClipboard */,
+#ifdef MOZ_WAYLAND
+          widget::GdkIsWaylandDisplay()
+              ? widget::WaylandDisplayGet()->IsPrimarySelectionEnabled()
+              : true,
+#else
+          true, /* supportsSelectionClipboard */
+#endif
           false /* supportsFindClipboard */,
           false /* supportsSelectionCache */)) {
   g_signal_connect(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), "owner-change",
@@ -538,13 +545,11 @@ NS_IMETHODIMP
 nsClipboard::GetNativeClipboardData(nsITransferable* aTransferable,
                                     int32_t aWhichClipboard) {
   MOZ_DIAGNOSTIC_ASSERT(aTransferable);
+  MOZ_DIAGNOSTIC_ASSERT(
+      nsIClipboard::IsClipboardTypeSupported(aWhichClipboard));
 
   LOGCLIP("nsClipboard::GetNativeClipboardData (%s)\n",
           aWhichClipboard == kSelectionClipboard ? "primary" : "clipboard");
-
-  if (NS_WARN_IF(!nsIClipboard::IsClipboardTypeSupported(aWhichClipboard))) {
-    return NS_ERROR_FAILURE;
-  }
 
   // TODO: Ensure we don't re-enter here.
   if (!mContext) {

@@ -126,7 +126,7 @@ config = {
                 "--symbols-path=%(symbols_path)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--utility-path=tests/bin",
-                "--manifest=tests/xpcshell/tests/xpcshell.ini",
+                "--manifest=tests/xpcshell/tests/xpcshell.toml",
             ],
             "run_filename": "runxpcshelltests.py",
             "testsdir": "xpcshell",
@@ -150,7 +150,7 @@ config = {
         "mochitest-chrome": ["--flavor=chrome", "--chunk-by-dir=4", "--disable-e10s"],
         "mochitest-chrome-gpu": ["--flavor=chrome", "--subsuite=gpu", "--disable-e10s"],
         "mochitest-browser-chrome": ["--flavor=browser", "--chunk-by-runtime"],
-        "mochitest-browser-chrome-screenshots": [
+        "mochitest-browser-screenshots": [
             "--flavor=browser",
             "--subsuite=screenshots",
         ],

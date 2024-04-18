@@ -196,8 +196,11 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
     /** Inline data kept in the repurposed slots of this ArrayBufferObject. */
     INLINE_DATA = 0b000,
 
-    /* Data allocated using the SpiderMonkey allocator. */
-    MALLOCED = 0b001,
+    /*
+     * Data allocated using the SpiderMonkey allocator, created within
+     * js::ArrayBufferContentsArena.
+     */
+    MALLOCED_ARRAYBUFFER_CONTENTS_ARENA = 0b001,
 
     /**
      * No bytes are associated with this buffer.  (This could be because the
@@ -218,9 +221,11 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
     MAPPED = 0b101,
     EXTERNAL = 0b110,
 
-    // These kind-values are currently invalid.  We intend to expand valid
-    // BufferKinds in the future to either partly or fully use these values.
-    BAD1 = 0b111,
+    /**
+     * Data allocated using the SpiderMonkey allocator, created within an
+     * unknown memory arena.
+     */
+    MALLOCED_UNKNOWN_ARENA = 0b111,
 
     KIND_MASK = 0b111
   };
@@ -285,8 +290,14 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
       return BufferContents(static_cast<uint8_t*>(data), INLINE_DATA);
     }
 
-    static BufferContents createMalloced(void* data) {
-      return BufferContents(static_cast<uint8_t*>(data), MALLOCED);
+    static BufferContents createMallocedArrayBufferContentsArena(void* data) {
+      return BufferContents(static_cast<uint8_t*>(data),
+                            MALLOCED_ARRAYBUFFER_CONTENTS_ARENA);
+    }
+
+    static BufferContents createMallocedUnknownArena(void* data) {
+      return BufferContents(static_cast<uint8_t*>(data),
+                            MALLOCED_UNKNOWN_ARENA);
     }
 
     static BufferContents createNoData() {
@@ -314,10 +325,10 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
     }
 
     static BufferContents createFailed() {
-      // There's no harm in tagging this as MALLOCED, even tho obviously it
-      // isn't.  And adding an extra tag purely for this case is a complication
-      // that presently appears avoidable.
-      return BufferContents(nullptr, MALLOCED);
+      // There's no harm in tagging this as MALLOCED_ARRAYBUFFER_CONTENTS_ARENA,
+      // even tho obviously it isn't. And adding an extra tag purely for this
+      // case is a complication that presently appears avoidable.
+      return BufferContents(nullptr, MALLOCED_ARRAYBUFFER_CONTENTS_ARENA);
     }
 
     uint8_t* data() const { return data_; }
@@ -461,7 +472,10 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   }
 
   bool isInlineData() const { return bufferKind() == INLINE_DATA; }
-  bool isMalloced() const { return bufferKind() == MALLOCED; }
+  bool isMalloced() const {
+    return bufferKind() == MALLOCED_ARRAYBUFFER_CONTENTS_ARENA ||
+           bufferKind() == MALLOCED_UNKNOWN_ARENA;
+  }
   bool isNoData() const { return bufferKind() == NO_DATA; }
   bool hasUserOwnedData() const { return bufferKind() == USER_OWNED; }
 
@@ -551,12 +565,29 @@ ArrayBufferObjectMaybeShared* CreateWasmBuffer(JSContext* cx,
 // Per-compartment table that manages the relationship between array buffers
 // and the views that use their storage.
 class InnerViewTable {
- public:
-  using ViewVector = GCVector<UnsafeBarePtr<JSObject*>, 1, ZoneAllocPolicy>;
+  // Store views in a vector such that all the tenured views come before any
+  // nursery views. Maintain the index of the first nursery view so there is an
+  // efficient way to access only the nursery views.
+  using ViewVector =
+      GCVector<UnsafeBarePtr<ArrayBufferViewObject*>, 1, ZoneAllocPolicy>;
+  struct Views {
+    ViewVector views;  // List of views with tenured views at the front.
+    size_t firstNurseryView = 0;
 
-  friend class ArrayBufferObject;
+    explicit Views(JS::Zone* zone) : views(zone) {}
+    bool empty();
+    bool hasNurseryViews();
+    bool addView(ArrayBufferViewObject* view);
 
- private:
+    bool traceWeak(JSTracer* trc, size_t startIndex = 0);
+    bool sweepAfterMinorGC(JSTracer* trc);
+
+    void check();
+  };
+
+  // For all objects sharing their storage with some other view, this maps
+  // the object to the list of such views. All entries in this map are weak.
+  //
   // This key is a raw pointer and not a WeakHeapPtr because the post-barrier
   // would hold nursery-allocated entries live unconditionally. It is a very
   // common pattern in low-level and performance-oriented JavaScript to create
@@ -565,29 +596,23 @@ class InnerViewTable {
   // regression. Thus, it is vital that nursery pointers in this map not be held
   // live. Special support is required in the minor GC, implemented in
   // sweepAfterMinorGC.
-  using Map = GCHashMap<UnsafeBarePtr<JSObject*>, ViewVector,
-                        StableCellHasher<JSObject*>, ZoneAllocPolicy>;
-
-  // For all objects sharing their storage with some other view, this maps
-  // the object to the list of such views. All entries in this map are weak.
-  Map map;
+  using ArrayBufferViewMap =
+      GCHashMap<UnsafeBarePtr<ArrayBufferObject*>, Views,
+                StableCellHasher<JSObject*>, ZoneAllocPolicy>;
+  ArrayBufferViewMap map;
 
   // List of keys from innerViews where either the source or at least one
   // target is in the nursery. The raw pointer to a JSObject is allowed here
   // because this vector is cleared after every minor collection. Users in
   // sweepAfterMinorCollection must be careful to use MaybeForwarded before
   // touching these pointers.
-  Vector<JSObject*, 0, SystemAllocPolicy> nurseryKeys;
+  Vector<ArrayBufferObject*, 0, SystemAllocPolicy> nurseryKeys;
 
   // Whether nurseryKeys is a complete list.
-  bool nurseryKeysValid;
-
-  bool addView(JSContext* cx, ArrayBufferObject* buffer, JSObject* view);
-  ViewVector* maybeViewsUnbarriered(ArrayBufferObject* obj);
-  void removeViews(ArrayBufferObject* obj);
+  bool nurseryKeysValid = true;
 
  public:
-  explicit InnerViewTable(Zone* zone) : map(zone), nurseryKeysValid(true) {}
+  explicit InnerViewTable(Zone* zone) : map(zone) {}
 
   // Remove references to dead objects in the table and update table entries
   // to reflect moved objects.
@@ -601,6 +626,13 @@ class InnerViewTable {
   }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
+
+ private:
+  friend class ArrayBufferObject;
+  bool addView(JSContext* cx, ArrayBufferObject* buffer,
+               ArrayBufferViewObject* view);
+  ViewVector* maybeViewsUnbarriered(ArrayBufferObject* buffer);
+  void removeViews(ArrayBufferObject* buffer);
 };
 
 template <typename Wrapper>

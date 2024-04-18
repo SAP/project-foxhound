@@ -210,13 +210,13 @@ bool nsCSPContext::permitsInternal(
       // nonce, and will incorrectly fail the unit tests.
       if (aSendViolationReports) {
         uint32_t lineNumber = 0;
-        uint32_t columnNumber = 0;
+        uint32_t columnNumber = 1;
         nsAutoString spec;
         JSContext* cx = nsContentUtils::GetCurrentJSContext();
         if (cx) {
           nsJSUtils::GetCallingLocation(cx, spec, &lineNumber, &columnNumber);
-          // If GetCallingLocation fails linenumber & columnNumber are set to 0
-          // anyway so we can skip checking if that is the case.
+          // If GetCallingLocation fails linenumber & columnNumber are set to
+          // (0, 1) anyway so we can skip checking if that is the case.
         }
         AsyncReportViolation(
             aTriggeringElement, aCSPEventListener,
@@ -326,7 +326,8 @@ nsresult nsCSPContext::InitFromOther(nsCSPContext* aOtherContext) {
   return NS_OK;
 }
 
-void nsCSPContext::EnsureIPCPoliciesRead() {
+NS_IMETHODIMP
+nsCSPContext::EnsureIPCPoliciesRead() {
   // Most likely the parser errors already happened before serializing
   // the policy for IPC.
   bool previous = mSuppressParserLogMessages;
@@ -343,6 +344,7 @@ void nsCSPContext::EnsureIPCPoliciesRead() {
   }
 
   mSuppressParserLogMessages = previous;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -493,11 +495,6 @@ nsCSPContext::GetAllowsWasmEval(bool* outShouldReportViolation,
   EnsureIPCPoliciesRead();
   *outShouldReportViolation = false;
   *outAllowsWasmEval = true;
-
-  if (!StaticPrefs::security_csp_wasm_unsafe_eval_enabled()) {
-    // Allow and don't report when wasm-unsafe-eval isn't supported.
-    return NS_OK;
-  }
 
   for (uint32_t i = 0; i < mPolicies.Length(); i++) {
     // Either 'unsafe-eval' or 'wasm-unsafe-eval' can allow this
@@ -675,93 +672,6 @@ nsCSPContext::GetAllowsInline(CSPDirective aDirective, bool aHasUnsafeHash,
     }
   }
 
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsCSPContext::GetAllowsNavigateTo(nsIURI* aURI, bool aIsFormSubmission,
-                                  bool aWasRedirected, bool aEnforceAllowlist,
-                                  bool* outAllowsNavigateTo) {
-  /*
-   * The matrix below shows the different values of (aWasRedirect,
-   * aEnforceAllowlist) for the three different checks we do.
-   *
-   *  Navigation    | Start Loading  | Initiate Redirect | Document
-   *                | (nsDocShell)   | (nsCSPService)    |
-   *  -----------------------------------------------------------------
-   *  A -> B          (false,false)    -                   (false,true)
-   *  A -> ... -> B   (false,false)    (true,false)        (true,true)
-   */
-  *outAllowsNavigateTo = false;
-
-  EnsureIPCPoliciesRead();
-  // The 'form-action' directive overrules 'navigate-to' for form submissions.
-  // So in case this is a form submission and the directive 'form-action' is
-  // present then there is nothing for us to do here, see: 6.3.3.1.2
-  // https://www.w3.org/TR/CSP3/#navigate-to-pre-navigate
-  if (aIsFormSubmission) {
-    for (unsigned long i = 0; i < mPolicies.Length(); i++) {
-      if (mPolicies[i]->hasDirective(
-              nsIContentSecurityPolicy::FORM_ACTION_DIRECTIVE)) {
-        *outAllowsNavigateTo = true;
-        return NS_OK;
-      }
-    }
-  }
-
-  bool atLeastOneBlock = false;
-  for (unsigned long i = 0; i < mPolicies.Length(); i++) {
-    if (!mPolicies[i]->allowsNavigateTo(aURI, aWasRedirected,
-                                        aEnforceAllowlist)) {
-      if (!mPolicies[i]->getReportOnlyFlag()) {
-        atLeastOneBlock = true;
-      }
-
-      // If the load encountered a server side redirect, the spec suggests to
-      // remove the path component from the URI, see:
-      // https://www.w3.org/TR/CSP3/#source-list-paths-and-redirects
-      nsCOMPtr<nsIURI> blockedURIForReporting = aURI;
-      if (aWasRedirected) {
-        nsAutoCString prePathStr;
-        nsCOMPtr<nsIURI> prePathURI;
-        nsresult rv = aURI->GetPrePath(prePathStr);
-        NS_ENSURE_SUCCESS(rv, rv);
-        rv = NS_NewURI(getter_AddRefs(blockedURIForReporting), prePathStr);
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
-
-      // Lines numbers and source file for the violation report
-      uint32_t lineNumber = 0;
-      uint32_t columnNumber = 0;
-      nsAutoCString spec;
-      JSContext* cx = nsContentUtils::GetCurrentJSContext();
-      if (cx) {
-        nsJSUtils::GetCallingLocation(cx, spec, &lineNumber, &columnNumber);
-        // If GetCallingLocation fails linenumber & columnNumber are set to 0
-        // anyway so we can skip checking if that is the case.
-      }
-
-      // Report the violation
-      nsresult rv = AsyncReportViolation(
-          nullptr,                                    // aTriggeringElement
-          nullptr,                                    // aCSPEventListener
-          blockedURIForReporting,                     // aBlockedURI
-          nsCSPContext::BlockedContentSource::eSelf,  // aBlockedSource
-          nullptr,                                    // aOriginalURI
-          u"navigate-to"_ns,                          // aViolatedDirective
-          u"navigate-to"_ns,                          // aEffectiveDirective
-          i,                                          // aViolatedPolicyIndex
-          u""_ns,                                     // aObserverSubject
-          NS_ConvertUTF8toUTF16(spec),                // aSourceFile
-          false,                                      // aReportSample
-          u""_ns,                                     // aScriptSample
-          lineNumber,                                 // aLineNum
-          columnNumber);                              // aColumnNum
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-  }
-
-  *outAllowsNavigateTo = !atLeastOneBlock;
   return NS_OK;
 }
 
@@ -1848,7 +1758,7 @@ nsCSPContext::GetCSPSandboxFlags(uint32_t* aOutSandboxFlags) {
            NS_ConvertUTF16toUTF8(policy).get()));
 
       AutoTArray<nsString, 1> params = {policy};
-      logToConsole("ignoringReportOnlyDirective", params, u""_ns, u""_ns, 0, 0,
+      logToConsole("ignoringReportOnlyDirective", params, u""_ns, u""_ns, 0, 1,
                    nsIScriptError::warningFlag);
     }
   }

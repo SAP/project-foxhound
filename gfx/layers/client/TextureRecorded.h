@@ -22,6 +22,8 @@ class RecordedTextureData final : public TextureData {
 
   void FillInfo(TextureData::Info& aInfo) const final;
 
+  void InvalidateContents() final;
+
   bool Lock(OpenMode aMode) final;
 
   void Unlock() final;
@@ -32,6 +34,8 @@ class RecordedTextureData final : public TextureData {
 
   already_AddRefed<gfx::SourceSurface> BorrowSnapshot() final;
 
+  void ReturnSnapshot(already_AddRefed<gfx::SourceSurface> aSnapshot) final;
+
   void Deallocate(LayersIPCChannel* aAllocator) final;
 
   bool Serialize(SurfaceDescriptor& aDescriptor) final;
@@ -39,6 +43,13 @@ class RecordedTextureData final : public TextureData {
   void OnForwardedToHost() final;
 
   TextureFlags GetTextureFlags() const final;
+
+  void SetRemoteTextureOwnerId(
+      RemoteTextureOwnerId aRemoteTextureOwnerId) final;
+
+  bool RequiresRefresh() const final;
+
+  void UseCompositableForwarder(CompositableForwarder* aForwarder) final;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RecordedTextureData);
@@ -51,7 +62,14 @@ class RecordedTextureData final : public TextureData {
   gfx::SurfaceFormat mFormat;
   RefPtr<gfx::DrawTarget> mDT;
   RefPtr<gfx::SourceSurface> mSnapshot;
+  ThreadSafeWeakPtr<gfx::SourceSurface> mSnapshotWrapper;
   OpenMode mLockedMode;
+  RemoteTextureId mLastRemoteTextureId;
+  RemoteTextureOwnerId mRemoteTextureOwnerId;
+  RemoteTextureTxnType mLastTxnType = 0;
+  RemoteTextureTxnId mLastTxnId = 0;
+  bool mUsedRemoteTexture = false;
+  bool mInvalidContents = true;
 };
 
 }  // namespace layers

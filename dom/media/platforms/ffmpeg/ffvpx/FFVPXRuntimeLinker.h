@@ -8,6 +8,9 @@
 #define __FFVPXRuntimeLinker_h__
 
 #include "PlatformDecoderModule.h"
+#include "PlatformEncoderModule.h"
+#include "mozilla/StaticMutex.h"
+#include "mozilla/ThreadSafety.h"
 
 struct FFmpegRDFTFuncs;
 
@@ -15,21 +18,23 @@ namespace mozilla {
 
 class FFVPXRuntimeLinker {
  public:
-  // Main thread only.
-  static bool Init();
-  // Main thread or after Init().
-  static already_AddRefed<PlatformDecoderModule> Create();
+  static bool Init() MOZ_EXCLUDES(sMutex);
+  static already_AddRefed<PlatformDecoderModule> CreateDecoder();
+  static already_AddRefed<PlatformEncoderModule> CreateEncoder();
 
   // Call (on any thread) after Init().
   static void GetRDFTFuncs(FFmpegRDFTFuncs* aOutFuncs);
 
  private:
+  // Provide critical-section for Init() and sLinkStatus.
+  static StaticMutex sMutex;
+
   // Set once on the main thread and then read from other threads.
   static enum LinkStatus {
     LinkStatus_INIT = 0,
     LinkStatus_FAILED,
     LinkStatus_SUCCEEDED
-  } sLinkStatus;
+  } sLinkStatus MOZ_GUARDED_BY(sMutex);
 };
 
 }  // namespace mozilla

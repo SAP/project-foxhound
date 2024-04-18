@@ -7,9 +7,7 @@
 
 #include "prlink.h"
 #include "prenv.h"
-#include "nsPluginHost.h"
 #include "nsIBlocklistService.h"
-#include "nsPluginLogging.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"

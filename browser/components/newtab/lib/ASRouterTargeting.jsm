@@ -35,13 +35,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
+  WindowsLaunchOnLogin: "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   ASRouterPreferences: "resource://activity-stream/lib/ASRouterPreferences.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
   return ChromeUtils.importESModule(
     "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
@@ -106,12 +107,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "isXPIInstallEnabled",
   "xpinstall.enabled",
   true
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "snippetsUserPref",
-  "browser.newtabpage.activity-stream.feeds.snippets",
-  false
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -704,7 +699,6 @@ const TargetingGetters = {
     return {
       cfrFeatures: lazy.cfrFeaturesUserPref,
       cfrAddons: lazy.cfrAddonsUserPref,
-      snippets: lazy.snippetsUserPref,
     };
   },
   get totalBlockedCount() {
@@ -841,6 +835,13 @@ const TargetingGetters = {
 
   get doesAppNeedPrivatePin() {
     return QueryCache.getters.doesAppNeedPrivatePin.get();
+  },
+
+  get launchOnLoginEnabled() {
+    if (AppConstants.platform !== "win") {
+      return false;
+    }
+    return lazy.WindowsLaunchOnLogin.getLaunchOnLoginEnabled();
   },
 
   /**
@@ -1010,6 +1011,32 @@ const TargetingGetters = {
       width: window?.screen.availWidth,
       height: window?.screen.availHeight,
     };
+  },
+
+  get archBits() {
+    let bits = null;
+    try {
+      bits = Services.sysinfo.getProperty("archbits", null);
+    } catch (_e) {
+      // getProperty can throw if the memsize does not exist
+    }
+    if (bits) {
+      bits = Number(bits);
+    }
+    return bits;
+  },
+
+  get memoryMB() {
+    let memory = null;
+    try {
+      memory = Services.sysinfo.getProperty("memsize", null);
+    } catch (_e) {
+      // getProperty can throw if the memsize does not exist
+    }
+    if (memory) {
+      memory = Number(memory) / 1024 / 1024;
+    }
+    return memory;
   },
 };
 

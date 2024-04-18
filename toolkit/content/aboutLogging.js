@@ -59,7 +59,7 @@ const gOsSpecificLoggingPresets = (() => {
     return {
       windows: {
         modules:
-          "timestamp,sync,Widget:5,BaseWidget:5,WindowsEvent:4,TaskbarConcealer:5",
+          "timestamp,sync,Widget:5,BaseWidget:5,WindowsEvent:4,TaskbarConcealer:5,FileDialog:5",
         l10nIds: {
           label: "about-logging-preset-windows-label",
           description: "about-logging-preset-windows-description",
@@ -102,6 +102,14 @@ const gLoggingPresets = {
     l10nIds: {
       label: "about-logging-preset-networking-http3-label",
       description: "about-logging-preset-networking-http3-description",
+    },
+  },
+  "http3-upload-speed": {
+    modules: "timestamp,neqo_transport::*:3",
+    l10nIds: {
+      label: "about-logging-preset-networking-http3-upload-speed-label",
+      description:
+        "about-logging-preset-networking-http3-upload-speed-description",
     },
   },
   "media-playback": {

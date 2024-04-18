@@ -284,8 +284,8 @@ class nsContextMenu {
 
     const { gBrowser } = this.browser.ownerGlobal;
 
-    this.textSelected = this.selectionInfo.text;
-    this.isTextSelected = !!this.textSelected.length;
+    this.selectedText = this.selectionInfo.text;
+    this.isTextSelected = !!this.selectedText.length;
     this.webExtBrowserType = this.browser.getAttribute(
       "webextension-view-type"
     );
@@ -820,6 +820,7 @@ class nsContextMenu {
     }
 
     this.showAndFormatSearchContextItem();
+    this.showTranslateSelectionItem();
 
     // srcdoc cannot be opened separately due to concerns about web
     // content with about:srcdoc in location bar masquerading as trusted
@@ -993,7 +994,8 @@ class nsContextMenu {
         this.onLink &&
         !this.onMailtoLink &&
         !this.onTelLink &&
-        !this.onMozExtLink
+        !this.onMozExtLink &&
+        !this.isSecureAboutPage()
     );
 
     let copyLinkSeparator = document.getElementById("context-sep-copylink");
@@ -1153,18 +1155,10 @@ class nsContextMenu {
 
       // Set the correct label for the fill menu
       let fillMenu = document.getElementById("fill-login");
-      if (onPasswordLikeField) {
-        document.l10n.setAttributes(
-          fillMenu,
-          "main-context-menu-use-saved-password"
-        );
-      } else {
-        // On a username field
-        document.l10n.setAttributes(
-          fillMenu,
-          "main-context-menu-use-saved-login"
-        );
-      }
+      document.l10n.setAttributes(
+        fillMenu,
+        "main-context-menu-use-saved-password"
+      );
 
       let documentURI = this.contentData?.documentURIObject;
       let formOrigin = LoginHelper.getLoginOrigin(documentURI?.spec);
@@ -2296,6 +2290,23 @@ class nsContextMenu {
     return strippedLinkURI ?? this.linkURI;
   }
 
+  /**
+   * Checks if a webpage is a secure interal webpage
+   * @returns {Boolean}
+   *
+   */
+  isSecureAboutPage() {
+    let { currentURI } = this.browser;
+    if (currentURI?.schemeIs("about")) {
+      let module = E10SUtils.getAboutModule(currentURI);
+      if (module) {
+        let flags = module.getURIFlags(currentURI);
+        return !!(flags & Ci.nsIAboutModule.IS_SECURE_CHROME_UI);
+      }
+    }
+    return false;
+  }
+
   // Kept for addon compat
   linkText() {
     return this.linkTextStr;
@@ -2439,6 +2450,105 @@ class nsContextMenu {
     openTrustedLinkIn(drmInfoURL, dest);
   }
 
+  /**
+   * Retrieves an instance of the TranslationsParent actor.
+   * @returns {TranslationsParent} - The TranslationsParent actor.
+   * @throws Throws if an instance of the actor cannot be retrieved.
+   */
+  static #getTranslationsActor() {
+    const actor =
+      gBrowser.selectedBrowser.browsingContext.currentWindowGlobal.getActor(
+        "Translations"
+      );
+
+    if (!actor) {
+      throw new Error("Unable to get the TranslationsParent");
+    }
+    return actor;
+  }
+
+  /**
+   * Determines if Full Page Translations is currently active on this page.
+   *
+   * @returns {boolean}
+   */
+  static #isFullPageTranslationsActive() {
+    try {
+      const { requestedTranslationPair } =
+        this.#getTranslationsActor().languageState;
+      return requestedTranslationPair !== null;
+    } catch {
+      // Failed to retrieve the Full Page Translations actor, do nothing.
+    }
+    return false;
+  }
+
+  /**
+   * Displays or hides as well as localizes the translate-selection item in the context menu.
+   */
+  async showTranslateSelectionItem() {
+    const translateSelectionItem = document.getElementById(
+      "context-translate-selection"
+    );
+    const translationsEnabled = Services.prefs.getBoolPref(
+      "browser.translations.enable"
+    );
+    const selectTranslationsEnabled = Services.prefs.getBoolPref(
+      "browser.translations.select.enable"
+    );
+
+    // Selected text takes precedence over link text.
+    const translatableText = this.isTextSelected
+      ? this.selectedText.trim()
+      : this.linkTextStr.trim();
+
+    translateSelectionItem.hidden =
+      // Only show the item if the feature is enabled.
+      !(translationsEnabled && selectTranslationsEnabled) ||
+      // If there is no text to translate, we have nothing to do.
+      translatableText.length === 0 ||
+      // We do not allow translating selections on top of Full Page Translations.
+      nsContextMenu.#isFullPageTranslationsActive();
+
+    if (translateSelectionItem.hidden) {
+      return;
+    }
+
+    const preferredLanguages =
+      nsContextMenu.TranslationsParent.getPreferredLanguages();
+    const topPreferredLanguage = preferredLanguages[0];
+
+    if (topPreferredLanguage) {
+      const { language } = await nsContextMenu.LanguageDetector.detectLanguage(
+        translatableText
+      );
+      if (topPreferredLanguage !== language) {
+        try {
+          const dn = new Services.intl.DisplayNames(undefined, {
+            type: "language",
+          });
+          document.l10n.setAttributes(
+            translateSelectionItem,
+            this.isTextSelected
+              ? "main-context-menu-translate-selection-to-language"
+              : "main-context-menu-translate-link-text-to-language",
+            { language: dn.of(topPreferredLanguage) }
+          );
+          return;
+        } catch {
+          // Services.intl.DisplayNames.of threw, do nothing.
+        }
+      }
+    }
+
+    document.l10n.setAttributes(
+      translateSelectionItem,
+      this.isTextSelected
+        ? "main-context-menu-translate-selection"
+        : "main-context-menu-translate-link-text"
+    );
+  }
+
   // Formats the 'Search <engine> for "<selection or link text>"' context menu.
   showAndFormatSearchContextItem() {
     let menuItem = document.getElementById("context-searchselect");
@@ -2479,7 +2589,7 @@ class nsContextMenu {
     }
 
     let selectedText = this.isTextSelected
-      ? this.textSelected
+      ? this.selectedText
       : this.linkTextStr;
 
     // Store searchTerms in context menu item so we know what to search onclick
@@ -2541,8 +2651,11 @@ class nsContextMenu {
 
 ChromeUtils.defineESModuleGetters(nsContextMenu, {
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
+  LanguageDetector:
+    "resource://gre/modules/translation/LanguageDetector.sys.mjs",
   LoginManagerContextMenu:
     "resource://gre/modules/LoginManagerContextMenu.sys.mjs",
+  TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
   WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.sys.mjs",
 });
 

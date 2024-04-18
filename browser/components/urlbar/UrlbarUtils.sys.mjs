@@ -554,7 +554,7 @@ export var UrlbarUtils = {
             ? UrlbarUtils.RESULT_GROUP.RECENT_SEARCH
             : UrlbarUtils.RESULT_GROUP.FORM_HISTORY;
         }
-        if (result.payload.tail) {
+        if (result.payload.tail && !result.isRichSuggestion) {
           return UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION;
         }
         if (result.payload.suggestion) {
@@ -1317,19 +1317,22 @@ export var UrlbarUtils = {
 
   /**
    * Unescape, decode punycode, and trim (both protocol and trailing slash)
-   * the URL.
+   * the URL. Use for displaying purposes only!
    *
    * @param {string} url The url that should be prepared for display.
+   * @param {object} [options] Preparation options.
+   * @param {boolean} [options.trimURL] Whether the displayed URL should be
+   *                  trimmed or not.
    * @returns {string} Prepared url.
    */
-  prepareUrlForDisplay(url) {
+  prepareUrlForDisplay(url, { trimURL = true } = {}) {
     // Some domains are encoded in punycode. The following ensures we display
     // the url in utf-8.
     try {
       url = new URL(url).URI.displaySpec;
     } catch {} // In some cases url is not a valid url.
 
-    if (url && lazy.UrlbarPrefs.get("trimURLs")) {
+    if (url && trimURL && lazy.UrlbarPrefs.get("trimURLs")) {
       url = lazy.BrowserUIUtils.removeSingleTrailingSlashFromURL(url);
       if (url.startsWith("https://")) {
         url = url.substring(8);
@@ -1611,6 +1614,18 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
   [UrlbarUtils.RESULT_TYPE.SEARCH]: {
     type: "object",
     properties: {
+      blockL10n: {
+        type: "object",
+        required: ["id"],
+        properties: {
+          id: {
+            type: "string",
+          },
+          args: {
+            type: "array",
+          },
+        },
+      },
       description: {
         type: "string",
       },
@@ -1627,6 +1642,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
         type: "string",
       },
       inPrivateWindow: {
+        type: "boolean",
+      },
+      isBlockable: {
         type: "boolean",
       },
       isPinned: {

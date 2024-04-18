@@ -141,10 +141,6 @@ class nsBlockFrame : public nsContainerFrame {
   bool IsFloatContainingBlock() const override;
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override;
-  bool IsFrameOfType(uint32_t aFlags) const override {
-    return nsContainerFrame::IsFrameOfType(
-        aFlags & ~(nsIFrame::eCanContainOverflowContainers));
-  }
 
   void InvalidateFrame(uint32_t aDisplayItemKey = 0,
                        bool aRebuildDisplayItems = true) override;
@@ -658,13 +654,6 @@ class nsBlockFrame : public nsContainerFrame {
    */
   bool IsInLineClampContext() const;
 
- protected:
-  /** grab overflow lines from this block's prevInFlow, and make them
-   * part of this block's mLines list.
-   * @return true if any lines were drained.
-   */
-  bool DrainOverflowLines();
-
   /**
    * @return false iff this block does not have a float on any child list.
    * This function is O(1).
@@ -683,6 +672,21 @@ class nsBlockFrame : public nsContainerFrame {
     // a mix of out-of-flow frames, so that's why the method name has "Maybe".
     return HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS);
   }
+
+  /**
+   * @return true if NS_BLOCK_DYNAMIC_BFC should be set on this frame.
+   */
+  bool IsDynamicBFC() const {
+    return StyleDisplay()->IsContainPaint() ||
+           StyleDisplay()->IsContainLayout();
+  }
+
+ protected:
+  /** grab overflow lines from this block's prevInFlow, and make them
+   * part of this block's mLines list.
+   * @return true if any lines were drained.
+   */
+  bool DrainOverflowLines();
 
   /**
    * Moves frames from our PushedFloats list back into our mFloats list.

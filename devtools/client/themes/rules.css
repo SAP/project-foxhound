@@ -254,12 +254,13 @@
 }
 
 .ruleview-header {
+  --ruleview-header-padding: 4px;
   background: var(--rule-header-background-color);
   border-bottom: 1px solid var(--theme-splitter-color);
   color: var(--theme-toolbar-color);
   font-size: 12px;
   line-height: 16px;
-  padding: 4px;
+  padding: var(--ruleview-header-padding);
   width: 100%;
   align-items: center;
   display: flex;
@@ -268,15 +269,31 @@
 
 .ruleview-expandable-header {
   cursor: pointer;
-}
+  /* Reset padding set on ruleview-header since we're going to put it on the button instead */
+  padding: 0;
 
-.ruleview-expandable-header:hover {
-  background-color: var(--theme-accordion-header-hover);
-}
+   &:hover {
+    background-color: var(--theme-accordion-header-hover);
+  }
 
-.ruleview-expandable-header .theme-twisty {
-  margin-inline-start: 0;
-  margin-inline-end: 2px;
+  & button[aria-expanded] {
+    display: flex;
+    /* Space between arrow and label */
+    gap: 2px;
+    width: 100%;
+    padding: var(--ruleview-header-padding);
+    /* Reset button-specific styles */
+    background-color: transparent;
+    border: none;
+    text-align: start;
+    /* Apply same font-size as set on ruleview-header */
+    font-size: 1em;
+    outline-offset: -2px;
+
+    &[aria-expanded="true"] .theme-twisty {
+      rotate: 90deg;
+    }
+  }
 }
 
 .ruleview-rule-pseudo-element {
@@ -350,10 +367,12 @@
   background-size: 12px;
   -moz-context-properties: fill;
   fill: var(--theme-icon-dimmed-color);
-}
+  background-color: transparent;
+  border: none;
 
-.ruleview-overridden-rule-filter:hover {
-  fill: var(--theme-icon-color);
+  &:is(:hover, :focus-visible) {
+    fill: var(--theme-icon-color);
+  }
 }
 
 .ruleview-ruleopen {
@@ -421,7 +440,6 @@
     display: inline-block;
     border: 0;
     padding: 0;
-    outline: none;
     background: url("chrome://devtools/skin/images/checkbox.svg") center no-repeat content-box;
     /* Using fill to paint the border, and stroke for the tick */
     -moz-context-properties: fill, stroke;
@@ -484,7 +502,7 @@
   stroke: var(--theme-icon-color);
 }
 
-.ruleview-rule:not(:hover) .ruleview-enableproperty:not(:focus) {
+.ruleview-rule:not(:hover, :focus-within) .ruleview-enableproperty {
   /* Use opacity to hide the checkbox instead of visibility:hidden,
      so that it's possible to focus it with the keyboard. */
   opacity: 0;
@@ -870,6 +888,7 @@
 
 .ruleview-selectorhighlighter {
   display: inline-block;
+  border: none;
   vertical-align: top;
   width: 15px;
   height: 15px;
@@ -879,6 +898,8 @@
   cursor: pointer;
   -moz-context-properties: fill;
   fill: var(--theme-icon-dimmed-color);
+  /* Prevent line break when copy/pasting an entire rule */
+  user-select: auto;
 }
 
 .ruleview-selectorhighlighter:hover {

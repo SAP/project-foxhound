@@ -21,7 +21,9 @@ import { initialSourcesState } from "./reducers/sources";
 import { initialUIState } from "./reducers/ui";
 import { initialSourceBlackBoxState } from "./reducers/source-blackbox";
 
-const { sanitizeBreakpoints } = require("devtools/client/shared/thread-utils");
+const {
+  sanitizeBreakpoints,
+} = require("resource://devtools/client/shared/thread-utils.js");
 
 async function syncBreakpoints() {
   const breakpoints = await asyncStore.pendingBreakpoints;
@@ -75,10 +77,7 @@ async function loadInitialState(commands, toolbox) {
   const breakpoints = initialBreakpointsState(xhrBreakpoints);
   const sourceBlackBox = initialSourceBlackBoxState({ blackboxedRanges });
   const sources = initialSourcesState();
-  const rootTraits = commands.client.mainRoot.traits;
-  const ui = initialUIState({
-    supportsDebuggerStatementIgnore: rootTraits.supportsDebuggerStatementIgnore,
-  });
+  const ui = initialUIState();
 
   return {
     pendingBreakpoints,

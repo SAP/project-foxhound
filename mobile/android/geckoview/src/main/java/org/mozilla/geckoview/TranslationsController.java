@@ -8,6 +8,7 @@ package org.mozilla.geckoview;
 
 import android.util.Log;
 import androidx.annotation.AnyThread;
+import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringDef;
@@ -62,6 +63,15 @@ public class TranslationsController {
     private static final String SET_LANGUAGE_SETTINGS_EVENT =
         "GeckoView:Translations:SetLanguageSettings";
 
+    private static final String GET_SPECIFIED_SITES_SETTINGS_EVENT =
+        "GeckoView:Translations:GetNeverTranslateSpecifiedSites";
+
+    private static final String SET_SPECIFIED_SITE_SETTINGS_EVENT =
+        "GeckoView:Translations:SetNeverTranslateSpecifiedSite";
+
+    private static final String GET_TRANSLATE_PAIR_DOWNLOAD_SIZE =
+        "GeckoView:Translations:GetTranslateDownloadSize";
+
     /**
      * Checks if the device can use the supplied model binary files for translations.
      *
@@ -74,7 +84,12 @@ public class TranslationsController {
       if (DEBUG) {
         Log.d(LOGTAG, "Requesting if the translations engine supports the device.");
       }
-      return EventDispatcher.getInstance().queryBoolean(ENGINE_SUPPORTED_EVENT);
+      return EventDispatcher.getInstance()
+          .queryBoolean(ENGINE_SUPPORTED_EVENT)
+          .map(
+              result -> result,
+              exception ->
+                  new TranslationsException(TranslationsException.ERROR_ENGINE_NOT_SUPPORTED));
     }
 
     /**
@@ -102,14 +117,16 @@ public class TranslationsController {
                   return null;
                 }
                 return null;
-              });
+              },
+              exception ->
+                  new TranslationsException(TranslationsException.ERROR_COULD_NOT_LOAD_LANGUAGES));
     }
 
     /**
      * Manage the language model or models. Options are to download or delete a BCP 47 language or
      * all or cache.
      *
-     * <p>Bug 1854691 will add an option for deleting translations model "cache".
+     * <p>Bug 1869404 will add an option for deleting translations model "cache".
      *
      * @param options contain language, operation, and operation level to perform on the model
      * @return the request proceeded as expected or an exception.
@@ -120,7 +137,25 @@ public class TranslationsController {
       if (DEBUG) {
         Log.d(LOGTAG, "Requesting management of the language model.");
       }
-      return EventDispatcher.getInstance().queryVoid(MANAGE_MODEL_EVENT, options.toBundle());
+      return EventDispatcher.getInstance()
+          .queryVoid(MANAGE_MODEL_EVENT, options.toBundle())
+          .map(
+              result -> result,
+              exception -> {
+                final String exceptionData =
+                    ((EventDispatcher.QueryException) exception).data.toString();
+                if (exceptionData.contains("COULD_NOT_DELETE")) {
+                  return new TranslationsException(
+                      TranslationsException.ERROR_MODEL_COULD_NOT_DELETE);
+                } else if (exceptionData.contains("LANGUAGE_REQUIRED")) {
+                  return new TranslationsException(
+                      TranslationsException.ERROR_MODEL_LANGUAGE_REQUIRED);
+                } else if (exceptionData.contains("COULD_NOT_DOWNLOAD")) {
+                  return new TranslationsException(
+                      TranslationsException.ERROR_MODEL_COULD_NOT_DOWNLOAD);
+                }
+                return new TranslationsException(TranslationsException.ERROR_UNKNOWN);
+              });
     }
 
     /**
@@ -137,9 +172,9 @@ public class TranslationsController {
       return EventDispatcher.getInstance()
           .queryBundle(TRANSLATION_INFORMATION_EVENT)
           .map(
-              bundle -> {
-                return TranslationSupport.fromBundle(bundle);
-              });
+              bundle -> TranslationSupport.fromBundle(bundle),
+              exception ->
+                  new TranslationsException(TranslationsException.ERROR_COULD_NOT_LOAD_LANGUAGES));
     }
 
     /**
@@ -148,9 +183,8 @@ public class TranslationsController {
      * downloads. Typical case is informing the user of the download size for users in a low-data
      * mode.
      *
-     * <p>If no download is required, will return 0.
-     *
-     * <p>Will be implemented in bug 1854691.
+     * <p>If no download is detected, it will return 0. Note, if the model is not present, this will
+     * also result in a value of 0 bytes.
      *
      * @param fromLanguage from BCP 47 code
      * @param toLanguage from BCP 47 code
@@ -159,10 +193,19 @@ public class TranslationsController {
     @AnyThread
     public static @NonNull GeckoResult<Long> checkPairDownloadSize(
         @NonNull final String fromLanguage, @NonNull final String toLanguage) {
-      final GeckoResult<Long> result = new GeckoResult<>();
-      result.completeExceptionally(
-          new UnsupportedOperationException("Will be implemented in Bug 1854691."));
-      return result;
+      if (DEBUG) {
+        Log.d(LOGTAG, "Requesting information on the language pair download size.");
+      }
+      final GeckoBundle bundle = new GeckoBundle(2);
+      bundle.putString("fromLanguage", fromLanguage);
+      bundle.putString("toLanguage", toLanguage);
+
+      return EventDispatcher.getInstance()
+          .queryBundle(GET_TRANSLATE_PAIR_DOWNLOAD_SIZE, bundle)
+          .map(
+              resultBundle -> {
+                return resultBundle.getLong("bytes", 0L);
+              });
     }
 
     /**
@@ -208,7 +251,9 @@ public class TranslationsController {
                   return null;
                 }
                 return null;
-              });
+              },
+              exception ->
+                  new TranslationsException(TranslationsException.ERROR_MODEL_COULD_NOT_RETRIEVE));
     }
 
     /**
@@ -286,6 +331,64 @@ public class TranslationsController {
       bundle.putString("language", languageCode);
       bundle.putString("languageSetting", String.valueOf(languageSetting));
       return EventDispatcher.getInstance().queryVoid(SET_LANGUAGE_SETTINGS_EVENT, bundle);
+    }
+
+    /**
+     * Gets the list of sites that have a never translate site preference set. Should be used for
+     * retrieving a list for global preference setting outside of a specific site.
+     *
+     * <p>Recommend using: {@link SessionTranslation#getNeverTranslateSiteSetting()} to query the
+     * current session's site's never translate preferences.
+     *
+     * @return A list of display ready site URIs to set preferences for.
+     */
+    @AnyThread
+    public static @NonNull GeckoResult<List<String>> getNeverTranslateSiteList() {
+      if (DEBUG) {
+        Log.d(LOGTAG, "Retrieving specified never translate site settings");
+      }
+      return EventDispatcher.getInstance()
+          .queryBundle(GET_SPECIFIED_SITES_SETTINGS_EVENT)
+          .map(
+              bundle -> {
+                try {
+                  final String[] neverTranslateSites = bundle.getStringArray("sites");
+                  if (neverTranslateSites != null) {
+                    return Arrays.asList(neverTranslateSites);
+                  }
+                } catch (final Exception e) {
+                  Log.d(LOGTAG, "Could not deserialize the sites.");
+                  return null;
+                }
+                return null;
+              });
+    }
+
+    /**
+     * Sets whether the specified site should be translated or not. This function should be used for
+     * global updates to the never translate list.
+     *
+     * <p>Please use: {@link SessionTranslation#setNeverTranslateSiteSetting(Boolean)} when the
+     * session is currently on the site to adjust the permissions for.
+     *
+     * @param origin A site origin URI that will have the specified never translate permission set.
+     *     Recommend using URI values returned from {@link #getNeverTranslateSiteList()} and using
+     *     the session to set a given site to ensure proper scope when possible.
+     * @param neverTranslate Should be set to true if the site should never be translated or false
+     *     if it should be translated.
+     * @return Void if the operation to set the value completed or exceptionally if an issue
+     *     occurred.
+     */
+    @AnyThread
+    public static @NonNull GeckoResult<Void> setNeverTranslateSpecifiedSite(
+        final @NonNull Boolean neverTranslate, final @NonNull String origin) {
+      if (DEBUG) {
+        Log.d(LOGTAG, "Setting never translate for specified site uri origin: " + origin);
+      }
+      final GeckoBundle bundle = new GeckoBundle(2);
+      bundle.putBoolean("neverTranslate", neverTranslate);
+      bundle.putString("origin", origin);
+      return EventDispatcher.getInstance().queryVoid(SET_SPECIFIED_SITE_SETTINGS_EVENT, bundle);
     }
 
     /** Options for managing the translation language models. */
@@ -613,20 +716,18 @@ public class TranslationsController {
     }
 
     /**
-     * Translates the session's current page based on criteria.
-     *
-     * <p>Currently when translating, the necessary language models will be automatically
-     * downloaded.
-     *
-     * <p>ToDo: bug 1853055 will adjust this flow to add an option for automatic/non-automatic
-     * downloads.
+     * Translates the session's current page based on given language and criteria specified in the
+     * options.
      *
      * @param fromLanguage BCP 47 language tag that the page should be translated from. Usually will
      *     be the suggested detected language or user specified.
      * @param toLanguage BCP 47 language tag that the page should be translated to. Usually will be
      *     the suggested preference language or user specified.
-     * @param options no-op, ToDo: bug 1853055 will add options
-     * @return if translate process begins or exceptionally if an issue occurs.
+     * @param options If downloadModel is set to true, then any background downloads will occur
+     *     automatically. If downloadModel is set to false, then if any background downloads are
+     *     required, then the request will fail with an exception, but will continue if the model is
+     *     already present.
+     * @return Void if the translate process begins or exceptionally if an issue occurs.
      */
     @AnyThread
     public @NonNull GeckoResult<Void> translate(
@@ -643,11 +744,27 @@ public class TranslationsController {
                 + " options: "
                 + options);
       }
-      final GeckoBundle bundle = new GeckoBundle(2);
-      bundle.putString("fromLanguage", fromLanguage);
-      bundle.putString("toLanguage", toLanguage);
-      // ToDo: bug 1853055 - Translate options will be configured in a later iteration.
-      return mSession.getEventDispatcher().queryVoid(TRANSLATE_EVENT, bundle);
+
+      if (options != null && options.downloadModel == false) {
+        final var translateResult = new GeckoResult<Void>();
+        TranslationsController.RuntimeTranslation.checkPairDownloadSize(fromLanguage, toLanguage)
+            .then(
+                (GeckoResult.OnValueListener<Long, Void>)
+                    downloadBytes -> {
+                      if (downloadBytes > 0) {
+                        translateResult.completeExceptionally(
+                            new TranslationsException(
+                                TranslationsException.ERROR_MODEL_DOWNLOAD_REQUIRED));
+                      } else {
+                        // No download required
+                        translateResult.completeFrom(this.baseTranslate(fromLanguage, toLanguage));
+                      }
+                      return null;
+                    });
+        return translateResult;
+      }
+
+      return this.baseTranslate(fromLanguage, toLanguage);
     }
 
     /**
@@ -655,14 +772,42 @@ public class TranslationsController {
      * translation pair.
      *
      * @param translationPair the object with a from and to language
-     * @param options no-op, ToDo: bug 1853055 will add options
-     * @return if translate process begins or exceptionally if an issue occurs.
+     * @param options If downloadModel is set to true, then any background downloads will occur
+     *     automatically. If downloadModel is set to false, then if any background downloads are
+     *     required, then the request will fail, but will continue if the model is already present.
+     * @return Void if the translate process begins or exceptionally if an issue occurs.
      */
     @AnyThread
     public @NonNull GeckoResult<Void> translate(
         @NonNull final TranslationPair translationPair,
         @Nullable final TranslationOptions options) {
       return translate(translationPair.fromLanguage, translationPair.toLanguage, options);
+    }
+
+    /**
+     * This will complete a translation using defaults. Before translating, any required models will
+     * be downloaded by the toolkit engine.
+     *
+     * @param fromLanguage BCP 47 language tag that the page should be translated from. Usually will
+     *     be the suggested detected language or user specified.
+     * @param toLanguage BCP 47 language tag that the page should be translated to. Usually will be
+     *     the suggested preference language or user specified.
+     * @return Void if the translate process begins or exceptionally if an issue occurs.
+     */
+    @AnyThread
+    private @NonNull GeckoResult<Void> baseTranslate(
+        @NonNull final String fromLanguage, @NonNull final String toLanguage) {
+
+      final GeckoBundle bundle = new GeckoBundle(2);
+      bundle.putString("fromLanguage", fromLanguage);
+      bundle.putString("toLanguage", toLanguage);
+      return mSession
+          .getEventDispatcher()
+          .queryVoid(TRANSLATE_EVENT, bundle)
+          .map(
+              result -> result,
+              exception ->
+                  new TranslationsException(TranslationsException.ERROR_COULD_NOT_TRANSLATE));
     }
 
     /**
@@ -675,7 +820,13 @@ public class TranslationsController {
       if (DEBUG) {
         Log.d(LOGTAG, "Restore translated page requested");
       }
-      return mSession.getEventDispatcher().queryVoid(RESTORE_PAGE_EVENT);
+      return mSession
+          .getEventDispatcher()
+          .queryVoid(RESTORE_PAGE_EVENT)
+          .map(
+              result -> result,
+              exception ->
+                  new TranslationsException(TranslationsException.ERROR_COULD_NOT_RESTORE));
     }
 
     /**
@@ -711,8 +862,7 @@ public class TranslationsController {
     }
 
     /**
-     * Options available for translating. The options available for translating. Will be developed
-     * in ToDo: bug 1853055.
+     * Options available for translating.
      *
      * <p>Options (default):
      *
@@ -1017,6 +1167,9 @@ public class TranslationsController {
         } else if (ON_STATE_CHANGE_EVENT.equals(event)) {
           final GeckoBundle data = message.getBundle("data");
           final TranslationState translationState = TranslationState.fromBundle(data);
+          if (DEBUG) {
+            Log.d(LOGTAG, "received translation state: " + translationState);
+          }
           delegate.onTranslationStateChange(mSession, translationState);
           if (translationState != null
               && translationState.detectedLanguages != null
@@ -1125,6 +1278,81 @@ public class TranslationsController {
         Log.w(LOGTAG, "Could not deserialize language object: " + e);
         return null;
       }
+    }
+  }
+
+  /**
+   * An exception to be used when there is an issue retrieving or sending information to the
+   * translations toolkit engine.
+   */
+  public static class TranslationsException extends Exception {
+
+    /**
+     * Construct a [TranslationsException]
+     *
+     * @param code Error code the given exception corresponds to.
+     */
+    public TranslationsException(final @Code int code) {
+      this.code = code;
+    }
+
+    /** Default error for unexpected issues. */
+    public static final int ERROR_UNKNOWN = -1;
+
+    /** Translations engine does not work on the device architecture. */
+    public static final int ERROR_ENGINE_NOT_SUPPORTED = -2;
+
+    /** Generic could not compete a translation error. */
+    public static final int ERROR_COULD_NOT_TRANSLATE = -3;
+
+    /** Generic could not restore the page after a translation error. */
+    public static final int ERROR_COULD_NOT_RESTORE = -4;
+
+    /** Could not load language options error. */
+    public static final int ERROR_COULD_NOT_LOAD_LANGUAGES = -5;
+
+    /** The language is not supported for translation. */
+    public static final int ERROR_LANGUAGE_NOT_SUPPORTED = -6;
+
+    /** Could not retrieve information on the language model. */
+    public static final int ERROR_MODEL_COULD_NOT_RETRIEVE = -7;
+
+    /** Could not delete the language model. */
+    public static final int ERROR_MODEL_COULD_NOT_DELETE = -8;
+
+    /** Could not download the language model. */
+    public static final int ERROR_MODEL_COULD_NOT_DOWNLOAD = -9;
+
+    /** A language is required for language scoped requests. */
+    public static final int ERROR_MODEL_LANGUAGE_REQUIRED = -10;
+
+    /** A download is required and the translate request specified do not download. */
+    public static final int ERROR_MODEL_DOWNLOAD_REQUIRED = -11;
+
+    /** Translation exception error codes. */
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(
+        value = {
+          ERROR_UNKNOWN,
+          ERROR_ENGINE_NOT_SUPPORTED,
+          ERROR_COULD_NOT_TRANSLATE,
+          ERROR_COULD_NOT_RESTORE,
+          ERROR_COULD_NOT_LOAD_LANGUAGES,
+          ERROR_LANGUAGE_NOT_SUPPORTED,
+          ERROR_MODEL_COULD_NOT_RETRIEVE,
+          ERROR_MODEL_COULD_NOT_DELETE,
+          ERROR_MODEL_COULD_NOT_DOWNLOAD,
+          ERROR_MODEL_LANGUAGE_REQUIRED,
+          ERROR_MODEL_DOWNLOAD_REQUIRED
+        })
+    public @interface Code {}
+
+    /** {@link Code} that provides more information about this exception. */
+    public final @Code int code;
+
+    @Override
+    public String toString() {
+      return "TranslationsException: " + code;
     }
   }
 }

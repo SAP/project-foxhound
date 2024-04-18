@@ -392,8 +392,17 @@ class nsXULElement : public nsStyledElement {
       bool aKeyCausesActivation, bool aIsTrustedEvent) override;
   MOZ_CAN_RUN_SCRIPT void ClickWithInputSource(uint16_t aInputSource,
                                                bool aIsTrustedEvent);
+  struct XULFocusability {
+    bool mDefaultFocusable = false;
+    mozilla::Maybe<bool> mForcedFocusable;
+    mozilla::Maybe<int32_t> mForcedTabIndexIfFocusable;
 
-  bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) override;
+    static XULFocusability NeverFocusable() {
+      return {false, mozilla::Some(false), mozilla::Some(-1)};
+    }
+  };
+  XULFocusability GetXULFocusability(bool aWithMouse);
+  Focusable IsFocusableWithoutStyle(bool aWithMouse) override;
 
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 

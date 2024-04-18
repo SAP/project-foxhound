@@ -43,7 +43,7 @@ if not CONFIG["MOZ_CODE_COVERAGE"]:
     if CONFIG["OS_TARGET"] != "WINNT":
         RUST_TESTS += ["style"]
 
-if CONFIG["CPU_ARCH"] != "x86":
+if CONFIG["TARGET_CPU"] != "x86":
     # malloc_size_of_derive is a build dependency, so if we are doing
     # cross-compile for x86, this may not run correctly.
     RUST_TESTS += ["malloc_size_of_derive"]
@@ -56,3 +56,6 @@ if CONFIG["MOZ_BITS_DOWNLOAD"]:
 EXPORTS += [
     "/third_party/rust/rure/include/rure.h",
 ]
+
+COMPILE_FLAGS["BASE_INCLUDES"] = []
+HOST_COMPILE_FLAGS["BASE_INCLUDES"] = []

@@ -58,15 +58,14 @@ export class AboutNewTabParent extends JSWindowActorParent {
         break;
 
       case "Init": {
-        let actor = message.target;
-        let browsingContext = actor.browsingContext;
+        let browsingContext = this.browsingContext;
         let browser = browsingContext.top.embedderElement;
         if (!browser) {
           return;
         }
 
         let tabDetails = {
-          actor,
+          actor: this,
           browser,
           browsingContext,
           portID: message.data.portID,
@@ -89,10 +88,8 @@ export class AboutNewTabParent extends JSWindowActorParent {
         let tabDetails = this.getTabDetails();
         if (!tabDetails) {
           // When closing a tab, the embedderElement can already be disconnected, so
-          // an a backup, look up the tab details by browsing context.
-          tabDetails = this.getByBrowsingContext(
-            message.target.browsingContext
-          );
+          // as a backup, look up the tab details by browsing context.
+          tabDetails = this.getByBrowsingContext(this.browsingContext);
         }
 
         if (!tabDetails) {
@@ -123,11 +120,20 @@ export class AboutNewTabParent extends JSWindowActorParent {
 
     let channel = this.getChannel();
     if (!channel) {
+      // We're not yet ready to deal with these messages. We'll queue
+      // them for now, and then dispatch them once the channel has finished
+      // being set up.
+      AboutNewTabParent.#queuedMessages.push({
+        actor: this,
+        name,
+        message,
+        tabDetails,
+      });
       return;
     }
 
     let messageToSend = {
-      target: message.target,
+      target: this,
       data: message.data || {},
     };
 
@@ -146,5 +152,22 @@ export class AboutNewTabParent extends JSWindowActorParent {
 
   getChannel() {
     return lazy.AboutNewTab.activityStream?.store?.getMessageChannel();
+  }
+
+  // Queued messages sent from the content process. These are only queued
+  // if an AboutNewTabParent receives them before the
+  // ActivityStreamMessageChannel exists.
+  static #queuedMessages = [];
+
+  /**
+   * If there were any messages sent from content before the
+   * ActivityStreamMessageChannel was set up, dispatch them now.
+   */
+  static flushQueuedMessagesFromContent() {
+    for (let messageData of AboutNewTabParent.#queuedMessages) {
+      let { actor, name, message, tabDetails } = messageData;
+      actor.notifyActivityStreamChannel(name, message, tabDetails);
+    }
+    AboutNewTabParent.#queuedMessages = [];
   }
 }

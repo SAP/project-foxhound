@@ -149,8 +149,8 @@ class ChromeUtils {
       GlobalObject& aGlobal, const nsAString& aUrl,
       const dom::CompileScriptOptionsDictionary& aOptions, ErrorResult& aRv);
 
-  static MozQueryInterface* GenerateQI(const GlobalObject& global,
-                                       const Sequence<JS::Value>& interfaces);
+  static UniquePtr<MozQueryInterface> GenerateQI(
+      const GlobalObject& global, const Sequence<JS::Value>& interfaces);
 
   static void WaiveXrays(GlobalObject& aGlobal, JS::Handle<JS::Value> aVal,
                          JS::MutableHandle<JS::Value> aRetval,
@@ -165,6 +165,8 @@ class ChromeUtils {
 
   static bool IsDOMObject(GlobalObject& aGlobal, JS::Handle<JSObject*> aObj,
                           bool aUnwrap);
+
+  static bool IsISOStyleDate(GlobalObject& aGlobal, const nsACString& aStr);
 
   static void ShallowClone(GlobalObject& aGlobal, JS::Handle<JSObject*> aObj,
                            JS::Handle<JSObject*> aTarget,
@@ -307,6 +309,14 @@ class ChromeUtils {
   static bool ShouldResistFingerprinting(
       GlobalObject& aGlobal, JSRFPTarget aTarget,
       const Nullable<uint64_t>& aOverriddenFingerprintingSettings);
+
+#ifdef MOZ_WMF_CDM
+  static already_AddRefed<Promise> GetWMFContentDecryptionModuleInformation(
+      GlobalObject& aGlobal, ErrorResult& aRv);
+#endif
+
+  static already_AddRefed<Promise> GetGMPContentDecryptionModuleInformation(
+      GlobalObject& aGlobal, ErrorResult& aRv);
 
  private:
   // Number of DevTools session debugging the current process

@@ -15,6 +15,7 @@
 #include "mozilla/dom/RemoteType.h"
 #include "mozilla/dom/JSProcessActorParent.h"
 #include "mozilla/dom/ProcessActor.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/gfx/gfxVarReceiver.h"
 #include "mozilla/gfx/GPUProcessListener.h"
 #include "mozilla/ipc/BackgroundUtils.h"
@@ -492,6 +493,7 @@ class ContentParent final : public PContentParent,
       const uint32_t& aChromeFlags, const bool& aCalledFromJS,
       const bool& aForPrinting, const bool& aForWindowDotPrint,
       nsIURI* aURIToLoad, const nsACString& aFeatures,
+      const UserActivation::Modifiers& aModifiers,
       nsIPrincipal* aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
       nsIReferrerInfo* aReferrerInfo, const OriginAttributes& aOriginAttributes,
       CreateWindowResolver&& aResolve);
@@ -499,7 +501,8 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvCreateWindowInDifferentProcess(
       PBrowserParent* aThisTab, const MaybeDiscarded<BrowsingContext>& aParent,
       const uint32_t& aChromeFlags, const bool& aCalledFromJS,
-      nsIURI* aURIToLoad, const nsACString& aFeatures, const nsAString& aName,
+      nsIURI* aURIToLoad, const nsACString& aFeatures,
+      const UserActivation::Modifiers& aModifiers, const nsAString& aName,
       nsIPrincipal* aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
       nsIReferrerInfo* aReferrerInfo,
       const OriginAttributes& aOriginAttributes);
@@ -717,6 +720,7 @@ class ContentParent final : public PContentParent,
       const uint32_t& aChromeFlags, const bool& aCalledFromJS,
       const bool& aForPrinting, const bool& aForWindowDotPrint,
       nsIURI* aURIToLoad, const nsACString& aFeatures,
+      const UserActivation::Modifiers& aModifiers,
       BrowserParent* aNextRemoteBrowser, const nsAString& aName,
       nsresult& aResult, nsCOMPtr<nsIRemoteTab>& aNewRemoteTab,
       bool* aWindowIsNew, int32_t& aOpenLocation,
@@ -919,10 +923,6 @@ class ContentParent final : public PContentParent,
 
   bool DeallocPCycleCollectWithLogsParent(PCycleCollectWithLogsParent* aActor);
 
-  PTestShellParent* AllocPTestShellParent();
-
-  bool DeallocPTestShellParent(PTestShellParent* shell);
-
   PScriptCacheParent* AllocPScriptCacheParent(const FileDescOrError& cacheFile,
                                               const bool& wantCacheData);
 
@@ -958,21 +958,16 @@ class ContentParent final : public PContentParent,
   bool DeallocPBenchmarkStorageParent(PBenchmarkStorageParent* aActor);
 
 #ifdef MOZ_WEBSPEECH
-  PSpeechSynthesisParent* AllocPSpeechSynthesisParent();
-  bool DeallocPSpeechSynthesisParent(PSpeechSynthesisParent* aActor);
+  already_AddRefed<PSpeechSynthesisParent> AllocPSpeechSynthesisParent();
 
   virtual mozilla::ipc::IPCResult RecvPSpeechSynthesisConstructor(
       PSpeechSynthesisParent* aActor) override;
 #endif
 
-  PWebBrowserPersistDocumentParent* AllocPWebBrowserPersistDocumentParent(
+  already_AddRefed<PWebBrowserPersistDocumentParent>
+  AllocPWebBrowserPersistDocumentParent(
       PBrowserParent* aBrowser,
       const MaybeDiscarded<BrowsingContext>& aContext);
-
-  bool DeallocPWebBrowserPersistDocumentParent(
-      PWebBrowserPersistDocumentParent* aActor);
-
-  mozilla::ipc::IPCResult RecvGetGfxVars(nsTArray<GfxVarUpdate>* aVars);
 
   mozilla::ipc::IPCResult RecvSetClipboard(const IPCTransferable& aTransferable,
                                            const int32_t& aWhichClipboard);
@@ -993,6 +988,8 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvGetClipboardAsync(
       nsTArray<nsCString>&& aTypes, const int32_t& aWhichClipboard,
+      const MaybeDiscarded<WindowContext>& aRequestingWindowContext,
+      mozilla::NotNull<nsIPrincipal*> aRequestingPrincipal,
       GetClipboardAsyncResolver&& aResolver);
 
   already_AddRefed<PClipboardWriteRequestParent>
@@ -1135,12 +1132,6 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvShutdownPerfStats(const nsACString& aPerfStats);
 
-  mozilla::ipc::IPCResult RecvGetGraphicsDeviceInitData(
-      ContentDeviceData* aOut);
-
-  mozilla::ipc::IPCResult RecvGetOutputColorProfileData(
-      nsTArray<uint8_t>* aOutputColorProfileData);
-
   mozilla::ipc::IPCResult RecvGetFontListShmBlock(
       const uint32_t& aGeneration, const uint32_t& aIndex,
       base::SharedMemoryHandle* aOut);
@@ -1149,17 +1140,19 @@ class ContentParent final : public PContentParent,
                                                const uint32_t& aFamilyIndex,
                                                const bool& aLoadCmaps);
 
-  mozilla::ipc::IPCResult RecvSetCharacterMap(
-      const uint32_t& aGeneration, const mozilla::fontlist::Pointer& aFacePtr,
-      const gfxSparseBitSet& aMap);
+  mozilla::ipc::IPCResult RecvSetCharacterMap(const uint32_t& aGeneration,
+                                              const uint32_t& aFamilyIndex,
+                                              const bool& aAlias,
+                                              const uint32_t& aFaceIndex,
+                                              const gfxSparseBitSet& aMap);
 
   mozilla::ipc::IPCResult RecvInitOtherFamilyNames(const uint32_t& aGeneration,
                                                    const bool& aDefer,
                                                    bool* aLoaded);
 
-  mozilla::ipc::IPCResult RecvSetupFamilyCharMap(
-      const uint32_t& aGeneration,
-      const mozilla::fontlist::Pointer& aFamilyPtr);
+  mozilla::ipc::IPCResult RecvSetupFamilyCharMap(const uint32_t& aGeneration,
+                                                 const uint32_t& aIndex,
+                                                 const bool& aAlias);
 
   mozilla::ipc::IPCResult RecvStartCmapLoading(const uint32_t& aGeneration,
                                                const uint32_t& aStartIndex);

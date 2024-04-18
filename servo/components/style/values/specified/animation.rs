@@ -4,9 +4,8 @@
 
 //! Specified types for properties related to animations and transitions.
 
-use crate::custom_properties::Name as CustomPropertyName;
 use crate::parser::{Parse, ParserContext};
-use crate::properties::{LonghandId, PropertyDeclarationId, PropertyId, ShorthandId};
+use crate::properties::{NonCustomPropertyId, PropertyId, ShorthandId};
 use crate::values::generics::animation as generics;
 use crate::values::specified::{LengthPercentage, NonNegativeNumber};
 use crate::values::{CustomIdent, KeyframesName, TimelineName};
@@ -22,13 +21,12 @@ use style_traits::{
 #[derive(
     Clone, Debug, Eq, Hash, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue, ToShmem,
 )]
+#[repr(u8)]
 pub enum TransitionProperty {
-    /// A shorthand.
-    Shorthand(ShorthandId),
-    /// A longhand transitionable property.
-    Longhand(LonghandId),
+    /// A non-custom property.
+    NonCustom(NonCustomPropertyId),
     /// A custom property.
-    Custom(CustomPropertyName),
+    Custom(Atom),
     /// Unrecognized property which could be any non-transitionable, custom property, or
     /// unknown property.
     Unsupported(CustomIdent),
@@ -39,13 +37,11 @@ impl ToCss for TransitionProperty {
     where
         W: Write,
     {
-        use crate::values::serialize_atom_name;
         match *self {
-            TransitionProperty::Shorthand(ref s) => s.to_css(dest),
-            TransitionProperty::Longhand(ref l) => l.to_css(dest),
+            TransitionProperty::NonCustom(ref id) => id.to_css(dest),
             TransitionProperty::Custom(ref name) => {
                 dest.write_str("--")?;
-                serialize_atom_name(name, dest)
+                crate::values::serialize_atom_name(name, dest)
             },
             TransitionProperty::Unsupported(ref i) => i.to_css(dest),
         }
@@ -63,6 +59,7 @@ impl Parse for TransitionProperty {
         let id = match PropertyId::parse_ignoring_rule_type(&ident, context) {
             Ok(id) => id,
             Err(..) => {
+                // None is not acceptable as a single transition-property.
                 return Ok(TransitionProperty::Unsupported(CustomIdent::from_ident(
                     location,
                     ident,
@@ -71,12 +68,9 @@ impl Parse for TransitionProperty {
             },
         };
 
-        Ok(match id.as_shorthand() {
-            Ok(s) => TransitionProperty::Shorthand(s),
-            Err(longhand_or_custom) => match longhand_or_custom {
-                PropertyDeclarationId::Longhand(id) => TransitionProperty::Longhand(id),
-                PropertyDeclarationId::Custom(custom) => TransitionProperty::Custom(custom.clone()),
-            },
+        Ok(match id {
+            PropertyId::NonCustom(id) => TransitionProperty::NonCustom(id.unaliased()),
+            PropertyId::Custom(name) => TransitionProperty::Custom(name),
         })
     }
 }
@@ -91,30 +85,27 @@ impl SpecifiedValueInfo for TransitionProperty {
 }
 
 impl TransitionProperty {
+    /// Returns the `none` value.
+    #[inline]
+    pub fn none() -> Self {
+        TransitionProperty::Unsupported(CustomIdent(atom!("none")))
+    }
+
+    /// Returns whether we're the `none` value.
+    #[inline]
+    pub fn is_none(&self) -> bool {
+        matches!(*self, TransitionProperty::Unsupported(ref ident) if ident.0 == atom!("none"))
+    }
+
     /// Returns `all`.
     #[inline]
     pub fn all() -> Self {
-        TransitionProperty::Shorthand(ShorthandId::All)
-    }
-
-    /// Convert TransitionProperty to nsCSSPropertyID.
-    #[cfg(feature = "gecko")]
-    pub fn to_nscsspropertyid(
-        &self,
-    ) -> Result<crate::gecko_bindings::structs::nsCSSPropertyID, ()> {
-        Ok(match *self {
-            TransitionProperty::Shorthand(ShorthandId::All) => {
-                crate::gecko_bindings::structs::nsCSSPropertyID::eCSSPropertyExtra_all_properties
-            },
-            TransitionProperty::Shorthand(ref id) => id.to_nscsspropertyid(),
-            TransitionProperty::Longhand(ref id) => id.to_nscsspropertyid(),
-            TransitionProperty::Custom(..) | TransitionProperty::Unsupported(..) => return Err(()),
-        })
+        TransitionProperty::NonCustom(NonCustomPropertyId::from_shorthand(ShorthandId::All))
     }
 }
 
 /// https://drafts.csswg.org/css-animations/#animation-iteration-count
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, Parse, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(Copy, Clone, Debug, MallocSizeOf, PartialEq, Parse, SpecifiedValueInfo, ToCss, ToShmem)]
 pub enum AnimationIterationCount {
     /// A `<number>` value.
     Number(NonNegativeNumber),
@@ -182,10 +173,52 @@ impl Parse for AnimationName {
     }
 }
 
+/// https://drafts.csswg.org/css-animations/#propdef-animation-direction
+#[derive(Copy, Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum AnimationDirection {
+    Normal,
+    Reverse,
+    Alternate,
+    AlternateReverse,
+}
+
+/// https://drafts.csswg.org/css-animations/#animation-play-state
+#[derive(Copy, Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum AnimationPlayState {
+    Running,
+    Paused,
+}
+
+/// https://drafts.csswg.org/css-animations/#propdef-animation-fill-mode
+#[derive(Copy, Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum AnimationFillMode {
+    None,
+    Forwards,
+    Backwards,
+    Both,
+}
+
+/// https://drafts.csswg.org/css-animations-2/#animation-composition
+#[derive(Copy, Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum AnimationComposition {
+    Replace,
+    Add,
+    Accumulate,
+}
+
 /// A value for the <Scroller> used in scroll().
 ///
 /// https://drafts.csswg.org/scroll-animations-1/rewrite#typedef-scroller
 #[derive(
+    Copy,
     Clone,
     Debug,
     Eq,
@@ -230,6 +263,7 @@ impl Default for Scroller {
 /// https://drafts.csswg.org/scroll-animations-1/#scroll-timeline-axis
 /// https://drafts.csswg.org/scroll-animations-1/#view-timeline-axis
 #[derive(
+    Copy,
     Clone,
     Debug,
     Eq,
@@ -272,6 +306,7 @@ impl Default for ScrollAxis {
 /// The scroll() notation.
 /// https://drafts.csswg.org/scroll-animations-1/#scroll-notation
 #[derive(
+    Copy,
     Clone,
     Debug,
     MallocSizeOf,

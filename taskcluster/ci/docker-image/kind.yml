@@ -52,6 +52,8 @@ jobs:
         parent: ubuntu1804-base
         packages:
             - ub18-libc6
+            - ub18-pygobject
+            - ub18-pyatspi
             - ub18-32-libc6
     ubuntu1804-test:
         symbol: I(ub18-test)
@@ -133,37 +135,7 @@ jobs:
             - deb12-valgrind
     lint:
         symbol: I(lnt)
-        parent: debian11-base
-    # Neither the debian11-raw nor the debian11-packages images can have
-    # packages dependencies.
-    debian11-raw:
-        symbol: I(deb11-raw)
-        definition: debian-raw
-        args:
-            BASE_IMAGE: debian:bullseye-20230612
-            DIST: bullseye
-            SNAPSHOT: '20230611T210420Z'
-    debian11-packages:
-        symbol: I(deb11-pkg)
-        definition: debian-packages
-        parent: debian11-raw
-    debian11-base:
-        symbol: I(deb11-base)
-        definition: debian-base
-        parent: debian11-raw
-        packages:
-            - deb11-mercurial
-            - deb11-python-zstandard
-    debian11-amd64-build:
-        symbol: I(deb11)
-        parent: debian11-base
-        definition: debian-build
-    deb11-toolchain-build:
-        symbol: I(deb11-toolchain)
-        parent: debian11-base
-        definition: toolchain-build
-        packages:
-            - deb11-cmake
+        parent: debian12-base
     # Neither the debian12-raw nor the debian12-packages images can have
     # packages dependencies.
     debian12-raw:
@@ -212,7 +184,6 @@ jobs:
     gdb-test:
         symbol: I(gdb)
         parent: debian12-amd64-build
-        definition: gdb-test
     index-task:
         symbol: I(idx)
     funsize-update-generator:
@@ -225,14 +196,14 @@ jobs:
         parent: debian12-base
     partner-repack:
         symbol: I(PR)
-        parent: debian11-base
+        parent: debian12-base
         definition: partner-repack
     updatebot:
         symbol: I(3rdp)
         parent: push-to-try
     periodic-updates:
         symbol: I(file)
-        parent: debian11-base
+        parent: debian12-base
     firefox-snap:
         symbol: I(snap)
     firefox-flatpak:
@@ -245,10 +216,10 @@ jobs:
         parent: ubuntu1804-test
     github-sync:
         symbol: I(github-sync)
-        parent: debian11-base
+        parent: debian12-base
     sentry:
         symbol: I(sentry)
-        parent: debian11-base
+        parent: debian12-base
     system-symbols-mac:
         symbol: I(system-symbols-mac)
         parent: debian12-base
@@ -263,7 +234,7 @@ jobs:
         parent: debian12-base
     push-to-try:
         symbol: I(push-to-try)
-        parent: debian11-base
+        parent: debian12-base
     decision:
         symbol: I(decision)
         parent: ubuntu2004-base

@@ -66,8 +66,6 @@ void WebRenderBridgeChild::DoDestroy() {
 
   // mDestroyed is used to prevent calling Send__delete__() twice.
   // When this function is called from CompositorBridgeChild::Destroy().
-  // mActiveResourceTracker is not cleared here, since it is
-  // used by PersistentBufferProviderShared.
   mDestroyed = true;
   mManager = nullptr;
 }
@@ -462,12 +460,8 @@ void WebRenderBridgeChild::EnableRemoteTexturePushCallback(
       OpEnableRemoteTexturePushCallback(aOwnerId, aSize, aFlags)));
 }
 
-void WebRenderBridgeChild::UpdateFwdTransactionId() {
-  GetCompositorBridgeChild()->UpdateFwdTransactionId();
-}
-
-uint64_t WebRenderBridgeChild::GetFwdTransactionId() {
-  return GetCompositorBridgeChild()->GetFwdTransactionId();
+FwdTransactionCounter& WebRenderBridgeChild::GetFwdTransactionCounter() {
+  return GetCompositorBridgeChild()->GetFwdTransactionCounter();
 }
 
 bool WebRenderBridgeChild::InForwarderThread() { return NS_IsMainThread(); }
@@ -519,11 +513,8 @@ void WebRenderBridgeChild::EndClearCachedResources() {
 void WebRenderBridgeChild::SetWebRenderLayerManager(
     WebRenderLayerManager* aManager) {
   MOZ_ASSERT(aManager && !mManager);
-  mManager = aManager;
-
   MOZ_ASSERT(NS_IsMainThread() || !XRE_IsContentProcess());
-  mActiveResourceTracker =
-      MakeUnique<ActiveResourceTracker>(1000, "CompositableForwarder", nullptr);
+  mManager = aManager;
 }
 
 ipc::IShmemAllocator* WebRenderBridgeChild::GetShmemAllocator() {

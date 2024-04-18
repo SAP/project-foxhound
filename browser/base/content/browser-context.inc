@@ -284,7 +284,7 @@
                 hidden="true"
                 oncommand="gContextMenu.useRelayMask();"/>
       <menuitem id="manage-saved-logins"
-                data-l10n-id="main-context-menu-manage-logins2"
+                data-l10n-id="main-context-menu-manage-passwords"
                 hidden="true"
                 oncommand="gContextMenu.openPasswordManager();"/>
       <menuseparator id="passwordmgr-items-separator"/>
@@ -357,6 +357,8 @@
                 oncommand="BrowserSearch.loadSearchFromContext(this.searchTerms, this.usePrivate, this.principal, this.csp, event);"/>
       <menuitem id="context-searchselect-private"
                 oncommand="BrowserSearch.loadSearchFromContext(this.searchTerms, true, this.principal, this.csp, event);"/>
+      <menuitem id="context-translate-selection"
+                data-l10n-id="main-context-menu-translate-selection"/>
 
       <menuseparator id="frame-sep"/>
       <menu id="frame" data-l10n-id="main-context-menu-frame">

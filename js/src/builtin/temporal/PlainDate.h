@@ -7,19 +7,26 @@
 #ifndef builtin_temporal_PlainDate_h
 #define builtin_temporal_PlainDate_h
 
+#include "mozilla/Assertions.h"
+
 #include <initializer_list>
 #include <stdint.h>
 
 #include "builtin/temporal/Calendar.h"
+#include "builtin/temporal/PlainDateTime.h"
 #include "builtin/temporal/TemporalTypes.h"
 #include "builtin/temporal/Wrapped.h"
+#include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "vm/NativeObject.h"
 
+class JS_PUBLIC_API JSTracer;
+
 namespace js {
 struct ClassSpec;
-}
+class PlainObject;
+}  // namespace js
 
 namespace js::temporal {
 
@@ -53,6 +60,29 @@ class PlainDateObject : public NativeObject {
   static const ClassSpec classSpec_;
 };
 
+class PlainDateWithCalendar {
+  PlainDate date_;
+  CalendarValue calendar_;
+
+ public:
+  PlainDateWithCalendar() = default;
+
+  PlainDateWithCalendar(const PlainDate& date, const CalendarValue& calendar)
+      : date_(date), calendar_(calendar) {
+    MOZ_ASSERT(ISODateTimeWithinLimits(date));
+  }
+
+  const auto& date() const { return date_; }
+  const auto& calendar() const { return calendar_; }
+
+  // Allow implicit conversion to a calendar-less PlainDate.
+  operator const PlainDate&() const { return date(); }
+
+  void trace(JSTracer* trc) { calendar_.trace(trc); }
+
+  const auto* calendarDoNotUse() const { return &calendar_; }
+};
+
 /**
  * Extract the date fields from the PlainDate object.
  */
@@ -62,6 +92,7 @@ inline PlainDate ToPlainDate(const PlainDateObject* date) {
 
 enum class TemporalOverflow;
 enum class TemporalUnit;
+class DurationObject;
 class ZonedDateTimeObject;
 
 #ifdef DEBUG
@@ -90,12 +121,6 @@ bool ThrowIfInvalidISODate(JSContext* cx, double year, double month,
 /**
  * ToTemporalDate ( item [ , options ] )
  */
-PlainDateObject* ToTemporalDate(JSContext* cx,
-                                JS::Handle<Wrapped<ZonedDateTimeObject*>> item);
-
-/**
- * ToTemporalDate ( item [ , options ] )
- */
 bool ToTemporalDate(JSContext* cx, JS::Handle<JS::Value> item,
                     PlainDate* result);
 
@@ -103,14 +128,20 @@ bool ToTemporalDate(JSContext* cx, JS::Handle<JS::Value> item,
  * ToTemporalDate ( item [ , options ] )
  */
 bool ToTemporalDate(JSContext* cx, JS::Handle<JS::Value> item,
-                    PlainDate* result,
-                    JS::MutableHandle<CalendarValue> calendar);
+                    JS::MutableHandle<PlainDateWithCalendar> result);
 
 /**
  * CreateTemporalDate ( isoYear, isoMonth, isoDay, calendar [ , newTarget ] )
  */
 PlainDateObject* CreateTemporalDate(JSContext* cx, const PlainDate& date,
                                     JS::Handle<CalendarValue> calendar);
+
+/**
+ * CreateTemporalDate ( isoYear, isoMonth, isoDay, calendar [ , newTarget ] )
+ */
+bool CreateTemporalDate(JSContext* cx, const PlainDate& date,
+                        JS::Handle<CalendarValue> calendar,
+                        JS::MutableHandle<PlainDateWithCalendar> result);
 
 /**
  * RegulateISODate ( year, month, day, overflow )
@@ -137,10 +168,74 @@ bool AddISODate(JSContext* cx, const PlainDate& date, const Duration& duration,
                 TemporalOverflow overflow, PlainDate* result);
 
 /**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+Wrapped<PlainDateObject*> AddDate(JSContext* cx,
+                                  JS::Handle<CalendarRecord> calendar,
+                                  JS::Handle<Wrapped<PlainDateObject*>> date,
+                                  const Duration& duration,
+                                  JS::Handle<JSObject*> options);
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+Wrapped<PlainDateObject*> AddDate(JSContext* cx,
+                                  JS::Handle<CalendarRecord> calendar,
+                                  JS::Handle<Wrapped<PlainDateObject*>> date,
+                                  const Duration& duration);
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+Wrapped<PlainDateObject*> AddDate(
+    JSContext* cx, JS::Handle<CalendarRecord> calendar,
+    JS::Handle<Wrapped<PlainDateObject*>> date,
+    JS::Handle<Wrapped<DurationObject*>> durationObj,
+    JS::Handle<JSObject*> options);
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+Wrapped<PlainDateObject*> AddDate(
+    JSContext* cx, JS::Handle<CalendarRecord> calendar,
+    JS::Handle<Wrapped<PlainDateObject*>> date,
+    JS::Handle<Wrapped<DurationObject*>> durationObj);
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+bool AddDate(JSContext* cx, JS::Handle<CalendarRecord> calendar,
+             const PlainDate& date, const Duration& duration,
+             JS::Handle<JSObject*> options, PlainDate* result);
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+bool AddDate(JSContext* cx, JS::Handle<CalendarRecord> calendar,
+             JS::Handle<Wrapped<PlainDateObject*>> date,
+             const Duration& duration, PlainDate* result);
+
+/**
  * DifferenceISODate ( y1, m1, d1, y2, m2, d2, largestUnit )
  */
 DateDuration DifferenceISODate(const PlainDate& start, const PlainDate& end,
                                TemporalUnit largestUnit);
+
+/**
+ * DifferenceDate ( calendarRec, one, two, options )
+ */
+bool DifferenceDate(JSContext* cx, JS::Handle<CalendarRecord> calendar,
+                    JS::Handle<Wrapped<PlainDateObject*>> one,
+                    JS::Handle<Wrapped<PlainDateObject*>> two,
+                    JS::Handle<PlainObject*> options, Duration* result);
+
+/**
+ * DifferenceDate ( calendarRec, one, two, options )
+ */
+bool DifferenceDate(JSContext* cx, JS::Handle<CalendarRecord> calendar,
+                    JS::Handle<Wrapped<PlainDateObject*>> one,
+                    JS::Handle<Wrapped<PlainDateObject*>> two,
+                    TemporalUnit largestUnit, Duration* result);
 
 /**
  * CompareISODate ( y1, m1, d1, y2, m2, d2 )
@@ -171,5 +266,27 @@ bool IsBuiltinAccess(JSContext* cx, JS::Handle<PlainDateObject*> date,
                      std::initializer_list<CalendarField> fieldNames);
 
 } /* namespace js::temporal */
+
+namespace js {
+
+template <typename Wrapper>
+class WrappedPtrOperations<temporal::PlainDateWithCalendar, Wrapper> {
+  const auto& container() const {
+    return static_cast<const Wrapper*>(this)->get();
+  }
+
+ public:
+  const auto& date() const { return container().date(); }
+
+  JS::Handle<temporal::CalendarValue> calendar() const {
+    return JS::Handle<temporal::CalendarValue>::fromMarkedLocation(
+        container().calendarDoNotUse());
+  }
+
+  // Allow implicit conversion to a calendar-less PlainDate.
+  operator const temporal::PlainDate&() const { return date(); }
+};
+
+}  // namespace js
 
 #endif /* builtin_temporal_PlainDate_h */

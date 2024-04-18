@@ -45,7 +45,7 @@ features = ["serde_derive"]
 optional = true
 
 [dev-dependencies]
-serde_json = "1.0.108"
+serde_json = "1.0.111"
 
 [dev-dependencies.serde]
 version = "1"
@@ -58,10 +58,10 @@ strict_asserts = []
 trace = ["serde"]
 
 [target."cfg(target_arch = \"wasm32\")".dependencies]
-js-sys = "0.3.65"
+js-sys = "0.3.66"
 
 [target."cfg(target_arch = \"wasm32\")".dependencies.web-sys]
-version = "0.3.64"
+version = "0.3.66"
 features = [
     "ImageBitmap",
     "HtmlVideoElement",

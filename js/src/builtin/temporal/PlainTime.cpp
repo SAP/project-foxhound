@@ -21,7 +21,6 @@
 #include "jspubtd.h"
 #include "NamespaceImports.h"
 
-#include "builtin/temporal/Calendar.h"
 #include "builtin/temporal/Duration.h"
 #include "builtin/temporal/Instant.h"
 #include "builtin/temporal/PlainDate.h"
@@ -33,7 +32,6 @@
 #include "builtin/temporal/TemporalUnit.h"
 #include "builtin/temporal/TimeZone.h"
 #include "builtin/temporal/ToString.h"
-#include "builtin/temporal/Wrapped.h"
 #include "builtin/temporal/ZonedDateTime.h"
 #include "ds/IdValuePair.h"
 #include "gc/AllocKind.h"
@@ -612,13 +610,13 @@ static bool ToTemporalTime(JSContext* cx, Handle<Value> item,
         return false;
       }
 
-      // Steps 3.b.i-ii.
+      // Steps 3.b.i-iii.
       PlainDateTime dateTime;
       if (!GetPlainDateTimeFor(cx, timeZone, epochInstant, &dateTime)) {
         return false;
       }
 
-      // Step 3.b.iii.
+      // Step 3.b.iv.
       *result = dateTime.time;
       return true;
     }
@@ -2249,13 +2247,7 @@ static bool PlainTime_equals(JSContext* cx, const CallArgs& args) {
   }
 
   // Steps 4-10.
-  bool equals = temporalTime.hour == other.hour &&
-                temporalTime.minute == other.minute &&
-                temporalTime.second == other.second &&
-                temporalTime.millisecond == other.millisecond &&
-                temporalTime.microsecond == other.microsecond &&
-                temporalTime.nanosecond == other.nanosecond;
-  args.rval().setBoolean(equals);
+  args.rval().setBoolean(temporalTime == other);
   return true;
 }
 
@@ -2276,11 +2268,12 @@ static bool PlainTime_toPlainDateTime(JSContext* cx, const CallArgs& args) {
   auto time = ToPlainTime(temporalTime);
 
   // Step 3.
-  PlainDate date;
-  Rooted<CalendarValue> calendar(cx);
-  if (!ToTemporalDate(cx, args.get(0), &date, &calendar)) {
+  Rooted<PlainDateWithCalendar> plainDate(cx);
+  if (!ToTemporalDate(cx, args.get(0), &plainDate)) {
     return false;
   }
+  auto date = plainDate.date();
+  auto calendar = plainDate.calendar();
 
   // Step 4.
   auto* result = CreateTemporalDateTime(cx, {date, time}, calendar);
@@ -2332,11 +2325,12 @@ static bool PlainTime_toZonedDateTime(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 6.
-  PlainDate date;
-  Rooted<CalendarValue> calendar(cx);
-  if (!ToTemporalDate(cx, temporalDateLike, &date, &calendar)) {
+  Rooted<PlainDateWithCalendar> plainDate(cx);
+  if (!ToTemporalDate(cx, temporalDateLike, &plainDate)) {
     return false;
   }
+  auto date = plainDate.date();
+  auto calendar = plainDate.calendar();
 
   // Step 7.
   Rooted<Value> temporalTimeZoneLike(cx);
@@ -2359,20 +2353,19 @@ static bool PlainTime_toZonedDateTime(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 10.
-  Rooted<PlainDateTimeObject*> temporalDateTime(
-      cx, CreateTemporalDateTime(cx, {date, time}, calendar));
-  if (!temporalDateTime) {
+  Rooted<PlainDateTimeWithCalendar> temporalDateTime(cx);
+  if (!CreateTemporalDateTime(cx, {date, time}, calendar, &temporalDateTime)) {
     return false;
   }
 
-  // Step 11.
+  // Steps 11-12.
   Instant instant;
   if (!GetInstantFor(cx, timeZone, temporalDateTime,
                      TemporalDisambiguation::Compatible, &instant)) {
     return false;
   }
 
-  // Step 12.
+  // Step 13.
   auto* result = CreateTemporalZonedDateTime(cx, instant, timeZone, calendar);
   if (!result) {
     return false;

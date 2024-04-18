@@ -189,6 +189,7 @@ static const char sIntPrefs[][45] = {
     "ui.videoDynamicRange",
     "ui.panelAnimations",
     "ui.hideCursorWhileTyping",
+    "ui.gtkThemeFamily",
 };
 
 static_assert(ArrayLength(sIntPrefs) == size_t(LookAndFeel::IntID::End),
@@ -274,7 +275,9 @@ static const char sColorPrefs[][41] = {
     "ui.-moz-mac-defaultbuttontext",
     "ui.-moz-mac-focusring",
     "ui.-moz_mac_disabledtoolbartext",
-    "ui.-moz-mac-sidebar",
+    "ui.-moz-sidebar",
+    "ui.-moz-sidebartext",
+    "ui.-moz-sidebarborder",
     "ui.accentcolor",
     "ui.accentcolortext",
     "ui.-moz-autofill-background",
@@ -283,8 +286,12 @@ static const char sColorPrefs[][41] = {
     "ui.-moz-hyperlinktext",
     "ui.-moz-activehyperlinktext",
     "ui.-moz-visitedhyperlinktext",
+    "ui.-moz-colheader",
     "ui.-moz-colheadertext",
+    "ui.-moz-colheaderhover",
     "ui.-moz-colheaderhovertext",
+    "ui.-moz-colheaderactive",
+    "ui.-moz-colheaderactivetext",
     "ui.textSelectDisabledBackground",
     "ui.textSelectAttentionBackground",
     "ui.textSelectAttentionForeground",
@@ -493,6 +500,8 @@ static constexpr struct {
     // Affects zoom settings which includes text and full zoom.
     {"browser.display.os-zoom-behavior"_ns,
      widget::ThemeChangeKind::StyleAndLayout},
+    // This affects system colors on Linux.
+    {"widget.gtk.libadwaita-colors.enabled"_ns, widget::ThemeChangeKind::Style},
     // This affects not only the media query, but also the native theme, so we
     // need to re-layout.
     {"browser.theme.toolbar-theme"_ns, widget::ThemeChangeKind::AllBits},
@@ -726,6 +735,7 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
       break;
     case ColorID::Windowtext:  // --in-content-page-color
     case ColorID::MozDialogtext:
+    case ColorID::MozSidebartext:
     case ColorID::Fieldtext:
     case ColorID::Buttontext:  // --in-content-button-text-color (via
                                // --in-content-page-color)
@@ -737,10 +747,14 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::Captiontext:
     case ColorID::Inactivecaptiontext:  // TODO(emilio): Maybe make
                                         // Inactivecaptiontext Graytext?
+    case ColorID::MozColheadertext:
+    case ColorID::MozColheaderhovertext:
+    case ColorID::MozColheaderactivetext:
       color = kWindowText;
       break;
     case ColorID::Buttonshadow:
     case ColorID::Threedshadow:
+    case ColorID::MozSidebarborder:
     case ColorID::Threedlightshadow:
     case ColorID::Buttonborder:  // --in-content-box-border-color computed
                                  // with kWindowText above
@@ -755,8 +769,10 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
                                  // --in-content-item-selected
       color = NS_RGB(0, 221, 255);
       break;
+    case ColorID::MozSidebar:
     case ColorID::Field:
     case ColorID::Buttonface:  // --in-content-button-background
+    case ColorID::MozColheader:
     case ColorID::Threedface:
     case ColorID::MozCombobox:
     case ColorID::MozCellhighlighttext:
@@ -772,9 +788,11 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
       color = NS_ComposeColors(kWindowBackground, NS_RGBA(43, 42, 51, 102));
       break;
     case ColorID::MozButtonhoverface:  // --in-content-button-background-hover
+    case ColorID::MozColheaderhover:
       color = NS_RGB(82, 82, 94);
       break;
     case ColorID::MozButtonactiveface:  // --in-content-button-background-active
+    case ColorID::MozColheaderactive:
       color = NS_RGB(91, 91, 102);
       break;
     case ColorID::Highlight:

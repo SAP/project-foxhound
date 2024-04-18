@@ -8,7 +8,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
 });
 
@@ -459,7 +458,7 @@ export class SearchSuggestionController {
    *   rejected if there is an error.
    */
   #fetchRemote(context) {
-    let deferredResponse = lazy.PromiseUtils.defer();
+    let deferredResponse = Promise.withResolvers();
     let request = (context.request = new XMLHttpRequest());
     // Expect the response type to be JSON, so that the network layer will
     // decode it for us. This will also ignore incorrect Mime Types, as we are
@@ -747,13 +746,13 @@ export class SearchSuggestionController {
   #newSearchSuggestionEntry(suggestion, richSuggestionData, trending) {
     if (richSuggestionData && (!trending || this.richSuggestionsEnabled)) {
       // We have valid rich suggestions.
-      let args = {
-        matchPrefix: richSuggestionData?.mp,
-        tail: richSuggestionData?.t,
-        trending,
-      };
+      let args = { trending };
 
-      if (this.richSuggestionsEnabled) {
+      // RichSuggestions come with icon and tail data, we only want one or the other
+      if (!richSuggestionData?.i) {
+        args.matchPrefix = richSuggestionData?.mp;
+        args.tail = richSuggestionData?.t;
+      } else if (this.richSuggestionsEnabled) {
         args.icon = richSuggestionData?.i;
         args.description = richSuggestionData?.a;
       }

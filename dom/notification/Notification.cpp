@@ -479,7 +479,10 @@ NotificationPermissionRequest::Run() {
   bool blocked = false;
   if (isSystem) {
     mPermission = NotificationPermission::Granted;
-  } else if (mPrincipal->GetPrivateBrowsingId() != 0) {
+  } else if (
+      mPrincipal->GetPrivateBrowsingId() != 0 &&
+      !StaticPrefs::
+          dom_webnotifications_privateBrowsing_enableDespiteLimitations()) {
     mPermission = NotificationPermission::Denied;
     blocked = true;
   } else {
@@ -1520,7 +1523,9 @@ NotificationPermission Notification::GetPermissionInternal(
     return NotificationPermission::Denied;
   }
 
-  if (principal->GetPrivateBrowsingId() != 0) {
+  if (principal->GetPrivateBrowsingId() != 0 &&
+      !StaticPrefs::
+          dom_webnotifications_privateBrowsing_enableDespiteLimitations()) {
     return NotificationPermission::Denied;
   }
   // Disallow showing notification if our origin is not the same origin as the
@@ -1695,7 +1700,11 @@ class WorkerGetResultRunnable final : public NotificationWorkerRunnable {
         mStrings(std::move(aStrings)) {}
 
   void WorkerRunInternal(WorkerPrivate* aWorkerPrivate) override {
-    RefPtr<Promise> workerPromise = mPromiseProxy->WorkerPromise();
+    RefPtr<Promise> workerPromise = mPromiseProxy->GetWorkerPromise();
+    // Once Worker had already started shutdown, workerPromise would be nullptr
+    if (!workerPromise) {
+      return;
+    }
 
     AutoTArray<RefPtr<Notification>, 5> notifications;
     for (uint32_t i = 0; i < mStrings.Length(); ++i) {

@@ -7,10 +7,12 @@
  * @module utils/source
  */
 
-const { getUnicodeUrl } = require("devtools/client/shared/unicode-url");
+const {
+  getUnicodeUrl,
+} = require("resource://devtools/client/shared/unicode-url.js");
 const {
   micromatch,
-} = require("devtools/client/shared/vendor/micromatch/micromatch.js");
+} = require("resource://devtools/client/shared/vendor/micromatch/micromatch.js");
 
 import { getRelativePath } from "../utils/sources-tree/utils";
 import { endTruncateStr } from "./utils";
@@ -18,7 +20,7 @@ import { truncateMiddleText } from "../utils/text";
 import { parse as parseURL } from "../utils/url";
 import { memoizeLast } from "../utils/memoizeLast";
 import { renderWasmText } from "./wasm";
-import { toEditorLine } from "./editor";
+import { toEditorLine } from "./editor/index";
 export { isMinified } from "./isMinified";
 
 import { isFulfilled } from "./async-value";

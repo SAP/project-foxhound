@@ -17,6 +17,10 @@ function assertEventMatches(gleanEvent, requiredValues) {
 }
 
 add_task(async function test_shopping_reanalysis_event() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.shopping.experience2023.active", true]],
+  });
+
   // testFlushAllChildren() is necessary to deal with the event being
   // recorded in content, but calling testGetValue() in parent.
   await Services.fog.testFlushAllChildren();
@@ -48,28 +52,8 @@ add_task(async function test_shopping_reanalysis_event() {
     category: "shopping",
     name: "surface_reanalyze_clicked",
   });
-});
 
-add_task(async function test_shopping_UI_chevron_clicks() {
-  await Services.fog.testFlushAllChildren();
-  Services.fog.testResetFOG();
-
-  await BrowserTestUtils.withNewTab(
-    {
-      url: "about:shoppingsidebar",
-      gBrowser,
-    },
-    async browser => {
-      await clickSettingsChevronButton(browser, MOCK_ANALYZED_PRODUCT_RESPONSE);
-    }
-  );
-
-  await Services.fog.testFlushAllChildren();
-  var events = Glean.shopping.surfaceSettingsExpandClicked.testGetValue();
-
-  Assert.greater(events.length, 0);
-  Assert.equal(events[0].category, "shopping");
-  Assert.equal(events[0].name, "surface_settings_expand_clicked");
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function test_reactivated_product_button_click() {
@@ -124,14 +108,24 @@ add_task(async function test_no_reliability_available_request_click() {
 });
 
 add_task(async function test_shopping_sidebar_displayed() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.shopping.experience2023.active", true]],
+  });
+
   Services.fog.testResetFOG();
 
   await BrowserTestUtils.withNewTab(PRODUCT_PAGE, async function (browser) {
+    let shoppingButton = document.getElementById("shopping-sidebar-button");
+    await BrowserTestUtils.waitForMutationCondition(
+      shoppingButton,
+      {
+        attributeFilter: ["shoppingsidebaropen"],
+      },
+      () => shoppingButton.getAttribute("shoppingsidebaropen") == "true"
+    );
     let sidebar = gBrowser.getPanel(browser).querySelector("shopping-sidebar");
-    await sidebar.complete;
-
     Assert.ok(
-      BrowserTestUtils.is_visible(sidebar),
+      BrowserTestUtils.isVisible(sidebar),
       "Sidebar should be visible."
     );
 
@@ -150,7 +144,7 @@ add_task(async function test_shopping_sidebar_displayed() {
     BrowserTestUtils.removeTab(contentTab);
   });
 
-  Services.fog.testFlushAllChildren();
+  await Services.fog.testFlushAllChildren();
 
   var displayedEvents = Glean.shopping.surfaceDisplayed.testGetValue();
   Assert.equal(1, displayedEvents.length);
@@ -181,6 +175,36 @@ add_task(async function test_shopping_sidebar_displayed() {
 
   Assert.equal(emptyDisplayedEvents, null);
   Assert.equal(emptyAddressBarIconDisplayedEvents, null);
+
+  // Open a product page in a background tab, verify telemetry is not recorded.
+  let backgroundTab = await BrowserTestUtils.addTab(gBrowser, PRODUCT_PAGE);
+  await Services.fog.testFlushAllChildren();
+  let tabSwitchEvents = Glean.shopping.surfaceDisplayed.testGetValue();
+  Assert.equal(tabSwitchEvents, null);
+  Services.fog.testResetFOG();
+
+  // Next, switch tabs to the backgrounded product tab and verify telemetry is
+  // recorded.
+  await BrowserTestUtils.switchTab(gBrowser, backgroundTab);
+  await Services.fog.testFlushAllChildren();
+  tabSwitchEvents = Glean.shopping.surfaceDisplayed.testGetValue();
+  Assert.equal(1, tabSwitchEvents.length);
+  assertEventMatches(tabSwitchEvents[0], {
+    category: "shopping",
+    name: "surface_displayed",
+  });
+  Services.fog.testResetFOG();
+
+  // Finally, switch tabs again and verify telemetry is not recorded for the
+  // background tab after it has been foregrounded once.
+  await BrowserTestUtils.switchTab(gBrowser, gBrowser.tabs[0]);
+  await BrowserTestUtils.switchTab(gBrowser, backgroundTab);
+  await Services.fog.testFlushAllChildren();
+  tabSwitchEvents = Glean.shopping.surfaceDisplayed.testGetValue();
+  Assert.equal(tabSwitchEvents, null);
+  Services.fog.testResetFOG();
+  BrowserTestUtils.removeTab(backgroundTab);
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function test_shopping_card_clicks() {
@@ -407,6 +431,149 @@ add_task(async function test_ads_enable_button_click() {
   );
 });
 
+add_task(async function test_auto_open_settings_toggle() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.shopping.experience2023.autoOpen.enabled", true],
+      ["browser.shopping.experience2023.autoOpen.userEnabled", true],
+    ],
+  });
+  await Services.fog.testFlushAllChildren();
+  Services.fog.testResetFOG();
+  await BrowserTestUtils.withNewTab(
+    {
+      url: "about:shoppingsidebar",
+      gBrowser,
+    },
+    async browser => {
+      let mockData = MOCK_ANALYZED_PRODUCT_RESPONSE;
+      await clickAutoOpenToggle(browser, mockData);
+      await Services.fog.testFlushAllChildren();
+      let toggledEvents =
+        Glean.shopping.surfaceAutoOpenSettingToggled.testGetValue();
+      assertEventMatches(toggledEvents[0], {
+        category: "shopping",
+        name: "surface_auto_open_setting_toggled",
+        extra: { action: "disabled" },
+      });
+
+      Services.fog.testResetFOG();
+
+      // Toggle back in the other direction.
+      await clickAutoOpenToggle(browser, mockData);
+      await Services.fog.testFlushAllChildren();
+      toggledEvents =
+        Glean.shopping.surfaceAutoOpenSettingToggled.testGetValue();
+      assertEventMatches(toggledEvents[0], {
+        category: "shopping",
+        name: "surface_auto_open_setting_toggled",
+        extra: { action: "enabled" },
+      });
+    }
+  );
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_auto_open_no_thanks_button_click() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.shopping.experience2023.autoOpen.enabled", true],
+      ["browser.shopping.experience2023.autoOpen.userEnabled", true],
+      ["browser.shopping.experience2023.showKeepSidebarClosedMessage", true],
+    ],
+  });
+
+  await Services.fog.testFlushAllChildren();
+  Services.fog.testResetFOG();
+
+  await BrowserTestUtils.withNewTab(
+    {
+      url: "about:shoppingsidebar",
+      gBrowser,
+    },
+    async browser => {
+      let mockArgs = {
+        mockData: MOCK_ANALYZED_PRODUCT_RESPONSE,
+      };
+
+      await clickNoThanksButton(browser, mockArgs);
+
+      await Services.fog.testFlushAllChildren();
+
+      let noThanksButtonEvents =
+        Glean.shopping.surfaceNoThanksButtonClicked.testGetValue();
+
+      assertEventMatches(noThanksButtonEvents[0], {
+        category: "shopping",
+        name: "surface_no_thanks_button_clicked",
+      });
+    }
+  );
+});
+
+add_task(async function test_auto_open_yes_keep_closed_button() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.shopping.experience2023.autoOpen.enabled", true],
+      ["browser.shopping.experience2023.autoOpen.userEnabled", true],
+      ["browser.shopping.experience2023.showKeepSidebarClosedMessage", true],
+    ],
+  });
+
+  await Services.fog.testFlushAllChildren();
+  Services.fog.testResetFOG();
+
+  await BrowserTestUtils.withNewTab(
+    {
+      url: "about:shoppingsidebar",
+      gBrowser,
+    },
+    async browser => {
+      let mockArgs = {
+        mockData: MOCK_ANALYZED_PRODUCT_RESPONSE,
+      };
+
+      await clickYesKeepClosedButton(browser, mockArgs);
+
+      await Services.fog.testFlushAllChildren();
+
+      let yesKeepClosedButtonEvents =
+        Glean.shopping.surfaceYesKeepClosedButtonClicked.testGetValue();
+
+      assertEventMatches(yesKeepClosedButtonEvents[0], {
+        category: "shopping",
+        name: "surface_yes_keep_closed_button_clicked",
+      });
+    }
+  );
+});
+
+add_task(async function test_auto_open_user_disabled() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.shopping.experience2023.autoOpen.enabled", true],
+      ["browser.shopping.experience2023.autoOpen.userEnabled", true],
+    ],
+  });
+
+  await Services.fog.testFlushAllChildren();
+  Services.fog.testResetFOG();
+
+  Services.prefs.setBoolPref(
+    "browser.shopping.experience2023.autoOpen.userEnabled",
+    false
+  );
+
+  await Services.fog.testFlushAllChildren();
+
+  Assert.equal(
+    Glean.shoppingSettings.autoOpenUserDisabled.testGetValue(),
+    true,
+    "Auto open should be marked as disabled"
+  );
+});
+
 function clickAdsToggle(browser, data) {
   return SpecialPowers.spawn(browser, [data], async args => {
     const { mockData, mockRecommendationData } = args;
@@ -428,6 +595,22 @@ function clickAdsToggle(browser, data) {
   });
 }
 
+function clickAutoOpenToggle(browser, data) {
+  return SpecialPowers.spawn(browser, [data], async mockData => {
+    let shoppingContainer =
+      content.document.querySelector("shopping-container").wrappedJSObject;
+    shoppingContainer.data = Cu.cloneInto(mockData, content);
+
+    await shoppingContainer.updateComplete;
+
+    let shoppingSettings = shoppingContainer.settingsEl;
+    let toggle = shoppingSettings.autoOpenToggleEl;
+    toggle.click();
+
+    await shoppingContainer.updateComplete;
+  });
+}
+
 function clickReAnalyzeLink(browser, data) {
   return SpecialPowers.spawn(browser, [data], async mockData => {
     let shoppingContainer =
@@ -440,37 +623,6 @@ function clickReAnalyzeLink(browser, data) {
 
     await shoppingMessageBar.onClickAnalysisButton();
 
-    return "clicked";
-  });
-}
-
-function clickSettingsChevronButton(browser, data) {
-  // waitForCondition relies on setTimeout, can cause intermittent test
-  // failures. Unfortunately, there is not yet a DOM Mutation observer
-  // equivalent in a utility that's available in the content process.
-
-  return SpecialPowers.spawn(browser, [data], async mockData => {
-    let shoppingContainer =
-      content.document.querySelector("shopping-container").wrappedJSObject;
-    shoppingContainer.data = Cu.cloneInto(mockData, content);
-
-    await shoppingContainer.updateComplete;
-    let shoppingSettings = shoppingContainer.settingsEl;
-    await shoppingSettings.updateComplete;
-    let shoppingCard =
-      shoppingSettings.shadowRoot.querySelector("shopping-card");
-    await shoppingCard.updateComplete;
-
-    let detailsEl = shoppingCard.detailsEl;
-    await detailsEl.updateComplete;
-
-    await ContentTaskUtils.waitForCondition(() =>
-      detailsEl.querySelector(".chevron-icon")
-    );
-
-    let chevron = detailsEl.querySelector(".chevron-icon");
-
-    chevron.click();
     return "clicked";
   });
 }
@@ -572,5 +724,39 @@ function clickReviewQualityExplainerLink(browser, data) {
     await reviewQualityLink.updateComplete;
 
     reviewQualityLink.click();
+  });
+}
+
+function clickNoThanksButton(browser, data) {
+  return SpecialPowers.spawn(browser, [data], async mockData => {
+    let shoppingContainer =
+      content.document.querySelector("shopping-container").wrappedJSObject;
+    shoppingContainer.data = Cu.cloneInto(mockData, content);
+    // Force the "keep closed" to appear
+    shoppingContainer.showingKeepClosedMessage = true;
+    await shoppingContainer.updateComplete;
+
+    let shoppingMessageBar = shoppingContainer.keepClosedMessageBarEl;
+    await shoppingMessageBar.updateComplete;
+
+    let button = shoppingMessageBar.noThanksButtonEl;
+    button.click();
+  });
+}
+
+function clickYesKeepClosedButton(browser, data) {
+  return SpecialPowers.spawn(browser, [data], async mockData => {
+    let shoppingContainer =
+      content.document.querySelector("shopping-container").wrappedJSObject;
+    shoppingContainer.data = Cu.cloneInto(mockData, content);
+    // Force the "keep closed" to appear
+    shoppingContainer.showingKeepClosedMessage = true;
+    await shoppingContainer.updateComplete;
+
+    let shoppingMessageBar = shoppingContainer.keepClosedMessageBarEl;
+    await shoppingMessageBar.updateComplete;
+
+    let button = shoppingMessageBar.yesKeepClosedButtonEl;
+    button.click();
   });
 }

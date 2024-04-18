@@ -124,7 +124,7 @@ class Repository(object):
         if self._version:
             return self._version
         info = self._run("--version").strip()
-        match = re.search("version ([^\+\)]+)", info)
+        match = re.search("version ([^+)]+)", info)
         if not match:
             raise Exception("Unable to identify tool version.")
 
@@ -687,10 +687,41 @@ class GitRepository(Repository):
     def head_ref(self):
         return self._run("rev-parse", "HEAD").strip()
 
+    def get_mozilla_upstream_remote(self) -> Optional[str]:
+        """Return the Mozilla-official upstream remote for this repo."""
+        out = self._run("remote", "-v")
+        if not out:
+            return None
+
+        remotes = out.splitlines()
+        if not remotes:
+            return None
+
+        # Prefer mozilla-unified, then find any other official-looking remote next.
+        for upstream in ("hg.mozilla.org/mozilla-unified", "hg.mozilla.org"):
+            for line in remotes:
+                name, url, action = line.split()
+
+                if upstream in url:
+                    return name
+
+        return None
+
+    def get_mozilla_remote_arg(self) -> str:
+        """Return a `--remotes` argument to limit revisions to relevant upstreams."""
+        official_remote = self.get_mozilla_upstream_remote()
+
+        # Limit remotes to official Firefox repos where possible.
+        remote_arg = f"--remotes={official_remote}" if official_remote else "--remotes"
+
+        return remote_arg
+
     @property
     def base_ref(self):
+        remote_arg = self.get_mozilla_remote_arg()
+
         refs = self._run(
-            "rev-list", "HEAD", "--topo-order", "--boundary", "--not", "--remotes"
+            "rev-list", "HEAD", "--topo-order", "--boundary", "--not", remote_arg
         ).splitlines()
         if refs:
             return refs[-1][1:]  # boundary starts with a prefix `-`
@@ -850,19 +881,23 @@ class GitRepository(Repository):
 
     def get_branch_nodes(self) -> List[str]:
         """Return a list of commit SHAs for nodes on the current branch."""
+        remote_arg = self.get_mozilla_remote_arg()
+
         return self._run(
             "log",
             "HEAD",
             "--reverse",
             "--not",
-            "--remotes",
+            remote_arg,
             "--pretty=%H",
         ).splitlines()
 
     def get_commit_patches(self, nodes: List[str]) -> List[bytes]:
         """Return the contents of the patch `node` in the VCS' standard format."""
         return [
-            self._run("format-patch", node, "-1", "--stdout").encode("utf-8")
+            self._run("format-patch", node, "-1", "--always", "--stdout").encode(
+                "utf-8"
+            )
             for node in nodes
         ]
 

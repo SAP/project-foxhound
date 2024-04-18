@@ -100,6 +100,7 @@ class AnimationTimeline : public nsISupports, public nsWrapperCache {
   virtual void RemoveAnimation(Animation* aAnimation);
   virtual void NotifyAnimationContentVisibilityChanged(Animation* aAnimation,
                                                        bool aIsVisible);
+  void UpdateHiddenByContentVisibility();
 
   virtual Document* GetDocument() const = 0;
 

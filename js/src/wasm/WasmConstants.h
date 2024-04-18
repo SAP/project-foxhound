@@ -21,7 +21,8 @@
 
 #include <stdint.h>
 
-#include "wasm/WasmIntrinsicGenerated.h"
+#include "wasm/WasmBuiltinModuleGenerated.h"
+#include "wasm/WasmSerialize.h"
 
 namespace js {
 namespace wasm {
@@ -98,6 +99,9 @@ enum class TypeCode {
 
   // A reference to any array value.
   ArrayRef = 0x6a,  // SLEB128(-0x16)
+
+  // A reference to an exception value.
+  ExnRef = 0x69,  // SLEB128(-0x17)
 
   // A null reference in the any hierarchy.
   NullAnyRef = 0x71,  // SLEB128(-0x0F)
@@ -264,6 +268,7 @@ enum class Op {
   Catch = 0x07,
   Throw = 0x08,
   Rethrow = 0x09,
+  ThrowRef = 0x0a,
   End = 0x0b,
   Br = 0x0c,
   BrIf = 0x0d,
@@ -286,6 +291,9 @@ enum class Op {
   Drop = 0x1a,
   SelectNumeric = 0x1b,
   SelectTyped = 0x1c,
+
+  // Additional exception operators
+  TryTable = 0x1f,
 
   // Variable access
   LocalGet = 0x20,
@@ -529,8 +537,8 @@ enum class GcOp {
   BrOnCastFail = 0x19,
 
   // Extern/any coercion operations
-  ExternInternalize = 0x1a,
-  ExternExternalize = 0x1b,
+  AnyConvertExtern = 0x1a,
+  ExternConvertAny = 0x1b,
 
   // I31 operations
   RefI31 = 0x1c,
@@ -950,20 +958,41 @@ enum class ThreadOp {
   Limit
 };
 
-enum class IntrinsicId {
+enum class BuiltinModuleFuncId {
 // ------------------------------------------------------------------------
-// These are part/suffix of the MozOp::Intrinsic operators that are emitted
-// internally when compiling intrinsic modules and are rejected by wasm
+// These are part/suffix of the MozOp::CallBuiltinModuleFunc operators that are
+// emitted internally when compiling intrinsic modules and are rejected by wasm
 // validation.
-// See wasm/WasmIntrinsic.yaml for the list.
-#define DECL_INTRINSIC_OP(op, export, sa_name, abitype, entry, idx) \
+// See wasm/WasmBuiltinModule.yaml for the list.
+#define VISIT_BUILTIN_FUNC(op, export, sa_name, abitype, entry, has_memory, \
+                           idx)                                             \
   op = idx,  // NOLINT
-  FOR_EACH_INTRINSIC(DECL_INTRINSIC_OP)
-#undef DECL_INTRINSIC_OP
+  FOR_EACH_BUILTIN_MODULE_FUNC(VISIT_BUILTIN_FUNC)
+#undef VISIT_BUILTIN_FUNC
 
   // Op limit.
   Limit
 };
+
+enum class BuiltinModuleId {
+  SelfTest = 0,
+  IntGemm,
+  JSString,
+};
+
+struct BuiltinModuleIds {
+  BuiltinModuleIds() = default;
+
+  bool selfTest = false;
+  bool intGemm = false;
+  bool jsString = false;
+
+  bool hasNone() const { return !selfTest && !intGemm && !jsString; }
+
+  WASM_CHECK_CACHEABLE_POD(selfTest, intGemm, jsString)
+};
+
+WASM_DECLARE_CACHEABLE_POD(BuiltinModuleIds)
 
 enum class MozOp {
   // ------------------------------------------------------------------------
@@ -1008,9 +1037,9 @@ enum class MozOp {
   OldCallDirect,
   OldCallIndirect,
 
-  // Intrinsic modules operations. The operator has argument leb u32 to specify
-  // particular operation id. See IntrinsicId above.
-  Intrinsic,
+  // Call a builtin module funcs. The operator has argument leb u32 to specify
+  // particular operation id. See BuiltinModuleFuncId above.
+  CallBuiltinModuleFunc,
 
   Limit
 };
@@ -1119,6 +1148,7 @@ static_assert(uint64_t(MaxArrayPayloadBytes) <
 
 // These limits pertain to our WebAssembly implementation only.
 
+static const unsigned MaxTryTableCatches = 10000;
 static const unsigned MaxBrTableElems = 1000000;
 static const unsigned MaxCodeSectionBytes = MaxModuleBytes;
 

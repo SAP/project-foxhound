@@ -32,6 +32,7 @@
 #include "nsIPipe.h"
 #include "nsWrapperCacheInlines.h"
 #include "HttpConnectionUDP.h"
+#include "mozilla/ProfilerBandwidthCounter.h"
 #include "mozilla/StaticPrefs_network.h"
 
 #if defined(FUZZING)
@@ -254,7 +255,10 @@ nsUDPSocket::nsUDPSocket() {
 
 nsUDPSocket::~nsUDPSocket() { CloseSocket(); }
 
-void nsUDPSocket::AddOutputBytes(uint64_t aBytes) { mByteWriteCount += aBytes; }
+void nsUDPSocket::AddOutputBytes(int32_t aBytes) {
+  mByteWriteCount += aBytes;
+  profiler_count_bandwidth_written_bytes(aBytes);
+}
 
 void nsUDPSocket::OnMsgClose() {
   UDPSOCKET_LOG(("nsUDPSocket::OnMsgClose [this=%p]\n", this));
@@ -425,6 +429,7 @@ void nsUDPSocket::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
     return;
   }
   mByteReadCount += count;
+  profiler_count_bandwidth_read_bytes(count);
 
   FallibleTArray<uint8_t> data;
   if (!data.AppendElements(buff, count, fallible)) {
@@ -1007,7 +1012,8 @@ PendingSend::OnLookupComplete(nsICancelable* request, nsIDNSRecord* aRecord,
   NetAddr addr;
   if (NS_SUCCEEDED(rec->GetNextAddr(mPort, &addr))) {
     uint32_t count;
-    nsresult rv = mSocket->SendWithAddress(&addr, mData, &count);
+    nsresult rv = mSocket->SendWithAddress(&addr, mData.Elements(),
+                                           mData.Length(), &count);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -1072,7 +1078,7 @@ class SendRequestRunnable : public Runnable {
 NS_IMETHODIMP
 SendRequestRunnable::Run() {
   uint32_t count;
-  mSocket->SendWithAddress(&mAddr, mData, &count);
+  mSocket->SendWithAddress(&mAddr, mData.Elements(), mData.Length(), &count);
   return NS_OK;
 }
 
@@ -1140,13 +1146,12 @@ nsUDPSocket::SendWithAddr(nsINetAddr* aAddr, const nsTArray<uint8_t>& aData,
 
   NetAddr netAddr;
   aAddr->GetNetAddr(&netAddr);
-  return SendWithAddress(&netAddr, aData, _retval);
+  return SendWithAddress(&netAddr, aData.Elements(), aData.Length(), _retval);
 }
 
 NS_IMETHODIMP
-nsUDPSocket::SendWithAddress(const NetAddr* aAddr,
-                             const nsTArray<uint8_t>& aData,
-                             uint32_t* _retval) {
+nsUDPSocket::SendWithAddress(const NetAddr* aAddr, const uint8_t* aData,
+                             uint32_t aLength, uint32_t* _retval) {
   NS_ENSURE_ARG(aAddr);
   NS_ENSURE_ARG_POINTER(_retval);
 
@@ -1170,8 +1175,7 @@ nsUDPSocket::SendWithAddress(const NetAddr* aAddr,
       return NS_ERROR_FAILURE;
     }
     int32_t count =
-        PR_SendTo(mFD, aData.Elements(), sizeof(uint8_t) * aData.Length(), 0,
-                  &prAddr, PR_INTERVAL_NO_WAIT);
+        PR_SendTo(mFD, aData, aLength, 0, &prAddr, PR_INTERVAL_NO_WAIT);
     if (count < 0) {
       PRErrorCode code = PR_GetError();
       return ErrorAccordingToNSPR(code);
@@ -1180,7 +1184,7 @@ nsUDPSocket::SendWithAddress(const NetAddr* aAddr,
     *_retval = count;
   } else {
     FallibleTArray<uint8_t> fallibleArray;
-    if (!fallibleArray.InsertElementsAt(0, aData, fallible)) {
+    if (!fallibleArray.AppendElements(aData, aLength, fallible)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
@@ -1188,7 +1192,7 @@ nsUDPSocket::SendWithAddress(const NetAddr* aAddr,
         new SendRequestRunnable(this, *aAddr, std::move(fallibleArray)),
         NS_DISPATCH_NORMAL);
     NS_ENSURE_SUCCESS(rv, rv);
-    *_retval = aData.Length();
+    *_retval = aLength;
   }
   return NS_OK;
 }
@@ -1232,6 +1236,7 @@ nsUDPSocket::RecvWithAddr(NetAddr* addr, nsTArray<uint8_t>& aData) {
     return NS_OK;
   }
   mByteReadCount += count;
+  profiler_count_bandwidth_read_bytes(count);
   PRNetAddrToNetAddr(&prAddr, addr);
 
   if (!aData.AppendElements(buff, count, fallible)) {

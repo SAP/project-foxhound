@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "BindingOperations.h"
 #include "FileOperations.h"
 #include "StringOperations.h"
 #include "from-clangd/HeuristicResolver.h"
@@ -1054,6 +1055,8 @@ public:
 
     J.attribute("sizeBytes", Layout.getSize().getQuantity());
 
+    emitBindingAttributes(J, *decl);
+
     auto cxxDecl = dyn_cast<CXXRecordDecl>(decl);
 
     if (cxxDecl) {
@@ -1064,7 +1067,6 @@ public:
 
         J.objectBegin();
 
-        J.attribute("pretty", getQualifiedName(BaseDecl));
         J.attribute("sym", getMangledName(CurMangleContext, BaseDecl));
 
         J.attributeBegin("props");
@@ -1198,6 +1200,8 @@ public:
     J.attribute("pretty", getQualifiedName(decl));
     J.attribute("sym", getMangledName(CurMangleContext, decl));
 
+    emitBindingAttributes(J, *decl);
+
     auto cxxDecl = dyn_cast<CXXMethodDecl>(decl);
 
     if (cxxDecl) {
@@ -1219,7 +1223,6 @@ public:
         // I think our pre-emptive dereferencing/avoidance of templates may
         // protect us from this, but it needs more investigation.
 
-        J.attribute("pretty", getQualifiedName(MethodDecl));
         J.attribute("sym", getMangledName(CurMangleContext, MethodDecl));
 
         J.objectEnd();
@@ -1308,6 +1311,42 @@ public:
     if (auto parentDecl = decl->getParent()) {
       J.attribute("parentsym", getMangledName(CurMangleContext, parentDecl));
     }
+
+    // End the top-level object.
+    J.objectEnd();
+
+    FileInfo *F = getFileInfo(Loc);
+    // we want a newline.
+    ros << '\n';
+    F->Output.push_back(std::move(ros.str()));
+  }
+
+  /**
+   * Emit structured info for a variable if it is a static class member.
+   */
+  void emitStructuredInfo(SourceLocation Loc, const VarDecl *decl) {
+    const auto *parentDecl = dyn_cast_or_null<RecordDecl>(decl->getDeclContext());
+
+    std::string json_str;
+    llvm::raw_string_ostream ros(json_str);
+    llvm::json::OStream J(ros);
+    // Start the top-level object.
+    J.objectBegin();
+
+    unsigned StartOffset = SM.getFileOffset(Loc);
+    unsigned EndOffset =
+        StartOffset + Lexer::MeasureTokenLength(Loc, SM, CI.getLangOpts());
+    J.attribute("loc", locationToString(Loc, EndOffset - StartOffset));
+    J.attribute("structured", 1);
+    J.attribute("pretty", getQualifiedName(decl));
+    J.attribute("sym", getMangledName(CurMangleContext, decl));
+    J.attribute("kind", "field");
+
+    if (parentDecl) {
+      J.attribute("parentsym", getMangledName(CurMangleContext, parentDecl));
+    }
+
+    emitBindingAttributes(J, *decl);
 
     // End the top-level object.
     J.objectEnd();
@@ -1746,6 +1785,10 @@ public:
           // we can better evaluate what is useful.
           !D2->isDependentType() &&
           !TemplateStack) {
+        if (auto *D3 = dyn_cast<CXXRecordDecl>(D2)) {
+          findBindingToJavaClass(*AstContext, *D3);
+          findBoundAsJavaClasses(*AstContext, *D3);
+        }
         emitStructuredInfo(Loc, D2);
       }
     }
@@ -1757,12 +1800,25 @@ public:
           !wasTemplate &&
           !D2->isFunctionTemplateSpecialization() &&
           !TemplateStack) {
+        if (auto *D3 = dyn_cast<CXXMethodDecl>(D2)) {
+          findBindingToJavaMember(*AstContext, *D3);
+        } else {
+          findBindingToJavaFunction(*AstContext, *D2);
+        }
         emitStructuredInfo(Loc, D2);
       }
     }
     if (FieldDecl *D2 = dyn_cast<FieldDecl>(D)) {
       if (!D2->isTemplated() &&
           !TemplateStack) {
+        emitStructuredInfo(Loc, D2);
+      }
+    }
+    if (VarDecl *D2 = dyn_cast<VarDecl>(D)) {
+      if (!D2->isTemplated() &&
+          !TemplateStack &&
+          isa<CXXRecordDecl>(D2->getDeclContext())) {
+        findBindingToJavaConstant(*AstContext, *D2);
         emitStructuredInfo(Loc, D2);
       }
     }

@@ -243,6 +243,7 @@ class nsWindow final : public nsBaseWidget {
 
   void OnScrollEvent(GdkEventScroll* aEvent);
 
+  void OnVisibilityNotifyEvent(GdkVisibilityState aState);
   void OnWindowStateEvent(GtkWidget* aWidget, GdkEventWindowState* aEvent);
   void OnDragDataReceivedEvent(GtkWidget* aWidget, GdkDragContext* aDragContext,
                                gint aX, gint aY,
@@ -285,7 +286,6 @@ class nsWindow final : public nsBaseWidget {
   bool IsDestroyed() const { return mIsDestroyed; }
   bool IsPopup() const;
   bool IsWaylandPopup() const;
-  bool IsPIPWindow() const { return mIsPIPWindow; };
   bool IsDragPopup() { return mIsDragPopup; };
 
   nsAutoCString GetDebugTag() const;
@@ -473,7 +473,6 @@ class nsWindow final : public nsBaseWidget {
   void RegisterTouchWindow() override;
 
   nsCOMPtr<nsIWidget> mParent;
-  PopupType mPopupHint{};
   mozilla::Atomic<int, mozilla::Relaxed> mCeiledScaleFactor{1};
   double mFractionalScaleFactor = 0.0;
 
@@ -657,14 +656,8 @@ class nsWindow final : public nsBaseWidget {
   bool mHasMappedToplevel : 1;
   bool mRetryPointerGrab : 1;
   bool mPanInProgress : 1;
-  // Use dedicated GdkWindow for mContainer
-  bool mDrawToContainer : 1;
   // Draw titlebar with :backdrop css state (inactive/unfocused).
   bool mTitlebarBackdropState : 1;
-  // It's undecorated popup utility window, without resizers/titlebar,
-  // movable by mouse. Used on Wayland for popups without
-  // parent (for instance WebRTC sharing indicator, notifications).
-  bool mIsWaylandPanelWindow : 1;
   // It's child window, i.e. window which is nested in parent window.
   // This is obsoleted and should not be used.
   // We use GdkWindow hierarchy for such windows.
@@ -675,6 +668,7 @@ class nsWindow final : public nsBaseWidget {
   // We can expect at least one size-allocate event after early resizes.
   bool mHasReceivedSizeAllocate : 1;
   bool mWidgetCursorLocked : 1;
+  bool mUndecorated : 1;
 
   /*  Gkt creates popup in two incarnations - wl_subsurface and xdg_popup.
    *  Kind of popup is choosen before GdkWindow is mapped so we can change

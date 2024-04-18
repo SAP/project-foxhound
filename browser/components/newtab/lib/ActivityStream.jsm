@@ -11,6 +11,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   DEFAULT_SITES: "resource://activity-stream/lib/DefaultSites.sys.mjs",
+  DefaultPrefs: "resource://activity-stream/lib/ActivityStreamPrefs.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
 });
@@ -24,11 +25,6 @@ ChromeUtils.defineModuleGetter(
   lazy,
   "AboutPreferences",
   "resource://activity-stream/lib/AboutPreferences.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "DefaultPrefs",
-  "resource://activity-stream/lib/ActivityStreamPrefs.jsm"
 );
 ChromeUtils.defineModuleGetter(
   lazy,
@@ -198,13 +194,6 @@ const PREFS_CONFIG = new Map([
     {
       title: "Show the Search bar",
       value: true,
-    },
-  ],
-  [
-    "feeds.snippets",
-    {
-      title: "Show snippets on activity stream",
-      value: false,
     },
   ],
   [

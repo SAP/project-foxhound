@@ -45,7 +45,8 @@ class BackgroundParentImpl : public PBackgroundParent {
 
   mozilla::ipc::IPCResult RecvFlushPendingFileDeletions() override;
 
-  PBackgroundSDBConnectionParent* AllocPBackgroundSDBConnectionParent(
+  already_AddRefed<PBackgroundSDBConnectionParent>
+  AllocPBackgroundSDBConnectionParent(
       const PersistenceType& aPersistenceType,
       const PrincipalInfo& aPrincipalInfo) override;
 
@@ -54,20 +55,15 @@ class BackgroundParentImpl : public PBackgroundParent {
       const PersistenceType& aPersistenceType,
       const PrincipalInfo& aPrincipalInfo) override;
 
-  bool DeallocPBackgroundSDBConnectionParent(
-      PBackgroundSDBConnectionParent* aActor) override;
-
-  PBackgroundLSDatabaseParent* AllocPBackgroundLSDatabaseParent(
-      const PrincipalInfo& aPrincipalInfo, const uint32_t& aPrivateBrowsingId,
-      const uint64_t& aDatastoreId) override;
+  already_AddRefed<PBackgroundLSDatabaseParent>
+  AllocPBackgroundLSDatabaseParent(const PrincipalInfo& aPrincipalInfo,
+                                   const uint32_t& aPrivateBrowsingId,
+                                   const uint64_t& aDatastoreId) override;
 
   mozilla::ipc::IPCResult RecvPBackgroundLSDatabaseConstructor(
       PBackgroundLSDatabaseParent* aActor, const PrincipalInfo& aPrincipalInfo,
       const uint32_t& aPrivateBrowsingId,
       const uint64_t& aDatastoreId) override;
-
-  bool DeallocPBackgroundLSDatabaseParent(
-      PBackgroundLSDatabaseParent* aActor) override;
 
   PBackgroundLSObserverParent* AllocPBackgroundLSObserverParent(
       const uint64_t& aObserverId) override;
@@ -138,7 +134,7 @@ class BackgroundParentImpl : public PBackgroundParent {
       const nsAString& aURL, nsIPrincipal* aPrincipal,
       const mozilla::Maybe<IPCClientInfo>& aClientInfo, const bool& aDedicated,
       const bool& aRequireUnreliable, const uint32_t& aCongestionControl,
-      // Sequence<WebTransportHash>* aServerCertHashes,
+      nsTArray<WebTransportHash>&& aServerCertHashes,
       Endpoint<PWebTransportParent>&& aParentEndpoint,
       CreateWebTransportParentResolver&& aResolver) override;
 
@@ -164,16 +160,13 @@ class BackgroundParentImpl : public PBackgroundParent {
 
   bool DeallocPFileCreatorParent(PFileCreatorParent* aActor) override;
 
-  mozilla::dom::PRemoteWorkerControllerParent*
+  already_AddRefed<mozilla::dom::PRemoteWorkerControllerParent>
   AllocPRemoteWorkerControllerParent(
       const mozilla::dom::RemoteWorkerData& aRemoteWorkerData) override;
 
   mozilla::ipc::IPCResult RecvPRemoteWorkerControllerConstructor(
       mozilla::dom::PRemoteWorkerControllerParent* aActor,
       const mozilla::dom::RemoteWorkerData& aRemoteWorkerData) override;
-
-  bool DeallocPRemoteWorkerControllerParent(
-      mozilla::dom::PRemoteWorkerControllerParent* aActor) override;
 
   already_AddRefed<PRemoteWorkerServiceParent> AllocPRemoteWorkerServiceParent()
       override;
@@ -243,9 +236,7 @@ class BackgroundParentImpl : public PBackgroundParent {
       const nsID& aUUID, const nsID& aDestinationUUID,
       const uint32_t& aSequenceID) override;
 
-  PQuotaParent* AllocPQuotaParent() override;
-
-  bool DeallocPQuotaParent(PQuotaParent* aActor) override;
+  already_AddRefed<PQuotaParent> AllocPQuotaParent() override;
 
   mozilla::ipc::IPCResult RecvShutdownQuotaManager() override;
 
@@ -293,9 +284,7 @@ class BackgroundParentImpl : public PBackgroundParent {
       PHttpBackgroundChannelParent* aActor,
       const uint64_t& aChannelId) override;
 
-  PClientManagerParent* AllocPClientManagerParent() override;
-
-  bool DeallocPClientManagerParent(PClientManagerParent* aActor) override;
+  already_AddRefed<PClientManagerParent> AllocPClientManagerParent() override;
 
   mozilla::ipc::IPCResult RecvPClientManagerConstructor(
       PClientManagerParent* aActor) override;
@@ -353,6 +342,7 @@ class BackgroundParentImpl : public PBackgroundParent {
       EnsureUtilityProcessAndCreateBridgeResolver&& aResolver) override;
 
   mozilla::ipc::IPCResult RecvRequestCameraAccess(
+      const bool& aAllowPermissionRequest,
       RequestCameraAccessResolver&& aResolver) override;
 
   bool DeallocPEndpointForReportParent(

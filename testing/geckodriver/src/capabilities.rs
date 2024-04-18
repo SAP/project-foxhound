@@ -18,35 +18,22 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::default::Default;
 use std::ffi::OsString;
-use std::fmt::{self, Display};
 use std::fs;
 use std::io;
 use std::io::BufWriter;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::str::{self, FromStr};
+use thiserror::Error;
 use webdriver::capabilities::{BrowserCapabilities, Capabilities};
 use webdriver::error::{ErrorStatus, WebDriverError, WebDriverResult};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
 enum VersionError {
-    VersionError(mozversion::Error),
+    #[error(transparent)]
+    VersionError(#[from] mozversion::Error),
+    #[error("No binary provided")]
     MissingBinary,
-}
-
-impl From<mozversion::Error> for VersionError {
-    fn from(err: mozversion::Error) -> VersionError {
-        VersionError::VersionError(err)
-    }
-}
-
-impl Display for VersionError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            VersionError::VersionError(ref x) => x.fmt(f),
-            VersionError::MissingBinary => "No binary provided".fmt(f),
-        }
-    }
 }
 
 impl From<VersionError> for WebDriverError {
@@ -390,17 +377,12 @@ impl AndroidOptions {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub enum ProfileType {
     Path(Profile),
     Named,
+    #[default]
     Temporary,
-}
-
-impl Default for ProfileType {
-    fn default() -> Self {
-        ProfileType::Temporary
-    }
 }
 
 /// Rust representation of `moz:firefoxOptions`.
@@ -703,7 +685,7 @@ impl FirefoxOptions {
 
             // https://developer.android.com/studio/build/application-id
             let package_regexp =
-                Regex::new(r#"^([a-zA-Z][a-zA-Z0-9_]*\.){1,}([a-zA-Z][a-zA-Z0-9_]*)$"#).unwrap();
+                Regex::new(r"^([a-zA-Z][a-zA-Z0-9_]*\.){1,}([a-zA-Z][a-zA-Z0-9_]*)$").unwrap();
             if !package_regexp.is_match(package.as_bytes()) {
                 return Err(WebDriverError::new(
                     ErrorStatus::InvalidArgument,

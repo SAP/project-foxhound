@@ -11,6 +11,17 @@ async function send_authinfo_and_open_pin_section(ops) {
   reset_about_page(doc);
   send_auth_info_and_check_categories(doc, ops);
 
+  ["credentials-tab-button", "bio-enrollments-tab-button"].forEach(
+    button_id => {
+      let button = doc.getElementById(button_id);
+      is(
+        button.style.display,
+        "none",
+        button_id + " in the sidebar not hidden"
+      );
+    }
+  );
+
   if (ops.clientPin !== null) {
     let pin_tab_button = doc.getElementById("pin-tab-button");
     // Check if PIN section is visible
@@ -120,6 +131,8 @@ add_task(async function pin_switch_back_and_forth() {
   let info_tab_button = doc.getElementById("info-tab-button");
   let info_section = doc.getElementById("token-info-section");
 
+  // a11y-tree is racy here, so we have to wait a tick for it to get up to date
+  await TestUtils.waitForTick();
   // Now click the "info"-button and verify the correct buttons are highlighted
   info_tab_button.click();
   // await info_promise;

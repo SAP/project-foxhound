@@ -46,47 +46,78 @@ async function addTab(url) {
 }
 
 /**
- * Create a simple network event owner, with empty implementations of all
+ * Base network event owner class implementing all mandatory callbacks and
+ * keeping track of which callbacks have been called.
+ */
+class NetworkEventOwner {
+  hasEventTimings = false;
+  hasResponseCache = false;
+  hasResponseContent = false;
+  hasResponseStart = false;
+  hasSecurityInfo = false;
+  hasServerTimings = false;
+
+  addEventTimings() {
+    this.hasEventTimings = true;
+  }
+  addResponseCache() {
+    this.hasResponseCache = true;
+  }
+  addResponseContent() {
+    this.hasResponseContent = true;
+  }
+  addResponseStart() {
+    this.hasResponseStart = true;
+  }
+  addSecurityInfo() {
+    this.hasSecurityInfo = true;
+  }
+  addServerTimings() {
+    this.hasServerTimings = true;
+  }
+  addServiceWorkerTimings() {
+    this.hasServiceWorkerTimings = true;
+  }
+}
+
+/**
+ * Create a simple network event owner, with mock implementations of all
  * the expected APIs for a NetworkEventOwner.
  */
 function createNetworkEventOwner(event) {
-  return {
-    addEventTimings: () => {},
-    addResponseCache: () => {},
-    addResponseContent: () => {},
-    addResponseStart: () => {},
-    addSecurityInfo: () => {},
-    addServerTimings: () => {},
-  };
+  return new NetworkEventOwner();
 }
 
 /**
  * Wait for network events matching the provided URL, until the count reaches
  * the provided expected count.
  *
- * @param {string} expectedUrl
- *     The URL which should be monitored by the NetworkObserver.
+ * @param {string|null} expectedUrl
+ *     The URL which should be monitored by the NetworkObserver.If set to null watch for
+ *      all requests
  * @param {number} expectedRequestsCount
  *     How many different events (requests) are expected.
  * @returns {Promise}
- *     A promise which will resolve with the current count, when the expected
- *     count is reached.
+ *     A promise which will resolve with an array of network event owners, when
+ *     the expected event count is reached.
  */
-async function waitForNetworkEvents(expectedUrl, expectedRequestsCount) {
-  let eventsCount = 0;
+async function waitForNetworkEvents(expectedUrl = null, expectedRequestsCount) {
+  const events = [];
   const networkObserver = new NetworkObserver({
-    ignoreChannelFunction: channel => channel.URI.spec !== expectedUrl,
-    onNetworkEvent: event => {
+    ignoreChannelFunction: channel =>
+      expectedUrl ? channel.URI.spec !== expectedUrl : false,
+    onNetworkEvent: () => {
       info("waitForNetworkEvents received a new event");
-      eventsCount++;
-      return createNetworkEventOwner(event);
+      const owner = createNetworkEventOwner();
+      events.push(owner);
+      return owner;
     },
   });
   registerCleanupFunction(() => networkObserver.destroy());
 
   info("Wait until the events count reaches " + expectedRequestsCount);
   await BrowserTestUtils.waitForCondition(
-    () => eventsCount >= expectedRequestsCount
+    () => events.length >= expectedRequestsCount
   );
-  return eventsCount;
+  return events;
 }

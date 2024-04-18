@@ -92,16 +92,8 @@ const RECORDS = {
 };
 
 add_setup(async () => {
-  Services.prefs.setBoolPref("browser.search.log", true);
-  Services.prefs.setBoolPref(
-    "browser.search.serpEventTelemetryCategorization.enabled",
-    true
-  );
-
   // Testing with Remote Settings requires a profile.
   do_get_profile();
-
-  // Clear existing Remote Settings data.
   await db.clear();
 });
 

@@ -295,6 +295,10 @@ quickactions-cmd-plugins = plugins
 quickactions-print2 = Print page
 quickactions-cmd-print = print
 
+# Opens the print dialog at the save to PDF option
+quickactions-savepdf = Save page as PDF
+quickactions-cmd-savepdf = pdf
+
 # Opens a new private browsing window
 quickactions-private2 = Open private window
 quickactions-cmd-private = private browsing
@@ -373,6 +377,7 @@ identity-connection-secure = Connection secure
 identity-connection-failure = Connection failure
 identity-connection-internal = This is a secure { -brand-short-name } page.
 identity-connection-file = This page is stored on your computer.
+identity-connection-associated = This page is loaded from another page.
 identity-extension-page = This page is loaded from an extension.
 identity-active-blocked = { -brand-short-name } has blocked parts of this page that are not secure.
 identity-custom-root = Connection verified by a certificate issuer that is not recognized by Mozilla.
@@ -507,6 +512,10 @@ sharing-warning-disable-for-session =
   .label = Disable sharing protection for this session
 
 ## URL Bar
+
+# This string is used as an accessible name to the "X" button that cancels a custom search mode (i.e. exits the Amazon.com search mode).
+urlbar-search-mode-indicator-close =
+  .aria-label = Close
 
 # This placeholder is used when not in search mode and the user's default search
 # engine is unknown.

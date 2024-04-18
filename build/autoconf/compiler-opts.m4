@@ -77,7 +77,7 @@ dnl ========================================================
 
 if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -z "$MOZ_DISABLE_ICF" -a -z "$DEVELOPER_OPTIONS"; then
     AC_CACHE_CHECK([whether the linker supports Identical Code Folding],
-        LD_SUPPORTS_ICF,
+        moz_cv_opt_ld_supports_icf,
         [echo 'int foo() {return 42;}' \
               'int bar() {return 42;}' \
               'int main() {return foo() - bar();}' > conftest.${ac_ext}
@@ -86,12 +86,12 @@ if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -z "$MOZ_DISABLE_ICF" -a -z "$DEVELOPE
         if AC_TRY_COMMAND([${CC-cc} -o conftest${ac_exeext} $LDFLAGS -Wl,--icf=safe -ffunction-sections conftest.${ac_ext} $LIBS 1>&2]) &&
            test -s conftest${ac_exeext} &&
            $LLVM_OBJDUMP -t conftest${ac_exeext} | awk changequote(<<, >>)'{a[<<$>>6] = <<$>>1} END {if (a["foo"] && (a["foo"] != a["bar"])) { exit 1 }}'changequote([, ]); then
-            LD_SUPPORTS_ICF=yes
+            moz_cv_opt_ld_supports_icf=yes
         else
-            LD_SUPPORTS_ICF=no
+            moz_cv_opt_ld_supports_icf=no
         fi
         rm -rf conftest*])
-    if test "$LD_SUPPORTS_ICF" = yes; then
+    if test "$moz_cv_opt_ld_supports_icf" = yes; then
         _SAVE_LDFLAGS="$LDFLAGS -Wl,--icf=safe"
         LDFLAGS="$LDFLAGS -Wl,--icf=safe -Wl,--print-icf-sections"
         AC_TRY_LINK([], [],
@@ -100,6 +100,41 @@ if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -z "$MOZ_DISABLE_ICF" -a -z "$DEVELOPE
         AC_SUBST([LD_PRINT_ICF_SECTIONS])
         LDFLAGS="$_SAVE_LDFLAGS"
     fi
+fi
+
+dnl ========================================================
+dnl = Detect static linkage of libstdc++
+dnl ========================================================
+
+if test "$OS_TARGET" = Linux; then
+
+AC_CACHE_CHECK([whether we're trying to statically link with libstdc++],
+    moz_cv_opt_static_libstdcxx,
+    [moz_cv_opt_static_libstdcxx=no
+     AC_LANG_SAVE
+     AC_LANG_CPLUSPLUS
+     cat > conftest.$ac_ext <<EOF
+#include <iostream>
+int main() { std::cout << 1; }
+EOF
+     dnl This test is quite conservative: it assumes dynamic linkage if the compilation step fails or if
+     dnl the binary format is not supported. But it still detects basic issues.
+     if AC_TRY_EVAL([ac_link]) && test -s conftest${ac_exeext} && $LLVM_OBJDUMP --private-headers conftest${ac_exeext} 2> conftest.err 1> conftest.out
+     then
+         if test -s conftest.err
+         then :
+         elif grep -q -E 'NEEDED.*lib(std)?c\+\+' conftest.out
+         then :
+         else moz_cv_opt_static_libstdcxx=yes
+         fi
+     fi
+     AC_LANG_RESTORE
+     rm -f conftest*
+])
+if test "$moz_cv_opt_static_libstdcxx" = "yes"; then
+    AC_MSG_ERROR([Firefox does not support linking statically with libstdc++])
+fi
+
 fi
 
 dnl ========================================================
@@ -119,7 +154,7 @@ if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -z "$DEVELOPER_OPTIONS" -a -z "$MOZ_PR
     if test -n "$MOZ_DEBUG_FLAGS"; then
         dnl See bug 670659
         AC_CACHE_CHECK([whether removing dead symbols breaks debugging],
-            GC_SECTIONS_BREAKS_DEBUG_RANGES,
+            moz_cv_opt_gc_sections_breaks_debug_ranges,
             [echo 'int foo() {return 42;}' \
                   'int bar() {return 1;}' \
                   'int main() {return foo();}' > conftest.${ac_ext}
@@ -128,16 +163,16 @@ if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -z "$DEVELOPER_OPTIONS" -a -z "$MOZ_PR
                 test -s conftest${ac_exeext} -a -s conftest.${ac_objext}; then
                  if test "`$PYTHON3 -m mozbuild.configure.check_debug_ranges conftest.${ac_objext} conftest.${ac_ext}`" = \
                          "`$PYTHON3 -m mozbuild.configure.check_debug_ranges conftest${ac_exeext} conftest.${ac_ext}`"; then
-                     GC_SECTIONS_BREAKS_DEBUG_RANGES=no
+                     moz_cv_opt_gc_sections_breaks_debug_ranges=no
                  else
-                     GC_SECTIONS_BREAKS_DEBUG_RANGES=yes
+                     moz_cv_opt_gc_sections_breaks_debug_ranges=yes
                  fi
              else
                   dnl We really don't expect to get here, but just in case
-                  GC_SECTIONS_BREAKS_DEBUG_RANGES="no, but it's broken in some other way"
+                  moz_cv_opt_gc_sections_breaks_debug_ranges="no, but it's broken in some other way"
              fi
              rm -rf conftest*])
-         if test "$GC_SECTIONS_BREAKS_DEBUG_RANGES" = no; then
+         if test "$moz_cv_opt_gc_sections_breaks_debug_ranges" = no; then
              DSO_LDOPTS="$DSO_LDOPTS -Wl,--gc-sections"
          fi
     else

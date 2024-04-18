@@ -1649,21 +1649,12 @@ bool frontend::StencilModuleMetadata::initModule(
   return true;
 }
 
-bool ModuleBuilder::isAssertionSupported(JS::ImportAssertion supportedAssertion,
-                                         frontend::TaggedParserAtomIndex key) {
+bool ModuleBuilder::isAssertionSupported(frontend::TaggedParserAtomIndex key) {
   if (!key.isWellKnownAtomId()) {
     return false;
   }
 
-  bool result = false;
-
-  switch (supportedAssertion) {
-    case JS::ImportAssertion::Type:
-      result = key.toWellKnownAtomId() == WellKnownAtomId::type;
-      break;
-  }
-
-  return result;
+  return key.toWellKnownAtomId() == WellKnownAtomId::type;
 }
 
 bool ModuleBuilder::processAssertions(frontend::StencilModuleRequest& request,
@@ -1672,21 +1663,19 @@ bool ModuleBuilder::processAssertions(frontend::StencilModuleRequest& request,
 
   for (ParseNode* assertionItem : assertionList->contents()) {
     BinaryNode* assertion = &assertionItem->as<BinaryNode>();
-    MOZ_ASSERT(assertion->isKind(ParseNodeKind::ImportAssertion));
+    MOZ_ASSERT(assertion->isKind(ParseNodeKind::ImportAttribute));
 
     auto key = assertion->left()->as<NameNode>().atom();
     auto value = assertion->right()->as<NameNode>().atom();
 
-    for (JS::ImportAssertion assertion : fc_->getSupportedImportAssertions()) {
-      if (isAssertionSupported(assertion, key)) {
-        markUsedByStencil(key);
-        markUsedByStencil(value);
+    if (isAssertionSupported(key)) {
+      markUsedByStencil(key);
+      markUsedByStencil(value);
 
-        StencilModuleAssertion assertionStencil(key, value);
-        if (!request.assertions.append(assertionStencil)) {
-          js::ReportOutOfMemory(fc_);
-          return false;
-        }
+      StencilModuleAssertion assertionStencil(key, value);
+      if (!request.assertions.append(assertionStencil)) {
+        js::ReportOutOfMemory(fc_);
+        return false;
       }
     }
   }
@@ -1709,7 +1698,7 @@ bool ModuleBuilder::processImport(frontend::BinaryNode* importNode) {
   MOZ_ASSERT(moduleSpec->isKind(ParseNodeKind::StringExpr));
 
   auto* assertionList = &moduleRequest->right()->as<ListNode>();
-  MOZ_ASSERT(assertionList->isKind(ParseNodeKind::ImportAssertionList));
+  MOZ_ASSERT(assertionList->isKind(ParseNodeKind::ImportAttributeList));
 
   auto specifier = moduleSpec->atom();
   MaybeModuleRequestIndex moduleRequestIndex =
@@ -1954,7 +1943,7 @@ bool ModuleBuilder::processExportFrom(frontend::BinaryNode* exportNode) {
   MOZ_ASSERT(moduleSpec->isKind(ParseNodeKind::StringExpr));
 
   auto* assertionList = &moduleRequest->right()->as<ListNode>();
-  MOZ_ASSERT(assertionList->isKind(ParseNodeKind::ImportAssertionList));
+  MOZ_ASSERT(assertionList->isKind(ParseNodeKind::ImportAttributeList));
 
   auto specifier = moduleSpec->atom();
   MaybeModuleRequestIndex moduleRequestIndex =
@@ -2189,11 +2178,21 @@ static bool EvaluateDynamicImportOptions(
   RootedObject assertWrapperObject(cx, &optionsArg.toObject());
   RootedValue assertValue(cx);
 
-  // Step 10.b. Let assertionsObj be Get(options, "assert").
-  RootedId assertId(cx, NameToId(cx->names().assert_));
-  if (!GetProperty(cx, assertWrapperObject, assertWrapperObject, assertId,
+  // Step 10.b. Let attributesObj be Completion(Get(options, "with")).
+  RootedId withId(cx, NameToId(cx->names().with));
+  if (!GetProperty(cx, assertWrapperObject, assertWrapperObject, withId,
                    &assertValue)) {
     return false;
+  }
+
+  if (assertValue.isUndefined() &&
+      cx->options().importAttributesAssertSyntax()) {
+    // Step 10.b. Let assertionsObj be Get(options, "assert").
+    RootedId assertId(cx, NameToId(cx->names().assert_));
+    if (!GetProperty(cx, assertWrapperObject, assertWrapperObject, assertId,
+                     &assertValue)) {
+      return false;
+    }
   }
 
   // Step 10.d. If assertionsObj is not undefined.
@@ -2231,9 +2230,11 @@ static bool EvaluateDynamicImportOptions(
 
   // Step 10.d.iv. Let supportedAssertions be
   // !HostGetSupportedImportAssertions().
-  const JS::ImportAssertionVector& supportedAssertions =
-      cx->runtime()->supportedImportAssertions;
-
+  // Note: This should be driven by a host hook, howver the infrastructure of
+  //       said host hook is deeply unclear, and so right now embedders will
+  //       not have the ability to alter or extend the set of supported
+  //       assertion types.
+  //       See https://bugzilla.mozilla.org/show_bug.cgi?id=1840723.
   size_t numberOfValidAssertions = 0;
 
   // Step 10.d.v. For each String key of keys,
@@ -2257,29 +2258,22 @@ static bool EvaluateDynamicImportOptions(
 
     // Step 10.d.v.4. If supportedAssertions contains key, then Append {
     // [[Key]]: key, [[Value]]: value } to assertions.
-    for (JS::ImportAssertion assertion : supportedAssertions) {
-      bool supported = false;
-      switch (assertion) {
-        case JS::ImportAssertion::Type: {
-          supported = key.toAtom() == cx->names().type;
-        } break;
+    // Note: We only currently support the "type" assertion; this will need
+    // extension
+    bool supported = key.isAtom() ? key.toAtom() == cx->names().type : false;
+    if (supported) {
+      Rooted<PlainObject*> assertionObj(cx, NewPlainObject(cx));
+      if (!assertionObj) {
+        return false;
       }
 
-      if (supported) {
-        Rooted<PlainObject*> assertionObj(cx, NewPlainObject(cx));
-        if (!assertionObj) {
-          return false;
-        }
-
-        if (!DefineDataProperty(cx, assertionObj, key, value,
-                                JSPROP_ENUMERATE)) {
-          return false;
-        }
-
-        assertionArray->initDenseElement(numberOfValidAssertions,
-                                         ObjectValue(*assertionObj));
-        ++numberOfValidAssertions;
+      if (!DefineDataProperty(cx, assertionObj, key, value, JSPROP_ENUMERATE)) {
+        return false;
       }
+
+      assertionArray->initDenseElement(numberOfValidAssertions,
+                                       ObjectValue(*assertionObj));
+      ++numberOfValidAssertions;
     }
   }
 
@@ -2293,6 +2287,8 @@ static bool EvaluateDynamicImportOptions(
   return true;
 }
 
+// ShadowRealmImportValue duplicates some of this, so be sure to keep these in
+// sync.
 JSObject* js::StartDynamicModuleImport(JSContext* cx, HandleScript script,
                                        HandleValue specifierArg,
                                        HandleValue optionsArg) {
@@ -2331,9 +2327,6 @@ JSObject* js::StartDynamicModuleImport(JSContext* cx, HandleScript script,
     return promise;
   }
 
-  RootedValue referencingPrivate(cx, script->sourceObject()->getPrivate());
-  cx->runtime()->addRefScriptPrivate(referencingPrivate);
-
   Rooted<JSAtom*> specifierAtom(cx, AtomizeString(cx, specifier));
   if (!specifierAtom) {
     if (!RejectPromiseWithPendingError(cx, promise)) {
@@ -2359,9 +2352,8 @@ JSObject* js::StartDynamicModuleImport(JSContext* cx, HandleScript script,
     return promise;
   }
 
+  RootedValue referencingPrivate(cx, script->sourceObject()->getPrivate());
   if (!importHook(cx, referencingPrivate, moduleRequest, promise)) {
-    cx->runtime()->releaseScriptPrivate(referencingPrivate);
-
     // If there's no exception pending then the script is terminating
     // anyway, so just return nullptr.
     if (!cx->isExceptionPending() ||
@@ -2419,30 +2411,117 @@ bool js::OnModuleEvaluationFailure(JSContext* cx,
   return JS::AddPromiseReactions(cx, evaluationPromise, nullptr, onRejected);
 }
 
+// This is used to marshal some of the arguments to FinishDynamicModuleImport
+// and pass them through to the promise resolve and reject callbacks. It holds a
+// reference to the referencing private to keep it alive until it is needed.
+class DynamicImportContextObject : public NativeObject {
+ public:
+  enum { ReferencingPrivateSlot = 0, SpecifierSlot, SlotCount };
+
+  static const JSClass class_;
+  static const JSClassOps classOps_;
+
+  [[nodiscard]] static DynamicImportContextObject* create(
+      JSContext* cx, Handle<Value> referencingPrivate,
+      Handle<JSString*> specifier);
+
+  Value referencingPrivate() const;
+  JSString* specifier() const;
+
+  static void clearReferencingPrivate(JSRuntime* runtime,
+                                      DynamicImportContextObject* ic);
+
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
+};
+
+/* static */
+const JSClass DynamicImportContextObject::class_ = {
+    "DynamicImportContextObject",
+    JSCLASS_HAS_RESERVED_SLOTS(DynamicImportContextObject::SlotCount) |
+        JSCLASS_SLOT0_IS_NSISUPPORTS | JSCLASS_FOREGROUND_FINALIZE,
+    &DynamicImportContextObject::classOps_};
+static_assert(DynamicImportContextObject::ReferencingPrivateSlot == 0);
+
+/* static */
+const JSClassOps DynamicImportContextObject::classOps_ = {
+    nullptr,                               // addProperty
+    nullptr,                               // delProperty
+    nullptr,                               // enumerate
+    nullptr,                               // newEnumerate
+    nullptr,                               // resolve
+    nullptr,                               // mayResolve
+    DynamicImportContextObject::finalize,  // finalize
+    nullptr,                               // call
+    nullptr,                               // construct
+    nullptr,                               // trace
+};
+
+/* static */
+DynamicImportContextObject* DynamicImportContextObject::create(
+    JSContext* cx, Handle<Value> referencingPrivate,
+    Handle<JSString*> specifier) {
+  Rooted<DynamicImportContextObject*> self(
+      cx, NewObjectWithGivenProto<DynamicImportContextObject>(cx, nullptr));
+  if (!self) {
+    return nullptr;
+  }
+
+  cx->runtime()->addRefScriptPrivate(referencingPrivate);
+
+  self->initReservedSlot(ReferencingPrivateSlot, referencingPrivate);
+  self->initReservedSlot(SpecifierSlot, StringValue(specifier));
+  return self;
+}
+
+Value DynamicImportContextObject::referencingPrivate() const {
+  return getReservedSlot(ReferencingPrivateSlot);
+}
+
+JSString* DynamicImportContextObject::specifier() const {
+  Value value = getReservedSlot(SpecifierSlot);
+  if (value.isUndefined()) {
+    return nullptr;
+  }
+
+  return value.toString();
+}
+
+/* static */
+void DynamicImportContextObject::finalize(JS::GCContext* gcx, JSObject* obj) {
+  auto* context = &obj->as<DynamicImportContextObject>();
+  clearReferencingPrivate(gcx->runtime(), context);
+}
+
+/* static */
+void DynamicImportContextObject::clearReferencingPrivate(
+    JSRuntime* runtime, DynamicImportContextObject* context) {
+  Value value = context->referencingPrivate();
+  if (!value.isUndefined()) {
+    context->setReservedSlot(ReferencingPrivateSlot, UndefinedValue());
+    runtime->releaseScriptPrivate(value);
+  }
+}
+
 // Adjustment for Top-level await;
 // See: https://github.com/tc39/proposal-dynamic-import/pull/71/files
 static bool OnResolvedDynamicModule(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.get(0).isUndefined());
 
-  // This is a hack to allow us to have the 2 extra variables needed
-  // for FinishDynamicModuleImport in the resolve callback.
-  Rooted<ListObject*> resolvedModuleParams(cx,
-                                           ExtraFromHandler<ListObject>(args));
-  MOZ_ASSERT(resolvedModuleParams->length() == 2);
-  RootedValue referencingPrivate(cx, resolvedModuleParams->get(0));
+  Rooted<DynamicImportContextObject*> context(
+      cx, ExtraFromHandler<DynamicImportContextObject>(args));
+  auto clearRef = mozilla::MakeScopeExit([&] {
+    DynamicImportContextObject::clearReferencingPrivate(cx->runtime(), context);
+  });
 
-  Rooted<JSAtom*> specifier(
-      cx, AtomizeString(cx, resolvedModuleParams->get(1).toString()));
+  RootedValue referencingPrivate(cx, context->referencingPrivate());
+
+  Rooted<JSAtom*> specifier(cx, AtomizeString(cx, context->specifier()));
   if (!specifier) {
     return false;
   }
 
   Rooted<PromiseObject*> promise(cx, TargetFromHandler<PromiseObject>(args));
-
-  auto releasePrivate = mozilla::MakeScopeExit(
-      [&] { cx->runtime()->releaseScriptPrivate(referencingPrivate); });
-
   RootedObject moduleRequest(
       cx, ModuleRequestObject::create(cx, specifier, nullptr));
   if (!moduleRequest) {
@@ -2451,7 +2530,6 @@ static bool OnResolvedDynamicModule(JSContext* cx, unsigned argc, Value* vp) {
 
   RootedObject result(
       cx, CallModuleResolveHook(cx, referencingPrivate, moduleRequest));
-
   if (!result) {
     return RejectPromiseWithPendingError(cx, promise);
   }
@@ -2483,72 +2561,60 @@ static bool OnRejectedDynamicModule(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   HandleValue error = args.get(0);
 
-  RootedValue referencingPrivate(cx, ExtraValueFromHandler(args));
-  Rooted<PromiseObject*> promise(cx, TargetFromHandler<PromiseObject>(args));
+  Rooted<DynamicImportContextObject*> context(
+      cx, ExtraFromHandler<DynamicImportContextObject>(args));
+  auto clearRef = mozilla::MakeScopeExit([&] {
+    DynamicImportContextObject::clearReferencingPrivate(cx->runtime(), context);
+  });
 
-  auto releasePrivate = mozilla::MakeScopeExit(
-      [&] { cx->runtime()->releaseScriptPrivate(referencingPrivate); });
+  RootedValue referencingPrivate(cx, context->referencingPrivate());
+  Rooted<PromiseObject*> promise(cx, TargetFromHandler<PromiseObject>(args));
 
   args.rval().setUndefined();
   return PromiseObject::reject(cx, promise, error);
 };
 
-bool FinishDynamicModuleImport_impl(JSContext* cx,
-                                    HandleObject evaluationPromise,
-                                    HandleValue referencingPrivate,
-                                    HandleObject moduleRequest,
-                                    HandleObject promiseArg) {
-  Rooted<ListObject*> resolutionArgs(cx, ListObject::create(cx));
-  if (!resolutionArgs || !resolutionArgs->append(cx, referencingPrivate)) {
-    return false;
+bool js::FinishDynamicModuleImport(JSContext* cx,
+                                   HandleObject evaluationPromise,
+                                   HandleValue referencingPrivate,
+                                   HandleObject moduleRequest,
+                                   HandleObject promise) {
+  // If we do not have an evaluation promise or a module request for the module,
+  // we can assume that evaluation has failed or been interrupted -- we can
+  // reject the dynamic module.
+
+  if (!evaluationPromise || !moduleRequest) {
+    return RejectPromiseWithPendingError(cx, promise.as<PromiseObject>());
   }
-  Rooted<Value> stringValue(
-      cx, StringValue(moduleRequest->as<ModuleRequestObject>().specifier()));
-  if (!resolutionArgs->append(cx, stringValue)) {
+
+  Rooted<JSString*> specifier(
+      cx, moduleRequest->as<ModuleRequestObject>().specifier());
+  Rooted<DynamicImportContextObject*> context(
+      cx,
+      DynamicImportContextObject::create(cx, referencingPrivate, specifier));
+  if (!context) {
     return false;
   }
 
-  Rooted<Value> resolutionArgsValue(cx, ObjectValue(*resolutionArgs));
-
+  Rooted<Value> contextValue(cx, ObjectValue(*context));
   RootedFunction onResolved(
-      cx, NewHandlerWithExtraValue(cx, OnResolvedDynamicModule, promiseArg,
-                                   resolutionArgsValue));
+      cx, NewHandlerWithExtraValue(cx, OnResolvedDynamicModule, promise,
+                                   contextValue));
   if (!onResolved) {
     return false;
   }
 
   RootedFunction onRejected(
-      cx, NewHandlerWithExtraValue(cx, OnRejectedDynamicModule, promiseArg,
-                                   referencingPrivate));
+      cx, NewHandlerWithExtraValue(cx, OnRejectedDynamicModule, promise,
+                                   contextValue));
   if (!onRejected) {
     return false;
   }
 
-  return JS::AddPromiseReactionsIgnoringUnhandledRejection(
-      cx, evaluationPromise, onResolved, onRejected);
-}
-
-bool js::FinishDynamicModuleImport(JSContext* cx,
-                                   HandleObject evaluationPromise,
-                                   HandleValue referencingPrivate,
-                                   HandleObject moduleRequest,
-                                   HandleObject promiseArg) {
-  // If we do not have an evaluation promise or a module request for the module,
-  // we can assume that evaluation has failed or been interrupted -- we can
-  // reject the dynamic module.
-  auto releasePrivate = mozilla::MakeScopeExit(
-      [&] { cx->runtime()->releaseScriptPrivate(referencingPrivate); });
-
-  if (!evaluationPromise || !moduleRequest) {
-    Handle<PromiseObject*> promise = promiseArg.as<PromiseObject>();
-    return RejectPromiseWithPendingError(cx, promise);
-  }
-
-  if (!FinishDynamicModuleImport_impl(cx, evaluationPromise, referencingPrivate,
-                                      moduleRequest, promiseArg)) {
+  if (!JS::AddPromiseReactionsIgnoringUnhandledRejection(
+          cx, evaluationPromise, onResolved, onRejected)) {
     return false;
   }
 
-  releasePrivate.release();
   return true;
 }

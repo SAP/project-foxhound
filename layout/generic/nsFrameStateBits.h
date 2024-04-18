@@ -338,6 +338,10 @@ FRAME_STATE_BIT(FlexContainer, 23, NS_STATE_FLEX_DID_PUSH_ITEMS)
 // We've merged some OverflowList children since last reflow.
 FRAME_STATE_BIT(FlexContainer, 24, NS_STATE_FLEX_HAS_CHILD_NIFS)
 
+// True if the next reflow of this frame should generate computed info metrics.
+// These are used by devtools to reveal details of the layout process.
+FRAME_STATE_BIT(FlexContainer, 25, NS_STATE_FLEX_COMPUTED_INFO)
+
 // == Frame state bits that apply to grid container frames ====================
 
 FRAME_STATE_GROUP(GridContainer, nsGridContainerFrame)
@@ -379,6 +383,10 @@ FRAME_STATE_BIT(GridContainer, 28, NS_STATE_GRID_IS_COL_MASONRY)
 // True if the container has masonry layout in its block axis.
 // (mutually exclusive with NS_STATE_GRID_IS_COL_MASONRY)
 FRAME_STATE_BIT(GridContainer, 29, NS_STATE_GRID_IS_ROW_MASONRY)
+
+// True if the next reflow of this frame should generate computed info metrics.
+// These are used by devtools to reveal details of the layout process.
+FRAME_STATE_BIT(GridContainer, 30, NS_STATE_GRID_COMPUTED_INFO)
 
 // == Frame state bits that apply to SVG frames ===============================
 
@@ -520,24 +528,28 @@ FRAME_STATE_BIT(Block, 20, NS_BLOCK_NEEDS_BIDI_RESOLUTION)
 
 FRAME_STATE_BIT(Block, 21, NS_BLOCK_HAS_PUSHED_FLOATS)
 
-// This indicates that this is a frame from which child margins can be
+// This indicates that the frame establishes a block formatting context i.e.
+//
+// 1. This indicates that this is a frame from which child margins can be
 // calculated. The absence of this flag implies that child margin calculations
 // should ignore the frame and look further up the parent chain. Used in
 // nsBlockReflowContext::ComputeCollapsedBStartMargin() via
 // nsBlockFrame::IsMarginRoot().
-//
 // This causes the BlockReflowState's constructor to set the
 // mIsBStartMarginRoot and mIsBEndMarginRoot flags.
-FRAME_STATE_BIT(Block, 22, NS_BLOCK_MARGIN_ROOT)
+//
+// 2. This indicates that a block frame should create its own float manager.
+// This is required by each block frame that can contain floats. The float
+// manager is used to reserve space for the floated frames.
+FRAME_STATE_BIT(Block, 22, NS_BLOCK_STATIC_BFC)
 
-// This indicates that a block frame should create its own float manager. This
-// is required by each block frame that can contain floats. The float manager is
-// used to reserve space for the floated frames.
-FRAME_STATE_BIT(Block, 23, NS_BLOCK_FLOAT_MGR)
+// This is the same as NS_BLOCK_STATIC_BFC but can be updated dynamically after
+// the frame construction (e.g. paint/layout containment).
+// FIXME(bug 1874823): Try and merge this and NS_BLOCK_STATIC_BFC.
+FRAME_STATE_BIT(Block, 23, NS_BLOCK_DYNAMIC_BFC)
 
-// For setting the relevant bits on a block formatting context:
-#define NS_BLOCK_FORMATTING_CONTEXT_STATE_BITS \
-(NS_BLOCK_FLOAT_MGR | NS_BLOCK_MARGIN_ROOT)
+// For testing the relevant bits on a block formatting context:
+#define NS_BLOCK_BFC_STATE_BITS (NS_BLOCK_STATIC_BFC | NS_BLOCK_DYNAMIC_BFC)
 
 FRAME_STATE_BIT(Block, 24, NS_BLOCK_HAS_LINE_CURSOR)
 

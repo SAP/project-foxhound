@@ -100,6 +100,7 @@ void PopulateRtpWithCodecSpecifics(const CodecSpecificInfo& info,
     case kVideoCodecGeneric:
       rtp->codec = kVideoCodecGeneric;
       return;
+    // TODO(bugs.webrtc.org/13485): Implement H265 codec specific info
     default:
       return;
   }
@@ -207,7 +208,7 @@ RTPVideoHeader RtpPayloadParams::GetRtpVideoHeader(
   rtp_video_header.frame_type = image._frameType;
   rtp_video_header.rotation = image.rotation_;
   rtp_video_header.content_type = image.content_type_;
-  rtp_video_header.playout_delay = image.playout_delay_;
+  rtp_video_header.playout_delay = image.PlayoutDelay();
   rtp_video_header.width = image._encodedWidth;
   rtp_video_header.height = image._encodedHeight;
   rtp_video_header.color_space = image.ColorSpace()
@@ -341,6 +342,9 @@ void RtpPayloadParams::SetGeneric(const CodecSpecificInfo* codec_specific_info,
       return;
     case VideoCodecType::kVideoCodecMultiplex:
       return;
+    case VideoCodecType::kVideoCodecH265:
+      // TODO(bugs.webrtc.org/13485): Implement H265 to generic descriptor.
+      return;
   }
   RTC_DCHECK_NOTREACHED() << "Unsupported codec.";
 }
@@ -402,6 +406,7 @@ absl::optional<FrameDependencyStructure> RtpPayloadParams::GenericStructure(
     }
     case VideoCodecType::kVideoCodecAV1:
     case VideoCodecType::kVideoCodecH264:
+    case VideoCodecType::kVideoCodecH265:
     case VideoCodecType::kVideoCodecMultiplex:
       return absl::nullopt;
   }

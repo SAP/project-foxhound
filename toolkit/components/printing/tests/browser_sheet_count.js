@@ -27,7 +27,7 @@ add_task(async function testSheetCount() {
     // Since we're using the Save to PDF printer, the numCopies element should
     // be hidden and its value ignored.
     let numCopies = helper.get("copies-count");
-    ok(BrowserTestUtils.is_hidden(numCopies), "numCopies element is hidden");
+    ok(BrowserTestUtils.isHidden(numCopies), "numCopies element is hidden");
     helper.dispatchSettingsChange({
       numCopies: 4,
     });
@@ -75,7 +75,7 @@ add_task(async function testSheetCount() {
     is(viewSettings.numCopies, 4, "numCopies is 4 in viewSettings");
 
     // numCopies is now visible and sheetCount is multiplied by numCopies.
-    ok(BrowserTestUtils.is_visible(numCopies), "numCopies element is visible");
+    ok(BrowserTestUtils.isVisible(numCopies), "numCopies element is visible");
     is(numCopies.value, "4", "numCopies displays the correct value");
     is(
       helper.sheetCount,
@@ -288,7 +288,7 @@ add_task(async function testPagesPerSheetCount() {
 
     await helper.openMoreSettings();
     let pagesPerSheet = helper.get("pages-per-sheet-picker");
-    ok(BrowserTestUtils.is_visible(pagesPerSheet), "Pages per sheet is shown");
+    ok(BrowserTestUtils.isVisible(pagesPerSheet), "Pages per sheet is shown");
     pagesPerSheet.focus();
 
     let popupOpen = BrowserTestUtils.waitForSelectPopupShown(window);

@@ -42,6 +42,9 @@ class HTMLInputElement;
 class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
   friend class DocumentOrShadowRoot;
 
+  using Declarative = Element::ShadowRootDeclarative;
+  using IsClonable = Element::ShadowRootClonable;
+
  public:
   NS_IMPL_FROMNODE_HELPER(ShadowRoot, IsShadowRoot());
 
@@ -50,7 +53,8 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
 
   ShadowRoot(Element* aElement, ShadowRootMode aMode,
              Element::DelegatesFocus aDelegatesFocus,
-             SlotAssignmentMode aSlotAssignment,
+             SlotAssignmentMode aSlotAssignment, IsClonable aClonable,
+             Declarative aDeclarative,
              already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   void AddSizeOfExcludingThis(nsWindowSizes&, size_t* aNodeSize) const final;
@@ -77,6 +81,7 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
     return mDelegatesFocus == Element::DelegatesFocus::Yes;
   }
   SlotAssignmentMode SlotAssignment() const { return mSlotAssignment; }
+  bool Clonable() const { return mIsClonable == IsClonable::Yes; }
   bool IsClosed() const { return mMode == ShadowRootMode::Closed; }
 
   void RemoveSheetFromStyles(StyleSheet&);
@@ -231,6 +236,17 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
+  bool IsDeclarative() const { return mIsDeclarative == Declarative::Yes; }
+  void SetIsDeclarative(Declarative aIsDeclarative) {
+    mIsDeclarative = aIsDeclarative;
+  }
+  void SetIsDeclarative(bool aIsDeclarative) {
+    mIsDeclarative = aIsDeclarative ? Declarative::Yes : Declarative::No;
+  }
+
+  MOZ_CAN_RUN_SCRIPT
+  void SetHTMLUnsafe(const nsAString& aHTML);
+
  protected:
   // FIXME(emilio): This will need to become more fine-grained.
   void ApplicableRulesChanged();
@@ -267,6 +283,12 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
 
   // https://dom.spec.whatwg.org/#shadowroot-available-to-element-internals
   bool mIsAvailableToElementInternals : 1;
+
+  // https://dom.spec.whatwg.org/#shadowroot-declarative
+  Declarative mIsDeclarative;
+
+  // https://dom.spec.whatwg.org/#shadowroot-clonable
+  const IsClonable mIsClonable;
 
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };

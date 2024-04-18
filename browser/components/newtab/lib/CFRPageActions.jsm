@@ -88,7 +88,7 @@ class PageAction {
     // Saved timeout IDs for scheduled state changes, so they can be cancelled
     this.stateTransitionTimeoutIDs = [];
 
-    XPCOMUtils.defineLazyGetter(this, "isDarkTheme", () => {
+    ChromeUtils.defineLazyGetter(this, "isDarkTheme", () => {
       try {
         return this.window.document.documentElement.hasAttribute(
           "lwt-toolbar-field-brighttext"
@@ -144,6 +144,13 @@ class PageAction {
       this.container.style.setProperty(
         "--cfr-active-color",
         recommendation.content.active_color
+      );
+    }
+
+    if (recommendation.content.active_text_color) {
+      this.container.style.setProperty(
+        "--cfr-active-text-color",
+        recommendation.content.active_text_color
       );
     }
 
@@ -421,7 +428,7 @@ class PageAction {
     let { content, id } = message;
     let { primary, secondary } = content.buttons;
     let earliestDate = await lazy.TrackingDBService.getEarliestRecordedDate();
-    let timestamp = new Date().getTime(earliestDate);
+    let timestamp = earliestDate ?? new Date().getTime();
     let panelTitle = "";
     let headerLabel = this.window.document.getElementById(
       "cfr-notification-header-label"
@@ -806,8 +813,11 @@ class PageAction {
     }
   }
 
-  _getVisibleElement(id) {
-    const element = id && this.window.document.getElementById(id);
+  _getVisibleElement(idOrEl) {
+    const element =
+      typeof idOrEl === "string"
+        ? idOrEl && this.window.document.getElementById(idOrEl)
+        : idOrEl;
     if (!element) {
       return null; // element doesn't exist at all
     }
@@ -821,7 +831,7 @@ class PageAction {
       // element being invisible and unclickable.
       return null;
     }
-    let widget = lazy.CustomizableUI.getWidget(id);
+    let widget = lazy.CustomizableUI.getWidget(idOrEl);
     if (
       widget &&
       (this.window.CustomizationHandler.isCustomizing() ||
@@ -847,7 +857,8 @@ class PageAction {
     browser.cfrpopupnotificationanchor =
       this._getVisibleElement(content.anchor_id) ||
       this._getVisibleElement(content.alt_anchor_id) ||
-      this.container;
+      this._getVisibleElement(this.button) ||
+      this._getVisibleElement(this.container);
 
     await this._renderPopup(message, browser);
   }

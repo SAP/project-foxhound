@@ -86,7 +86,6 @@ add_setup(async function () {
   // Enable local telemetry recording for the duration of the tests.
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.search.log", true],
       ["browser.search.serpEventTelemetry.enabled", true],
       // Set the IPC count to a small number so that we only have to open
       // one additional tab to reuse the same process.
@@ -117,24 +116,20 @@ add_task(async function update_telemetry_tab_already_open() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
 
   info("Wait a brief amount of time for a possible SERP impression.");
-  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-  await new Promise(resolve => setTimeout(resolve, 10));
+  await waitForIdle();
 
   info("Assert no impressions are found.");
-  assertImpressionEvents([]);
+  assertSERPTelemetry([]);
 
   info("Update search-telemetry-v2 with a matching queryParamName.");
   await updateClientWithRecords(RECORDS);
 
   info("Reload page.");
-  let promise = TestUtils.topicObserved("reported-page-with-impression");
-  let adPromise = TestUtils.topicObserved("reported-page-with-ad-impressions");
-
   gBrowser.reload();
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+  await waitForPageWithAdImpressions();
 
-  await promise;
-  assertImpressionEvents([
+  assertSERPTelemetry([
     {
       impression: {
         provider: "example",
@@ -145,16 +140,14 @@ add_task(async function update_telemetry_tab_already_open() {
         is_private: "false",
         shopping_tab_displayed: "false",
       },
-    },
-  ]);
-
-  await adPromise;
-  assertAdImpressionEvents([
-    {
-      component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
-      ads_loaded: "2",
-      ads_visible: "2",
-      ads_hidden: "0",
+      adImpressions: [
+        {
+          component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+          ads_loaded: "2",
+          ads_visible: "2",
+          ads_hidden: "0",
+        },
+      ],
     },
   ]);
 
@@ -175,11 +168,10 @@ add_task(async function update_telemetry_tab_closed() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
 
   info("Wait a brief amount of time for a possible SERP impression.");
-  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-  await new Promise(resolve => setTimeout(resolve, 10));
+  await waitForIdle();
 
   info("Assert no impressions are found.");
-  assertImpressionEvents([]);
+  assertSERPTelemetry([]);
 
   info("Remove tab.");
   await BrowserTestUtils.removeTab(tab);
@@ -188,12 +180,9 @@ add_task(async function update_telemetry_tab_closed() {
   await updateClientWithRecords(RECORDS);
 
   info("Load SERP in a new tab.");
-  let promise = TestUtils.topicObserved("reported-page-with-impression");
-  let adPromise = TestUtils.topicObserved("reported-page-with-ad-impressions");
   tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
-
-  await promise;
-  assertImpressionEvents([
+  await waitForPageWithAdImpressions();
+  assertSERPTelemetry([
     {
       impression: {
         provider: "example",
@@ -204,16 +193,14 @@ add_task(async function update_telemetry_tab_closed() {
         is_private: "false",
         shopping_tab_displayed: "false",
       },
-    },
-  ]);
-
-  await adPromise;
-  assertAdImpressionEvents([
-    {
-      component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
-      ads_loaded: "2",
-      ads_visible: "2",
-      ads_hidden: "0",
+      adImpressions: [
+        {
+          component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+          ads_loaded: "2",
+          ads_visible: "2",
+          ads_hidden: "0",
+        },
+      ],
     },
   ]);
 
@@ -236,25 +223,20 @@ add_task(async function update_telemetry_multiple_tabs() {
   }
 
   info("Wait a brief amount of time for a possible SERP impression.");
-  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-  await new Promise(resolve => setTimeout(resolve, 10));
+  await waitForIdle();
 
   info("Assert no impressions are found.");
-  assertImpressionEvents([]);
+  assertSERPTelemetry([]);
 
   info("Update search-telemetry-v2 with a matching queryParamName.");
   await updateClientWithRecords(RECORDS);
 
   for (let tab of tabs) {
     await BrowserTestUtils.switchTab(gBrowser, tab);
-    let promise = TestUtils.topicObserved("reported-page-with-impression");
-    let adPromise = TestUtils.topicObserved(
-      "reported-page-with-ad-impressions"
-    );
     gBrowser.reload();
+    await waitForPageWithAdImpressions();
 
-    await promise;
-    assertImpressionEvents([
+    assertSERPTelemetry([
       {
         impression: {
           provider: "example",
@@ -265,20 +247,18 @@ add_task(async function update_telemetry_multiple_tabs() {
           is_private: "false",
           shopping_tab_displayed: "false",
         },
+        adImpressions: [
+          {
+            component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+            ads_loaded: "2",
+            ads_visible: "2",
+            ads_hidden: "0",
+          },
+        ],
       },
     ]);
-
-    await adPromise;
-    assertAdImpressionEvents([
-      {
-        component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
-        ads_loaded: "2",
-        ads_visible: "2",
-        ads_hidden: "0",
-      },
-    ]);
-    resetTelemetry();
     await BrowserTestUtils.removeTab(tab);
+    resetTelemetry();
   }
 
   info("Update search-telemetry-v2 with non-matching queryParamName.");
@@ -304,25 +284,20 @@ add_task(async function update_telemetry_multiple_processes_and_tabs() {
   }
 
   info("Wait a brief amount of time for a possible SERP impression.");
-  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-  await new Promise(resolve => setTimeout(resolve, 10));
+  await waitForIdle();
 
   info("Assert no impressions are found.");
-  assertImpressionEvents([]);
+  assertSERPTelemetry([]);
 
   info("Update search-telemetry-v2 with a matching queryParamName.");
   await updateClientWithRecords(RECORDS);
 
   for (let tab of tabs) {
     await BrowserTestUtils.switchTab(gBrowser, tab);
-    let promise = TestUtils.topicObserved("reported-page-with-impression");
-    let adPromise = TestUtils.topicObserved(
-      "reported-page-with-ad-impressions"
-    );
     gBrowser.reload();
+    await waitForPageWithAdImpressions();
 
-    await promise;
-    assertImpressionEvents([
+    assertSERPTelemetry([
       {
         impression: {
           provider: "example",
@@ -333,20 +308,19 @@ add_task(async function update_telemetry_multiple_processes_and_tabs() {
           is_private: "false",
           shopping_tab_displayed: "false",
         },
+        adImpressions: [
+          {
+            component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+            ads_loaded: "2",
+            ads_visible: "2",
+            ads_hidden: "0",
+          },
+        ],
       },
     ]);
 
-    await adPromise;
-    assertAdImpressionEvents([
-      {
-        component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
-        ads_loaded: "2",
-        ads_visible: "2",
-        ads_hidden: "0",
-      },
-    ]);
-    resetTelemetry();
     await BrowserTestUtils.removeTab(tab);
+    resetTelemetry();
   }
 
   info("Update search-telemetry-v2 with non-matching queryParamName.");

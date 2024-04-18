@@ -111,6 +111,8 @@ namespace jit {
   _(CallObjectCreateWithShape, js::CallObject::createWithShape)                \
   _(CanSkipAwait, js::CanSkipAwait)                                            \
   _(CharCodeAt, js::jit::CharCodeAt)                                           \
+  _(CharCodeToLowerCase, js::jit::CharCodeToLowerCase)                         \
+  _(CharCodeToUpperCase, js::jit::CharCodeToUpperCase)                         \
   _(CheckClassHeritageOperation, js::CheckClassHeritageOperation)              \
   _(CheckOverRecursed, js::jit::CheckOverRecursed)                             \
   _(CheckOverRecursedBaseline, js::jit::CheckOverRecursedBaseline)             \
@@ -264,6 +266,8 @@ namespace jit {
   _(NumberParseInt, js::NumberParseInt)                                        \
   _(NumberToString, js::NumberToString<CanGC>)                                 \
   _(ObjectCreateWithTemplate, js::ObjectCreateWithTemplate)                    \
+  _(ObjectKeys, js::jit::ObjectKeys)                                           \
+  _(ObjectKeysLength, js::jit::ObjectKeysLength)                               \
   _(ObjectWithProtoOperation, js::ObjectWithProtoOperation)                    \
   _(OnDebuggerStatement, js::jit::OnDebuggerStatement)                         \
   _(ProxyGetProperty, js::ProxyGetProperty)                                    \
@@ -301,13 +305,18 @@ namespace jit {
   _(StringFlatReplaceString, js::StringFlatReplaceString)                      \
   _(StringFromCharCode, js::jit::StringFromCharCode)                           \
   _(StringFromCodePoint, js::jit::StringFromCodePoint)                         \
+  _(StringIncludes, js::StringIncludes)                                        \
   _(StringIndexOf, js::StringIndexOf)                                          \
+  _(StringLastIndexOf, js::StringLastIndexOf)                                  \
   _(StringReplace, js::jit::StringReplace)                                     \
   _(StringSplitString, js::StringSplitString)                                  \
   _(StringStartsWith, js::StringStartsWith)                                    \
   _(StringToLowerCase, js::StringToLowerCase)                                  \
   _(StringToNumber, js::StringToNumber)                                        \
   _(StringToUpperCase, js::StringToUpperCase)                                  \
+  _(StringTrim, js::StringTrim)                                                \
+  _(StringTrimEnd, js::StringTrimEnd)                                          \
+  _(StringTrimStart, js::StringTrimStart)                                      \
   _(StringsCompareGreaterThanOrEquals,                                         \
     js::jit::StringsCompare<ComparisonKind::GreaterThanOrEqual>)               \
   _(StringsCompareLessThan, js::jit::StringsCompare<ComparisonKind::LessThan>) \

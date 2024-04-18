@@ -34,13 +34,9 @@ AudioCaptureTrack::AudioCaptureTrack(TrackRate aRate)
       mStarted(false) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_COUNT_CTOR(AudioCaptureTrack);
-  mMixer.AddCallback(WrapNotNull(this));
 }
 
-AudioCaptureTrack::~AudioCaptureTrack() {
-  MOZ_COUNT_DTOR(AudioCaptureTrack);
-  mMixer.RemoveCallback(this);
-}
+AudioCaptureTrack::~AudioCaptureTrack() { MOZ_COUNT_DTOR(AudioCaptureTrack); }
 
 void AudioCaptureTrack::Start() {
   QueueControlMessageWithNoShutdown(
@@ -87,8 +83,10 @@ void AudioCaptureTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
       }
       toMix.Mix(mMixer, MONO, Graph()->GraphRate());
     }
-    // This calls MixerCallback below
-    mMixer.FinishMixing();
+    AudioChunk* mixed = mMixer.MixedChunk();
+    MOZ_ASSERT(mixed->ChannelCount() == MONO);
+    // Now we have mixed data, simply append it.
+    GetData<AudioSegment>()->AppendAndConsumeChunk(std::move(*mixed));
   }
 }
 
@@ -96,35 +94,4 @@ uint32_t AudioCaptureTrack::NumberOfChannels() const {
   return GetData<AudioSegment>()->MaxChannelCount();
 }
 
-void AudioCaptureTrack::MixerCallback(AudioDataValue* aMixedBuffer,
-                                      AudioSampleFormat aFormat,
-                                      uint32_t aChannels, uint32_t aFrames,
-                                      uint32_t aSampleRate) {
-  AutoTArray<nsTArray<AudioDataValue>, MONO> output;
-  AutoTArray<const AudioDataValue*, MONO> bufferPtrs;
-  output.SetLength(MONO);
-  bufferPtrs.SetLength(MONO);
-
-  uint32_t written = 0;
-  // We need to copy here, because the mixer will reuse the storage, we should
-  // not hold onto it. Buffers are in planar format.
-  for (uint32_t channel = 0; channel < aChannels; channel++) {
-    AudioDataValue* out = output[channel].AppendElements(aFrames);
-    PodCopy(out, aMixedBuffer + written, aFrames);
-    bufferPtrs[channel] = out;
-    written += aFrames;
-  }
-  AudioChunk chunk;
-  chunk.mBuffer =
-      new mozilla::SharedChannelArrayBuffer<AudioDataValue>(std::move(output));
-  chunk.mDuration = aFrames;
-  chunk.mBufferFormat = aFormat;
-  chunk.mChannelData.SetLength(MONO);
-  for (uint32_t channel = 0; channel < aChannels; channel++) {
-    chunk.mChannelData[channel] = bufferPtrs[channel];
-  }
-
-  // Now we have mixed data, simply append it.
-  GetData<AudioSegment>()->AppendAndConsumeChunk(std::move(chunk));
-}
 }  // namespace mozilla

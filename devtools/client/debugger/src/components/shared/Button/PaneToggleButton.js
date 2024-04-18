@@ -2,14 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { PureComponent } from "react";
-import PropTypes from "prop-types";
+import React, { PureComponent } from "devtools/client/shared/vendor/react";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import AccessibleImage from "../AccessibleImage";
-import { CommandBarButton } from "./";
+import { CommandBarButton } from "./index";
 
-const classnames = require("devtools/client/shared/classnames.js");
-
-import "./styles/PaneToggleButton.css";
+const classnames = require("resource://devtools/client/shared/classnames.js");
 
 class PaneToggleButton extends PureComponent {
   static defaultProps = {

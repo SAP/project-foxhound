@@ -395,32 +395,30 @@ DNSRequestSender::Cancel(nsresult reason) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  if (mIPCActor->CanSend()) {
-    // We can only do IPDL on the main thread
-    nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
-        "net::CancelDNSRequestEvent",
-        [actor(mIPCActor), host(mHost), trrServer(mTrrServer), port(mPort),
-         type(mType), originAttributes(mOriginAttributes), flags(mFlags),
-         reason]() {
-          if (!actor->CanSend()) {
-            return;
-          }
+  // We can only do IPC on the MainThread
+  nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
+      "net::CancelDNSRequestEvent",
+      [actor(mIPCActor), host(mHost), trrServer(mTrrServer), port(mPort),
+       type(mType), originAttributes(mOriginAttributes), flags(mFlags),
+       reason]() {
+        if (!actor->CanSend()) {
+          return;
+        }
 
-          if (DNSRequestChild* child = actor->AsDNSRequestChild()) {
-            Unused << child->SendCancelDNSRequest(
-                host, trrServer, port, type, originAttributes, flags, reason);
-          } else if (DNSRequestParent* parent = actor->AsDNSRequestParent()) {
-            Unused << parent->SendCancelDNSRequest(
-                host, trrServer, port, type, originAttributes, flags, reason);
-          }
-        });
-    SchedulerGroup::Dispatch(runnable.forget());
-  }
+        if (DNSRequestChild* child = actor->AsDNSRequestChild()) {
+          Unused << child->SendCancelDNSRequest(
+              host, trrServer, port, type, originAttributes, flags, reason);
+        } else if (DNSRequestParent* parent = actor->AsDNSRequestParent()) {
+          Unused << parent->SendCancelDNSRequest(
+              host, trrServer, port, type, originAttributes, flags, reason);
+        }
+      });
+  SchedulerGroup::Dispatch(runnable.forget());
   return NS_OK;
 }
 
 void DNSRequestSender::StartRequest() {
-  // we can only do IPDL on the main thread
+  // we can only do IPC on the MainThread
   if (!NS_IsMainThread()) {
     SchedulerGroup::Dispatch(
         NewRunnableMethod("net::DNSRequestSender::StartRequest", this,
@@ -428,7 +426,7 @@ void DNSRequestSender::StartRequest() {
     return;
   }
 
-  if (DNSRequestChild* child = mIPCActor->AsDNSRequestChild()) {
+  if (RefPtr<DNSRequestChild> child = mIPCActor->AsDNSRequestChild()) {
     if (XRE_IsContentProcess()) {
       mozilla::dom::ContentChild* cc =
           static_cast<mozilla::dom::ContentChild*>(gNeckoChild->Manager());
@@ -450,8 +448,8 @@ void DNSRequestSender::StartRequest() {
         return;
       }
 
-      socketProcessChild->SendPDNSRequestConstructor(
-          child, mHost, mTrrServer, mPort, mType, mOriginAttributes, mFlags);
+      MOZ_ALWAYS_TRUE(socketProcessChild->SendPDNSRequestConstructor(
+          child, mHost, mTrrServer, mPort, mType, mOriginAttributes, mFlags));
     } else {
       MOZ_ASSERT(false, "Wrong process");
       return;

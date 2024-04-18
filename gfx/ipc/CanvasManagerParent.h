@@ -7,6 +7,7 @@
 #define _include_gfx_ipc_CanvasManagerParent_h__
 
 #include "mozilla/gfx/PCanvasManagerParent.h"
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/StaticMonitor.h"
 #include "mozilla/UniquePtr.h"
 #include "nsHashtablesFwd.h"
@@ -15,6 +16,8 @@
 namespace mozilla {
 namespace layers {
 class CanvasTranslator;
+class HostIPCAllocator;
+class SharedSurfacesHolder;
 class SurfaceDescriptor;
 }  // namespace layers
 
@@ -24,25 +27,16 @@ class CanvasManagerParent final : public PCanvasManagerParent {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CanvasManagerParent, override);
 
-  static void Init(Endpoint<PCanvasManagerParent>&& aEndpoint);
+  static void Init(Endpoint<PCanvasManagerParent>&& aEndpoint,
+                   layers::SharedSurfacesHolder* aSharedSurfacesHolder,
+                   const dom::ContentParentId& aContentId);
 
   static void Shutdown();
 
   static void DisableRemoteCanvas();
 
-  static void AddReplayTexture(layers::CanvasTranslator* aOwner,
-                               int64_t aTextureId,
-                               layers::TextureData* aTextureData);
-
-  static void RemoveReplayTexture(layers::CanvasTranslator* aOwner,
-                                  int64_t aTextureId);
-
-  static void RemoveReplayTextures(layers::CanvasTranslator* aOwner);
-
-  static UniquePtr<layers::SurfaceDescriptor> WaitForReplayTexture(
-      base::ProcessId aOtherPid, int64_t aTextureId);
-
-  CanvasManagerParent();
+  CanvasManagerParent(layers::SharedSurfacesHolder* aSharedSurfacesHolder,
+                      const dom::ContentParentId& aContentId);
 
   void Bind(Endpoint<PCanvasManagerParent>&& aEndpoint);
   void ActorDestroy(ActorDestroyReason aWhy) override;
@@ -58,30 +52,17 @@ class CanvasManagerParent final : public PCanvasManagerParent {
       webgl::FrontBufferSnapshotIpc* aResult);
 
  private:
-  static UniquePtr<layers::SurfaceDescriptor> TakeReplayTexture(
-      base::ProcessId aOtherPid, int64_t aTextureId)
-      MOZ_REQUIRES(sReplayTexturesMonitor);
-
   static void ShutdownInternal();
   static void DisableRemoteCanvasInternal();
 
   ~CanvasManagerParent() override;
 
+  RefPtr<layers::SharedSurfacesHolder> mSharedSurfacesHolder;
+  const dom::ContentParentId mContentId;
   uint32_t mId = 0;
 
   using ManagerSet = nsTHashSet<RefPtr<CanvasManagerParent>>;
   static ManagerSet sManagers;
-
-  struct ReplayTexture {
-    RefPtr<layers::CanvasTranslator> mOwner;
-    int64_t mId;
-    UniquePtr<layers::SurfaceDescriptor> mDesc;
-  };
-
-  static StaticMonitor sReplayTexturesMonitor;
-  static nsTArray<ReplayTexture> sReplayTextures
-      MOZ_GUARDED_BY(sReplayTexturesMonitor);
-  static bool sReplayTexturesEnabled MOZ_GUARDED_BY(sReplayTexturesMonitor);
 };
 
 }  // namespace gfx

@@ -6,6 +6,8 @@
 #include <windows.h>
 #include <appmodel.h>
 #include <shlobj.h>  // for SHChangeNotify and IApplicationAssociationRegistration
+#include <functional>
+#include <timeapi.h>
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
@@ -14,6 +16,7 @@
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 #include "WindowsUserChoice.h"
+#include "nsThreadUtils.h"
 
 #include "EventLog.h"
 #include "SetDefaultBrowser.h"
@@ -146,103 +149,6 @@ static bool SetUserChoiceRegistry(const wchar_t* aExt, const wchar_t* aProgID,
   return true;
 }
 
-static bool LaunchReg(int aArgsLength, const wchar_t* const* aArgs) {
-  mozilla::UniquePtr<wchar_t[]> regPath =
-      mozilla::MakeUnique<wchar_t[]>(MAX_PATH + 1);
-  if (!ConstructSystem32Path(L"reg.exe", regPath.get(), MAX_PATH + 1)) {
-    LOG_ERROR_MESSAGE(L"Failed to construct path to reg.exe");
-    return false;
-  }
-
-  const wchar_t* regArgs[] = {regPath.get()};
-  mozilla::UniquePtr<wchar_t[]> regCmdLine(mozilla::MakeCommandLine(
-      mozilla::ArrayLength(regArgs), const_cast<wchar_t**>(regArgs),
-      aArgsLength, const_cast<wchar_t**>(aArgs)));
-
-  PROCESS_INFORMATION pi;
-  STARTUPINFOW si = {sizeof(si)};
-  si.dwFlags = STARTF_USESHOWWINDOW;
-  si.wShowWindow = SW_HIDE;
-  if (!::CreateProcessW(regPath.get(), regCmdLine.get(), nullptr, nullptr,
-                        FALSE, 0, nullptr, nullptr, &si, &pi)) {
-    HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-    LOG_ERROR(hr);
-    return false;
-  }
-
-  nsAutoHandle process(pi.hProcess);
-  nsAutoHandle mainThread(pi.hThread);
-
-  DWORD exitCode;
-  if (::WaitForSingleObject(process.get(), INFINITE) == WAIT_OBJECT_0 &&
-      ::GetExitCodeProcess(process.get(), &exitCode)) {
-    // N.b.: `reg.exe` returns 0 (unchanged) or 2 (changed) on success.
-    bool success = (exitCode == 0 || exitCode == 2);
-    if (!success) {
-      LOG_ERROR_MESSAGE(L"%s returned failure exitCode %d", regCmdLine.get(),
-                        exitCode);
-    }
-    return success;
-  }
-
-  return false;
-}
-
-static bool SetUserChoiceCommand(const wchar_t* aExt, const wchar_t* aProgID,
-                                 const wchar_t* aHash) {
-  auto assocKeyPath = GetAssociationKeyPath(aExt);
-  if (!assocKeyPath) {
-    return false;
-  }
-
-  const wchar_t* formatString = L"HKCU\\%s\\UserChoice";
-  int bufferSize = _scwprintf(formatString, assocKeyPath.get());
-  ++bufferSize;  // Extra character for terminating null
-  mozilla::UniquePtr<wchar_t[]> userChoiceKeyPath =
-      mozilla::MakeUnique<wchar_t[]>(bufferSize);
-  _snwprintf_s(userChoiceKeyPath.get(), bufferSize, _TRUNCATE, formatString,
-               assocKeyPath.get());
-
-  const wchar_t* deleteArgs[] = {
-      L"DELETE",
-      userChoiceKeyPath.get(),
-      L"/F",
-  };
-  if (!LaunchReg(mozilla::ArrayLength(deleteArgs), deleteArgs)) {
-    LOG_ERROR_MESSAGE(L"Failed to reg.exe DELETE; ignoring and continuing.");
-  }
-
-  // Like REG ADD [ROOT\]RegKey /V ValueName [/T DataType] [/S Separator] [/D
-  // Data] [/F] [/reg:32] [/reg:64]
-
-  const wchar_t* progIDArgs[] = {
-      L"ADD",    userChoiceKeyPath.get(),
-      L"/F",     L"/V",
-      L"ProgID", L"/T",
-      L"REG_SZ", L"/D",
-      aProgID,
-  };
-
-  if (!LaunchReg(mozilla::ArrayLength(progIDArgs), progIDArgs)) {
-    // LaunchReg will have logged an error message already.
-    return false;
-  }
-
-  const wchar_t* hashArgs[] = {
-      L"ADD",    userChoiceKeyPath.get(),
-      L"/F",     L"/V",
-      L"Hash",   L"/T",
-      L"REG_SZ", L"/D",
-      aHash,
-  };
-  if (!LaunchReg(mozilla::ArrayLength(hashArgs), hashArgs)) {
-    // LaunchReg will have logged an error message already.
-    return false;
-  }
-
-  return true;
-}
-
 /*
  * Set an association with a UserChoice key
  *
@@ -252,16 +158,16 @@ static bool SetUserChoiceCommand(const wchar_t* aExt, const wchar_t* aProgID,
  * @param aExt      File type or protocol to associate
  * @param aSid      Current user's string SID
  * @param aProgID   ProgID to use for the asociation
+ * @param inMsix    Are we running from in an msix package?
  *
  * @return true if successful, false on error.
  */
 static bool SetUserChoice(const wchar_t* aExt, const wchar_t* aSid,
-                          const wchar_t* aProgID) {
-  // This might be slow to query, so do it before generating timestamps and
-  // hashes.
-  UINT32 pfnLen = 0;
-  bool inMsix =
-      GetCurrentPackageFullName(&pfnLen, nullptr) != APPMODEL_ERROR_NO_PACKAGE;
+                          const wchar_t* aProgID, bool inMsix) {
+  if (inMsix) {
+    LOG_ERROR_MESSAGE(L"SetUserChoice does not work on MSIX builds.");
+    return false;
+  }
 
   SYSTEMTIME hashTimestamp;
   ::GetSystemTime(&hashTimestamp);
@@ -293,13 +199,8 @@ static bool SetUserChoice(const wchar_t* aExt, const wchar_t* aSid,
     }
   }
 
-  if (inMsix) {
-    // We're in an MSIX package, thus need to use reg.exe.
-    return SetUserChoiceCommand(aExt, aProgID, hash.get());
-  } else {
-    // We're outside of an MSIX package and can use the Win32 Registry API.
-    return SetUserChoiceRegistry(aExt, aProgID, std::move(hash));
-  }
+  // We're outside of an MSIX package and can use the Win32 Registry API.
+  return SetUserChoiceRegistry(aExt, aProgID, std::move(hash));
 }
 
 static bool VerifyUserDefault(const wchar_t* aExt, const wchar_t* aProgID) {
@@ -350,12 +251,6 @@ nsresult SetDefaultBrowserUserChoice(
     return NS_ERROR_WDBA_HASH_CHECK;
   }
 
-  nsTArray<nsString> browserDefaults = {
-      u"https"_ns, u"FirefoxURL"_ns,  u"http"_ns, u"FirefoxURL"_ns,
-      u".html"_ns, u"FirefoxHTML"_ns, u".htm"_ns, u"FirefoxHTML"_ns};
-
-  browserDefaults.AppendElements(aExtraFileExtensions);
-
   if (!mozilla::IsWin10CreatorsUpdateOrLater()) {
     LOG_ERROR_MESSAGE(L"UserChoice hash matched, but Windows build is too old");
     return NS_ERROR_WDBA_BUILD;
@@ -365,6 +260,12 @@ nsresult SetDefaultBrowserUserChoice(
   if (!sid) {
     return NS_ERROR_FAILURE;
   }
+
+  nsTArray<nsString> browserDefaults = {
+      u"https"_ns, u"FirefoxURL"_ns,  u"http"_ns, u"FirefoxURL"_ns,
+      u".html"_ns, u"FirefoxHTML"_ns, u".htm"_ns, u"FirefoxHTML"_ns};
+
+  browserDefaults.AppendElements(aExtraFileExtensions);
 
   nsresult rv = SetDefaultExtensionHandlersUserChoiceImpl(aAumi, sid.get(),
                                                           browserDefaults);
@@ -404,14 +305,18 @@ nsresult SetDefaultExtensionHandlersUserChoiceImpl(
   bool inMsix =
       GetCurrentPackageFullName(&pfnLen, nullptr) != APPMODEL_ERROR_NO_PACKAGE;
 
+  if (inMsix) {
+    // MSIX packages can not meaningfully modify the registry keys related to
+    // default handlers
+    return NS_ERROR_FAILURE;
+  }
+
   for (size_t i = 0; i + 1 < aFileExtensions.Length(); i += 2) {
-    const wchar_t* extraFileExtension =
-        PromiseFlatString(aFileExtensions[i]).get();
-    const wchar_t* extraProgIDRoot =
-        PromiseFlatString(aFileExtensions[i + 1]).get();
+    const wchar_t* extraFileExtension = aFileExtensions[i].get();
+    const wchar_t* extraProgIDRoot = aFileExtensions[i + 1].get();
     // Formatting the ProgID here prevents using this helper to target arbitrary
     // ProgIDs.
-    UniquePtr<wchar_t[]> extraProgID;
+    mozilla::UniquePtr<wchar_t[]> extraProgID;
     if (inMsix) {
       nsresult rv = GetMsixProgId(extraFileExtension, extraProgID);
       if (NS_FAILED(rv)) {
@@ -427,7 +332,7 @@ nsresult SetDefaultExtensionHandlersUserChoiceImpl(
       }
     }
 
-    if (!SetUserChoice(extraFileExtension, aSid, extraProgID.get())) {
+    if (!SetUserChoice(extraFileExtension, aSid, extraProgID.get(), inMsix)) {
       return NS_ERROR_FAILURE;
     }
 

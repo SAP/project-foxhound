@@ -716,6 +716,19 @@ void nsAccessibilityService::TableLayoutGuessMaybeChanged(
   }
 }
 
+void nsAccessibilityService::PopovertargetMaybeChanged(PresShell* aPresShell,
+                                                       nsIContent* aContent) {
+  DocAccessible* document = GetDocAccessible(aPresShell);
+  if (!document) {
+    return;
+  }
+  if (LocalAccessible* acc = document->GetAccessible(aContent)) {
+    RefPtr<AccEvent> expandedChangeEvent =
+        new AccStateChangeEvent(acc, states::EXPANDED);
+    document->FireDelayedEvent(expandedChangeEvent);
+  }
+}
+
 void nsAccessibilityService::ComboboxOptionMaybeChanged(
     PresShell* aPresShell, nsIContent* aMutatingNode) {
   DocAccessible* document = GetDocAccessible(aPresShell);
@@ -1006,7 +1019,7 @@ already_AddRefed<DOMStringList> nsAccessibilityService::GetStringStates(
 
 void nsAccessibilityService::GetStringEventType(uint32_t aEventType,
                                                 nsAString& aString) {
-  NS_ASSERTION(
+  static_assert(
       nsIAccessibleEvent::EVENT_LAST_ENTRY == ArrayLength(kEventTypeNames),
       "nsIAccessibleEvent constants are out of sync to kEventTypeNames");
 
@@ -1409,11 +1422,12 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
     // accessibility property. If it's interesting we need it in the
     // accessibility hierarchy so that events or other accessibles can point to
     // it, or so that it can hold a state, etc.
-    if (content->IsHTMLElement() || content->IsMathMLElement()) {
-      // Interesting HTML/MathML container which may have selectable text and/or
-      // embedded objects
+    if (content->IsHTMLElement() || content->IsMathMLElement() ||
+        content->IsSVGElement(nsGkAtoms::foreignObject)) {
+      // Interesting container which may have selectable text and/or embedded
+      // objects.
       newAcc = new HyperTextAccessible(content, document);
-    } else {  // XUL, SVG, etc.
+    } else {  // XUL, other SVG, etc.
       // Interesting generic non-HTML container
       newAcc = new AccessibleWrap(content, document);
     }

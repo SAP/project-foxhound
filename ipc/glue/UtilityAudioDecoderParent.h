@@ -45,6 +45,13 @@ class UtilityAudioDecoderParent final : public PUtilityAudioDecoderParent {
   IPCResult RecvUpdateVar(const mozilla::gfx::GfxVarUpdate& aUpdate);
 #endif
 
+#ifdef MOZ_WMF_CDM
+  IPCResult RecvGetKeySystemCapabilities(
+      GetKeySystemCapabilitiesResolver&& aResolver);
+
+  IPCResult RecvUpdateWidevineL1Path(const nsString& aPath);
+#endif
+
  private:
   ~UtilityAudioDecoderParent();
 

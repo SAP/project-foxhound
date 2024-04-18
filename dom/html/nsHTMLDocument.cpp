@@ -29,7 +29,7 @@
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
-#include "nsIContentViewer.h"
+#include "nsIDocumentViewer.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadTypes.h"
 #include "nsIScriptContext.h"
@@ -184,15 +184,15 @@ void nsHTMLDocument::ResetToURI(nsIURI* aURI, nsILoadGroup* aLoadGroup,
   SetContentType(nsDependentCString("text/html"));
 }
 
-void nsHTMLDocument::TryReloadCharset(nsIContentViewer* aCv,
+void nsHTMLDocument::TryReloadCharset(nsIDocumentViewer* aViewer,
                                       int32_t& aCharsetSource,
                                       NotNull<const Encoding*>& aEncoding) {
-  if (aCv) {
+  if (aViewer) {
     int32_t reloadEncodingSource;
     const auto reloadEncoding =
-        aCv->GetReloadEncodingAndSource(&reloadEncodingSource);
+        aViewer->GetReloadEncodingAndSource(&reloadEncodingSource);
     if (kCharsetUninitialized != reloadEncodingSource) {
-      aCv->ForgetReloadEncoding();
+      aViewer->ForgetReloadEncoding();
 
       if (reloadEncodingSource <= aCharsetSource ||
           !IsAsciiCompatible(aEncoding)) {
@@ -207,7 +207,7 @@ void nsHTMLDocument::TryReloadCharset(nsIContentViewer* aCv,
   }
 }
 
-void nsHTMLDocument::TryUserForcedCharset(nsIContentViewer* aCv,
+void nsHTMLDocument::TryUserForcedCharset(nsIDocumentViewer* aViewer,
                                           nsIDocShell* aDocShell,
                                           int32_t& aCharsetSource,
                                           NotNull<const Encoding*>& aEncoding,
@@ -396,25 +396,25 @@ nsresult nsHTMLDocument::StartDocumentLoad(
 
   // in this block of code, if we get an error result, we return it
   // but if we get a null pointer, that's perfectly legal for parent
-  // and parentContentViewer
+  // and parentViewer
   nsCOMPtr<nsIDocShellTreeItem> parentAsItem;
   if (docShell) {
     docShell->GetInProcessSameTypeParent(getter_AddRefs(parentAsItem));
   }
 
   nsCOMPtr<nsIDocShell> parent(do_QueryInterface(parentAsItem));
-  nsCOMPtr<nsIContentViewer> parentContentViewer;
+  nsCOMPtr<nsIDocumentViewer> parentViewer;
   if (parent) {
-    rv = parent->GetContentViewer(getter_AddRefs(parentContentViewer));
+    rv = parent->GetDocViewer(getter_AddRefs(parentViewer));
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  nsCOMPtr<nsIContentViewer> cv;
+  nsCOMPtr<nsIDocumentViewer> viewer;
   if (docShell) {
-    docShell->GetContentViewer(getter_AddRefs(cv));
+    docShell->GetDocViewer(getter_AddRefs(viewer));
   }
-  if (!cv) {
-    cv = std::move(parentContentViewer);
+  if (!viewer) {
+    viewer = std::move(parentViewer);
   }
 
   nsAutoCString urlSpec;
@@ -459,10 +459,10 @@ nsresult nsHTMLDocument::StartDocumentLoad(
     // charset menu.
     TryChannelCharset(aChannel, charsetSource, encoding, executor);
 
-    TryUserForcedCharset(cv, docShell, charsetSource, encoding,
+    TryUserForcedCharset(viewer, docShell, charsetSource, encoding,
                          forceAutoDetection);
 
-    TryReloadCharset(cv, charsetSource, encoding);  // For encoding reload
+    TryReloadCharset(viewer, charsetSource, encoding);  // For encoding reload
     TryParentCharset(docShell, charsetSource, encoding, forceAutoDetection);
   }
 

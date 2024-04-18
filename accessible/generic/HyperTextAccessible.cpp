@@ -35,6 +35,7 @@
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/SelectionMovementUtils.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/Selection.h"
@@ -658,11 +659,10 @@ int32_t HyperTextAccessible::CaretLineNumber() {
   nsIContent* caretContent = caretNode->AsContent();
   if (!nsCoreUtils::IsAncestorOf(GetNode(), caretContent)) return -1;
 
-  int32_t returnOffsetUnused;
   uint32_t caretOffset = domSel->FocusOffset();
   CaretAssociationHint hint = frameSelection->GetHint();
-  nsIFrame* caretFrame = frameSelection->GetFrameForNodeOffset(
-      caretContent, caretOffset, hint, &returnOffsetUnused);
+  nsIFrame* caretFrame = SelectionMovementUtils::GetFrameForNodeOffset(
+      caretContent, caretOffset, hint);
   NS_ENSURE_TRUE(caretFrame, -1);
 
   AutoAssertNoDomMutations guard;  // The nsILineIterators below will break if
@@ -765,6 +765,17 @@ LayoutDeviceIntRect HyperTextAccessible::GetCaretRect(nsIWidget** aWidget) {
 
 void HyperTextAccessible::GetSelectionDOMRanges(SelectionType aSelectionType,
                                                 nsTArray<nsRange*>* aRanges) {
+  if (IsDoc() && !AsDoc()->HasLoadState(DocAccessible::eTreeConstructed)) {
+    // Rarely, a client query can be handled after a DocAccessible is created
+    // but before the initial tree is constructed, since DoInitialUpdate happens
+    // during a refresh tick. In that case, there might be a DOM selection, but
+    // we can't use it. We will crash if we try due to mContent being null, etc.
+    // This should only happen in the parent process because we should never
+    // try to push the cache in a content process before the initial tree is
+    // constructed.
+    MOZ_ASSERT(XRE_IsParentProcess(), "Query before DoInitialUpdate");
+    return;
+  }
   // Ignore selection if it is not visible.
   RefPtr<nsFrameSelection> frameSelection = FrameSelection();
   if (!frameSelection || frameSelection->GetDisplaySelection() <=

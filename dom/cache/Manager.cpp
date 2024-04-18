@@ -24,6 +24,7 @@
 #include "mozilla/dom/cache/Types.h"
 #include "mozilla/dom/quota/Client.h"
 #include "mozilla/dom/quota/ClientImpl.h"
+#include "mozilla/dom/quota/StringifyUtils.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozStorageHelper.h"
@@ -102,7 +103,7 @@ class SetupAction final : public SyncDBAction {
     QM_TRY(MOZ_TO_RESULT(BodyCreateDir(*aDBDir)));
 
     // executes in its own transaction
-    QM_TRY(MOZ_TO_RESULT(db::CreateOrMigrateSchema(*aConn)));
+    QM_TRY(MOZ_TO_RESULT(db::CreateOrMigrateSchema(*aDBDir, *aConn)));
 
     // If the Context marker file exists, then the last session was
     // not cleanly shutdown.  In these cases sqlite will ensure that
@@ -387,32 +388,15 @@ class Manager::Factory {
 
     if (sFactory && !sFactory->mManagerList.IsEmpty()) {
       data.Append(
-          "Managers: "_ns +
+          "ManagerList: "_ns +
           IntToCString(static_cast<uint64_t>(sFactory->mManagerList.Length())) +
-          " ("_ns);
+          kStringifyStartSet);
 
       for (const auto& manager : sFactory->mManagerList.NonObservingRange()) {
-        data.AppendLiteral("[");
-        data.Append(quota::AnonymizedOriginString(
-            manager->GetManagerId().QuotaOrigin()));
-
-        data.AppendLiteral(": ");
-
-        data.Append(manager->GetState() == State::Open ? "Open"_ns
-                                                       : "Closing"_ns);
-        data.AppendLiteral(", ");
-
-        if (manager->mContext) {
-          manager->mContext->Stringify(data);
-        } else {
-          data.AppendLiteral("No Context");
-        }
-        data.AppendLiteral(", ");
-
-        data.AppendLiteral("]");
+        manager->Stringify(data);
       }
 
-      data.AppendLiteral(" ) ");
+      data.Append(kStringifyEndSet);
       if (sFactory->mPotentiallyUnreleasedCSCP.Length() > 0) {
         data.Append(
             "There have been CSCP instances whose"
@@ -913,7 +897,11 @@ class Manager::CachePutAllAction final : public DBAction {
     const nsresult rv = [this, &trans]() -> nsresult {
       QM_TRY(CollectEachInRange(mList, [this](Entry& e) -> nsresult {
         if (e.mRequestStream) {
-          QM_TRY(MOZ_TO_RESULT(BodyFinalizeWrite(*mDBDir, e.mRequestBodyId)));
+          QM_TRY_UNWRAP(int64_t bodyDiskSize,
+                        BodyFinalizeWrite(*mDBDir, e.mRequestBodyId));
+          e.mRequest.bodyDiskSize() = bodyDiskSize;
+        } else {
+          e.mRequest.bodyDiskSize() = 0;
         }
         if (e.mResponseStream) {
           // Gerenate padding size for opaque response if needed.
@@ -928,7 +916,11 @@ class Manager::CachePutAllAction final : public DBAction {
             mUpdatedPaddingSize += e.mResponse.paddingSize();
           }
 
-          QM_TRY(MOZ_TO_RESULT(BodyFinalizeWrite(*mDBDir, e.mResponseBodyId)));
+          QM_TRY_UNWRAP(int64_t bodyDiskSize,
+                        BodyFinalizeWrite(*mDBDir, e.mResponseBodyId));
+          e.mResponse.bodyDiskSize() = bodyDiskSize;
+        } else {
+          e.mResponse.bodyDiskSize() = 0;
         }
 
         QM_TRY_UNWRAP(
@@ -2188,6 +2180,25 @@ void Manager::MaybeAllowContextToClose() {
 
     pinnedContext->AllowToClose();
   }
+}
+
+void Manager::DoStringify(nsACString& aData) {
+  aData.Append("Manager "_ns + kStringifyStartInstance +
+               //
+               "Origin:"_ns +
+               quota::AnonymizedOriginString(GetManagerId().QuotaOrigin()) +
+               kStringifyDelimiter +
+               //
+               "State:"_ns + IntToCString(mState) + kStringifyDelimiter);
+
+  aData.AppendLiteral("Context:");
+  if (mContext) {
+    mContext->Stringify(aData);
+  } else {
+    aData.AppendLiteral("0");
+  }
+
+  aData.Append(kStringifyEndInstance);
 }
 
 }  // namespace mozilla::dom::cache

@@ -88,5 +88,18 @@ class ScreenshotsUI extends HTMLElement {
     });
     this.close();
   }
+
+  /**
+   * Set the focus to the most recent saved method.
+   * This will default to the download button.
+   * @param {String} buttonToFocus
+   */
+  focusButton(buttonToFocus) {
+    if (buttonToFocus === "copy") {
+      this._copyButton.focus({ focusVisible: true });
+    } else {
+      this._downloadButton.focus({ focusVisible: true });
+    }
+  }
 }
 customElements.define("screenshots-ui", ScreenshotsUI);

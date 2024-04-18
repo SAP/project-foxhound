@@ -625,9 +625,12 @@ void nsChildView::SetCursor(const Cursor& aCursor) {
 
   nsBaseWidget::SetCursor(aCursor);
 
-  if (NS_SUCCEEDED([[nsCursorManager sharedInstance]
-            setCustomCursor:aCursor
-          widgetScaleFactor:BackingScaleFactor()])) {
+  bool forceUpdate = mUpdateCursor;
+  mUpdateCursor = false;
+  if (mCustomCursorAllowed && NS_SUCCEEDED([[nsCursorManager sharedInstance]
+                                    setCustomCursor:aCursor
+                                  widgetScaleFactor:BackingScaleFactor()
+                                        forceUpdate:forceUpdate])) {
     return;
   }
 
@@ -3543,14 +3546,14 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 
   nsAutoRetainCocoaObject kungFuDeathGrip(self);
 
-  NSAttributedString* attrStr;
+  NSString* str;
   if ([aString isKindOfClass:[NSAttributedString class]]) {
-    attrStr = static_cast<NSAttributedString*>(aString);
+    str = [aString string];
   } else {
-    attrStr = [[[NSAttributedString alloc] initWithString:aString] autorelease];
+    str = aString;
   }
 
-  mTextInputHandler->InsertText(attrStr, &replacementRange);
+  mTextInputHandler->InsertText(str, &replacementRange);
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -5001,12 +5004,15 @@ void ChildViewMouseTracker::OnDestroyWindow(NSWindow* aWindow) {
 }
 
 void ChildViewMouseTracker::MouseEnteredWindow(NSEvent* aEvent) {
-  sWindowUnderMouse = [aEvent window];
-  ReEvaluateMouseEnterState(aEvent);
+  NSWindow* window = aEvent.window;
+  if (!window.ignoresMouseEvents) {
+    sWindowUnderMouse = window;
+    ReEvaluateMouseEnterState(aEvent);
+  }
 }
 
 void ChildViewMouseTracker::MouseExitedWindow(NSEvent* aEvent) {
-  if (sWindowUnderMouse == [aEvent window]) {
+  if (sWindowUnderMouse == aEvent.window) {
     sWindowUnderMouse = nil;
     [sLastMouseMoveEvent release];
     sLastMouseMoveEvent = nil;

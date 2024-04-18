@@ -2,15 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "react";
-import { connect } from "../../../utils/connect";
-import PropTypes from "prop-types";
+import React, { Component } from "devtools/client/shared/vendor/react";
+import { connect } from "devtools/client/shared/vendor/react-redux";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
 import FrameComponent from "./Frame";
 import Group from "./Group";
 
-import actions from "../../../actions";
-import { collapseFrames } from "../../../utils/pause/frames";
+import actions from "../../../actions/index";
+import { collapseFrames } from "../../../utils/pause/frames/index";
 
 import {
   getFrameworkGroupingState,
@@ -18,9 +18,7 @@ import {
   getCurrentThreadFrames,
   getCurrentThread,
   getShouldSelectOriginalLocation,
-} from "../../../selectors";
-
-import "./Frames.css";
+} from "../../../selectors/index";
 
 const NUM_FRAMES_SHOWN = 7;
 

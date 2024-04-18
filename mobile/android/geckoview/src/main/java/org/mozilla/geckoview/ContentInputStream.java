@@ -63,16 +63,6 @@ import org.mozilla.gecko.annotation.WrapForJNI;
     super.close();
   }
 
-  private static boolean wasGrantedPermission(
-      final @NonNull Context aCtx, final @NonNull Uri aUri) {
-    // For reference:
-    //   https://developer.android.com/topic/security/risks/content-resolver#mitigations_2
-    final int pid = Process.myPid();
-    final int uid = Process.myUid();
-    return aCtx.checkUriPermission(aUri, pid, uid, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        == PackageManager.PERMISSION_GRANTED;
-  }
-
   private static boolean isExported(final @NonNull Context aCtx, final @NonNull Uri aUri) {
     // For reference:
     //   https://developer.android.com/topic/security/risks/content-resolver#mitigations_2
@@ -89,6 +79,16 @@ import org.mozilla.gecko.annotation.WrapForJNI;
     // We check that the provider is exported:
     //   https://developer.android.com/reference/android/content/pm/ComponentInfo?hl=en#exported
     return info.exported;
+  }
+
+  private static boolean wasGrantedPermission(
+      final @NonNull Context aCtx, final @NonNull Uri aUri) {
+    // For reference:
+    //   https://developer.android.com/topic/security/risks/content-resolver#mitigations_2
+    final int pid = Process.myPid();
+    final int uid = Process.myUid();
+    return aCtx.checkUriPermission(aUri, pid, uid, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        == PackageManager.PERMISSION_GRANTED;
   }
 
   private static boolean belongsToCurrentApplication(
@@ -117,10 +117,18 @@ import org.mozilla.gecko.annotation.WrapForJNI;
     final Context context = GeckoAppShell.getApplicationContext();
 
     try {
-      if ((isExported(context, uri) && wasGrantedPermission(context, uri))
-          || belongsToCurrentApplication(context, uri)) {
+      // The check for this criteria is based on recommendations in
+      // https://developer.android.com/privacy-and-security/risks/content-resolver#mitigations_2
+      // The documentation recommends checking:
+      // 1. If URI targets our app (belongsToCurrentApplication)
+      // 2. OR if targeted provider is exported (isExported)
+      // 3. OR if granted explicit permission (wasGrantedPermission)
+      if (belongsToCurrentApplication(context, uri)
+          || isExported(context, uri)
+          || wasGrantedPermission(context, uri)) {
         final ContentResolver cr = context.getContentResolver();
         cr.openAssetFileDescriptor(uri, "r").close();
+        Log.d(LOGTAG, "The uri is readable: " + uri);
         return true;
       }
     } catch (final IOException | SecurityException e) {
@@ -128,6 +136,8 @@ import org.mozilla.gecko.annotation.WrapForJNI;
       // we're in an isolated process.
       Log.e(LOGTAG, "Cannot read the uri: " + uri, e);
     }
+
+    Log.d(LOGTAG, "The uri isn't readable: " + uri);
     return false;
   }
 

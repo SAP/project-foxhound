@@ -205,7 +205,6 @@ EXPORTS.js += [
     "../public/StreamConsumer.h",
     "../public/String.h",
     "../public/StructuredClone.h",
-    "../public/SweepingAPI.h",
     "../public/Symbol.h",
     "../public/TelemetryTimers.h",
     "../public/TraceKind.h",
@@ -407,6 +406,7 @@ UNIFIED_SOURCES += [
     "vm/PropMap.cpp",
     "vm/ProxyObject.cpp",
     "vm/Realm.cpp",
+    "vm/RealmFuses.cpp",
     "vm/RegExpObject.cpp",
     "vm/RegExpStatics.cpp",
     "vm/Runtime.cpp",
@@ -482,6 +482,7 @@ if CONFIG["JS_HAS_INTL_API"]:
         "builtin/intl/NumberFormat.cpp",
         "builtin/intl/PluralRules.cpp",
         "builtin/intl/RelativeTimeFormat.cpp",
+        "builtin/intl/Segmenter.cpp",
         "builtin/intl/SharedIntlData.cpp",
     ]
 
@@ -508,6 +509,11 @@ else:
     UNIFIED_SOURCES += [
         "threading/posix/CpuCount.cpp",
         "threading/posix/PosixThread.cpp",
+    ]
+
+if CONFIG["JS_HAS_INTL_API"] and CONFIG["MOZ_ICU4X"]:
+    LOCAL_INCLUDES += [
+        "/intl/icu_capi/c/include",
     ]
 
 if CONFIG["JS_HAS_CTYPES"]:
@@ -604,6 +610,7 @@ selfhosted_inputs = [
         "builtin/intl/PluralRules.js",
         "builtin/intl/RelativeTimeFormat.js",
         "builtin/intl/SanctionedSimpleUnitIdentifiersGenerated.js",
+        "builtin/intl/Segmenter.js",
     ]
     if CONFIG["JS_HAS_INTL_API"]
     else []

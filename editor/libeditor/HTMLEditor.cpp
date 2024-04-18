@@ -1182,7 +1182,9 @@ nsresult HTMLEditor::MaybeCollapseSelectionAtFirstEditableNode(
     if (HTMLEditUtils::IsBlockElement(
             *leafContent, BlockInlineCheck::UseComputedDisplayStyle) &&
         !HTMLEditUtils::IsEmptyNode(
-            *leafContent, {EmptyCheckOption::TreatSingleBRElementAsVisible}) &&
+            *leafContent,
+            {EmptyCheckOption::TreatSingleBRElementAsVisible,
+             EmptyCheckOption::TreatNonEditableContentAsInvisible}) &&
         !HTMLEditUtils::IsNeverElementContentsEditableByUser(*leafContent)) {
       leafContent = HTMLEditUtils::GetFirstLeafContent(
           *leafContent,
@@ -3913,7 +3915,8 @@ nsresult HTMLEditor::RemoveEmptyInclusiveAncestorInlineElements(
     if (!editableBlockElement ||
         HTMLEditUtils::IsEmptyNode(
             *editableBlockElement,
-            {EmptyCheckOption::TreatSingleBRElementAsVisible})) {
+            {EmptyCheckOption::TreatSingleBRElementAsVisible,
+             EmptyCheckOption::TreatNonEditableContentAsInvisible})) {
       return NS_OK;
     }
   }
@@ -3960,7 +3963,8 @@ nsresult HTMLEditor::DeleteAllChildrenWithTransaction(Element& aElement) {
   return NS_OK;
 }
 
-NS_IMETHODIMP HTMLEditor::DeleteNode(nsINode* aNode) {
+NS_IMETHODIMP HTMLEditor::DeleteNode(nsINode* aNode, bool aPreserveSelection,
+                                     uint8_t aOptionalArgCount) {
   if (NS_WARN_IF(!aNode) || NS_WARN_IF(!aNode->IsContent())) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -3971,6 +3975,17 @@ NS_IMETHODIMP HTMLEditor::DeleteNode(nsINode* aNode) {
     NS_WARNING_ASSERTION(rv == NS_ERROR_EDITOR_ACTION_CANCELED,
                          "CanHandleAndMaybeDispatchBeforeInputEvent(), failed");
     return EditorBase::ToGenericNSResult(rv);
+  }
+
+  // Make dispatch `input` event after stopping preserving selection.
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this,
+      ScrollSelectionIntoView::No,  // not a user interaction
+      __FUNCTION__);
+
+  Maybe<AutoTransactionsConserveSelection> preserveSelection;
+  if (aOptionalArgCount && aPreserveSelection) {
+    preserveSelection.emplace(*this);
   }
 
   rv = DeleteNodeWithTransaction(MOZ_KnownLive(*aNode->AsContent()));

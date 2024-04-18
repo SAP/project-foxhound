@@ -46,13 +46,6 @@ ChromeUtils.defineESModuleGetters(this, {
   TabStateFlusher: "resource:///modules/sessionstore/TabStateFlusher.sys.mjs",
 });
 
-const MOBILE_PROMO_DISMISSED_PREF =
-  "browser.tabs.firefox-view.mobilePromo.dismissed";
-const RECENTLY_CLOSED_STATE_PREF =
-  "browser.tabs.firefox-view.ui-state.recently-closed-tabs.open";
-const TAB_PICKUP_STATE_PREF =
-  "browser.tabs.firefox-view.ui-state.tab-pickup.open";
-
 const calloutId = "feature-callout";
 const calloutSelector = `#${calloutId}.featureCallout`;
 const CTASelector = `#${calloutId} :is(.primary, .secondary)`;
@@ -67,6 +60,7 @@ const URLs = [
   "https://example.net/",
   "https://example.org/",
   "about:robots",
+  "https://www.mozilla.org/",
 ];
 
 const syncedTabsData1 = [
@@ -142,11 +136,11 @@ function testVisibility(browser, expected) {
     const elem = document.querySelector(selector);
     if (shouldBeVisible) {
       ok(
-        BrowserTestUtils.is_visible(elem),
+        BrowserTestUtils.isVisible(elem),
         `Expected ${selector} to be visible`
       );
     } else {
-      ok(BrowserTestUtils.is_hidden(elem), `Expected ${selector} to be hidden`);
+      ok(BrowserTestUtils.isHidden(elem), `Expected ${selector} to be hidden`);
     }
   }
 }
@@ -166,8 +160,8 @@ async function waitForElementVisible(browser, selector, isVisible = true) {
     },
     () => {
       return isVisible
-        ? BrowserTestUtils.is_visible(elem)
-        : BrowserTestUtils.is_hidden(elem);
+        ? BrowserTestUtils.isVisible(elem)
+        : BrowserTestUtils.isHidden(elem);
     }
   );
 }
@@ -185,19 +179,19 @@ async function waitForVisibleSetupStep(browser, expected) {
       attributeFilter: ["selected-view"],
     },
     () => {
-      return BrowserTestUtils.is_visible(nextStepElem);
+      return BrowserTestUtils.isVisible(nextStepElem);
     }
   );
 
   for (let elem of stepElems) {
     if (elem == nextStepElem) {
       ok(
-        BrowserTestUtils.is_visible(elem),
+        BrowserTestUtils.isVisible(elem),
         `Expected ${elem.id || elem.className} to be visible`
       );
     } else {
       ok(
-        BrowserTestUtils.is_hidden(elem),
+        BrowserTestUtils.isHidden(elem),
         `Expected ${elem.id || elem.className} to be hidden`
       );
     }
@@ -288,37 +282,6 @@ async function setupListState(browser) {
   info("tabsContainer isn't loading anymore, returning");
 }
 
-function checkMobilePromo(browser, expected = {}) {
-  const { document } = browser.contentWindow;
-  const promoElem = document.querySelector(
-    "#tab-pickup-container > .promo-box"
-  );
-  const successElem = document.querySelector(
-    "#tab-pickup-container > .confirmation-message-box"
-  );
-
-  info("checkMobilePromo: " + JSON.stringify(expected));
-  if (expected.mobilePromo) {
-    ok(BrowserTestUtils.is_visible(promoElem), "Mobile promo is visible");
-  } else {
-    ok(
-      !promoElem || BrowserTestUtils.is_hidden(promoElem),
-      "Mobile promo is hidden"
-    );
-  }
-  if (expected.mobileConfirmation) {
-    ok(
-      BrowserTestUtils.is_visible(successElem),
-      "Success confirmation is visible"
-    );
-  } else {
-    ok(
-      !successElem || BrowserTestUtils.is_hidden(successElem),
-      "Success confirmation is hidden"
-    );
-  }
-}
-
 async function touchLastTabFetch() {
   // lastTabFetch stores a timestamp in *seconds*.
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -366,7 +329,6 @@ function setupMocks({ fxaDevices = null, state, syncEnabled = true }) {
 async function tearDown(sandbox) {
   sandbox?.restore();
   Services.prefs.clearUserPref("services.sync.lastTabFetch");
-  Services.prefs.clearUserPref(MOBILE_PROMO_DISMISSED_PREF);
 }
 
 const featureTourPref = "browser.firefox-view.feature-tour";
@@ -564,7 +526,6 @@ function clearHistory() {
 function cleanup_tab_pickup() {
   Services.prefs.clearUserPref("services.sync.engine.tabs");
   Services.prefs.clearUserPref("services.sync.lastTabFetch");
-  Services.prefs.clearUserPref(TAB_PICKUP_STATE_PREF);
 }
 
 function isFirefoxViewTabSelected(win = window) {

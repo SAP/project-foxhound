@@ -28,19 +28,20 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(ModuleLoadRequest)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ModuleLoadRequest,
                                                 ScriptLoadRequest)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mLoader, mRootModule, mModuleScript, mImports,
-                                  mWaitingParentRequest)
+                                  mWaitingParentRequest,
+                                  mDynamicReferencingScript)
   tmp->ClearDynamicImport();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ModuleLoadRequest,
                                                   ScriptLoadRequest)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLoader, mRootModule, mModuleScript,
-                                    mImports, mWaitingParentRequest)
+                                    mImports, mWaitingParentRequest,
+                                    mDynamicReferencingScript)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(ModuleLoadRequest,
                                                ScriptLoadRequest)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mDynamicReferencingPrivate)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mDynamicSpecifier)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mDynamicPromise)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
@@ -124,7 +125,7 @@ void ModuleLoadRequest::ModuleLoaded() {
     return;
   }
 
-  MOZ_ASSERT(IsFetching());
+  MOZ_ASSERT(IsFetching() || IsPendingFetchingError());
 
   mModuleScript = mLoader->GetFetchedModule(mURI);
   if (IsErrored()) {
@@ -146,7 +147,7 @@ void ModuleLoadRequest::LoadFailed() {
     return;
   }
 
-  MOZ_ASSERT(IsFetching());
+  MOZ_ASSERT(IsFetching() || IsPendingFetchingError());
   MOZ_ASSERT(!mModuleScript);
 
   Cancel();
@@ -230,7 +231,7 @@ void ModuleLoadRequest::LoadFinished() {
 }
 
 void ModuleLoadRequest::ClearDynamicImport() {
-  mDynamicReferencingPrivate = JS::UndefinedValue();
+  mDynamicReferencingScript = nullptr;
   mDynamicSpecifier = nullptr;
   mDynamicPromise = nullptr;
 }

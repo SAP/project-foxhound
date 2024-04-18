@@ -170,7 +170,8 @@ nsresult EnsureFileSystemDirectory(
   quota::QuotaManager* quotaManager = quota::QuotaManager::Get();
   MOZ_ASSERT(quotaManager);
 
-  QM_TRY(MOZ_TO_RESULT(quotaManager->EnsureTemporaryStorageIsInitialized()));
+  QM_TRY(MOZ_TO_RESULT(
+      quotaManager->EnsureTemporaryStorageIsInitializedInternal()));
 
   QM_TRY_INSPECT(const auto& fileSystemDirectory,
                  quotaManager
@@ -216,7 +217,7 @@ Result<nsCOMPtr<nsIFile>, QMResult> GetDatabaseFile(
 Result<nsCOMPtr<nsIFileURL>, QMResult> GetDatabaseFileURL(
     const quota::OriginMetadata& aOriginMetadata,
     const int64_t aDirectoryLockId) {
-  MOZ_ASSERT(aDirectoryLockId >= 0);
+  MOZ_ASSERT(aDirectoryLockId >= -1);
 
   QM_TRY_UNWRAP(nsCOMPtr<nsIFile> databaseFile,
                 GetDatabaseFile(aOriginMetadata));
@@ -237,12 +238,18 @@ Result<nsCOMPtr<nsIFileURL>, QMResult> GetDatabaseFileURL(
                      nsCOMPtr<nsIURIMutator>, fileHandler, NewFileURIMutator,
                      databaseFile)));
 
-  nsCString directoryLockIdClause = "&directoryLockId="_ns;
-  directoryLockIdClause.AppendInt(aDirectoryLockId);
+  // aDirectoryLockId should only be -1 when we are called from
+  // FileSystemQuotaClient::InitOrigin when the temporary storage hasn't been
+  // initialized yet. At that time, the in-memory objects (e.g. OriginInfo) are
+  // only being created so it doesn't make sense to tunnel quota information to
+  // QuotaVFS to get corresponding QuotaObject instances for SQLite files.
+  const nsCString directoryLockIdClause =
+      "&directoryLockId="_ns + IntToCString(aDirectoryLockId);
 
   nsCOMPtr<nsIFileURL> result;
-  QM_TRY(QM_TO_RESULT(
-      NS_MutateURI(mutator).SetQuery(directoryLockIdClause).Finalize(result)));
+  QM_TRY(QM_TO_RESULT(NS_MutateURI(mutator)
+                          .SetQuery("cache=private"_ns + directoryLockIdClause)
+                          .Finalize(result)));
 
   return result;
 }

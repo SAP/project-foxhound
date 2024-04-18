@@ -87,7 +87,7 @@
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
 #include "nsIWebNavigation.h"
-#include "nsIContentViewer.h"
+#include "nsIDocumentViewer.h"
 #include "nsFrameManager.h"
 #include "nsIBrowserChild.h"
 #include "nsMenuPopupFrame.h"
@@ -306,7 +306,7 @@ int16_t EventStateManager::sCurrentMouseBtn = MouseButton::eNotPressed;
 EventStateManager* EventStateManager::sActiveESM = nullptr;
 EventStateManager* EventStateManager::sCursorSettingManager = nullptr;
 AutoWeakFrame EventStateManager::sLastDragOverFrame = nullptr;
-LayoutDeviceIntPoint EventStateManager::sPreLockPoint =
+LayoutDeviceIntPoint EventStateManager::sPreLockScreenPoint =
     LayoutDeviceIntPoint(0, 0);
 LayoutDeviceIntPoint EventStateManager::sLastRefPoint = kInvalidRefPoint;
 CSSIntPoint EventStateManager::sLastScreenPoint = CSSIntPoint(0, 0);
@@ -1097,7 +1097,22 @@ void EventStateManager::NotifyTargetUserActivation(WidgetEvent* aEvent,
 
   MOZ_ASSERT(aEvent->mMessage == eKeyDown || aEvent->mMessage == eMouseDown ||
              aEvent->mMessage == ePointerDown || aEvent->mMessage == eTouchEnd);
-  doc->NotifyUserGestureActivation();
+  UserActivation::Modifiers modifiers;
+  if (WidgetInputEvent* inputEvent = aEvent->AsInputEvent()) {
+    if (inputEvent->IsShift()) {
+      modifiers.SetShift();
+    }
+    if (inputEvent->IsMeta()) {
+      modifiers.SetMeta();
+    }
+    if (inputEvent->IsControl()) {
+      modifiers.SetControl();
+    }
+    if (inputEvent->IsAlt()) {
+      modifiers.SetAlt();
+    }
+  }
+  doc->NotifyUserGestureActivation(modifiers);
 }
 
 // https://html.spec.whatwg.org/multipage/popover.html#popover-light-dismiss
@@ -2390,7 +2405,7 @@ void EventStateManager::DetermineDragTargetAndDefaultData(
     bool wasAlt = (mGestureModifiers & MODIFIER_ALT) != 0;
     nsresult rv = nsContentAreaDragDrop::GetDragData(
         aWindow, mGestureDownContent, aSelectionTarget, wasAlt, aDataTransfer,
-        &canDrag, aSelection, getter_AddRefs(dragDataNode), aPrincipal, aCsp,
+        &canDrag, aSelection, getter_AddRefs(dragDataNode), aCsp,
         aCookieJarSettings);
     if (NS_FAILED(rv) || !canDrag) {
       return;
@@ -4571,6 +4586,13 @@ static UniquePtr<WidgetMouseEvent> CreateMouseOrPointerWidgetEvent(
                                             aMouseEvent->mWidget,
                                             WidgetMouseEvent::eReal);
   }
+
+  // Inherit whether the event is synthesized by the test API or not.
+  // Then, when the event is synthesized by a test API and handled in a remote
+  // process, it won't be ignored.  See PresShell::HandleEvent().
+  newEvent->mFlags.mIsSynthesizedForTests =
+      aMouseEvent->mFlags.mIsSynthesizedForTests;
+
   newEvent->mRelatedTarget = aRelatedTarget;
   newEvent->mRefPoint = aMouseEvent->mRefPoint;
   newEvent->mModifiers = aMouseEvent->mModifiers;
@@ -5106,7 +5128,7 @@ OverOutElementsWrapper* EventStateManager::GetWrapperByEventID(
 
 /* static */
 void EventStateManager::SetPointerLock(nsIWidget* aWidget,
-                                       nsIContent* aElement) {
+                                       nsPresContext* aPresContext) {
   // Reset mouse wheel transaction
   WheelTransaction::EndTransaction();
 
@@ -5116,6 +5138,7 @@ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
 
   if (PointerLockManager::IsLocked()) {
     MOZ_ASSERT(aWidget, "Locking pointer requires a widget");
+    MOZ_ASSERT(aPresContext, "Locking pointer requires a presContext");
 
     // Release all pointer capture when a pointer lock is successfully applied
     // on an element.
@@ -5123,7 +5146,8 @@ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
 
     // Store the last known ref point so we can reposition the pointer after
     // unlock.
-    sPreLockPoint = sLastRefPoint;
+    sPreLockScreenPoint = LayoutDeviceIntPoint::Round(
+        sLastScreenPoint * aPresContext->CSSToDevPixelScale());
 
     // Fire a synthetic mouse move to ensure event state is updated. We first
     // set the mouse to the center of the window, so that the mouse event
@@ -5148,20 +5172,19 @@ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
       aWidget->UnlockNativePointer();
     }
 
-    // Unlocking, so return pointer to the original position by firing a
-    // synthetic mouse event. We first reset sLastRefPoint to its
-    // pre-pointerlock position, so that the synthetic mouse event reports
-    // no movement.
-    sLastRefPoint = sPreLockPoint;
     // Reset SynthCenteringPoint to invalid so that next time we start
     // locking pointer, it has its initial value.
     sSynthCenteringPoint = kInvalidRefPoint;
     if (aWidget) {
+      // Unlocking, so return pointer to the original position by firing a
+      // synthetic mouse event. We first reset sLastRefPoint to its
+      // pre-pointerlock position, so that the synthetic mouse event reports
+      // no movement.
+      sLastRefPoint = sPreLockScreenPoint - aWidget->WidgetToScreenOffset();
       // XXX Cannot we do synthesize the native mousemove in the parent process
       //     with calling `UnlockNativePointer` above?  Then, we could make this
       //     API work only in the automation mode.
-      aWidget->SynthesizeNativeMouseMove(
-          sPreLockPoint + aWidget->WidgetToScreenOffset(), nullptr);
+      aWidget->SynthesizeNativeMouseMove(sPreLockScreenPoint, nullptr);
     }
 
     // Unsuppress DnD
@@ -6238,18 +6261,11 @@ nsresult EventStateManager::DoContentCommandEvent(
         case eContentCommandPasteTransferable: {
           BrowserParent* remote = BrowserParent::GetFocused();
           if (remote) {
-            nsCOMPtr<nsITransferable> transferable = aEvent->mTransferable;
-            IPCTransferableData ipcTransferableData;
-            nsContentUtils::TransferableToIPCTransferableData(
-                transferable, &ipcTransferableData, false, remote->Manager());
-            bool isPrivateData = transferable->GetIsPrivateData();
-            nsCOMPtr<nsIPrincipal> requestingPrincipal =
-                transferable->GetRequestingPrincipal();
-            nsContentPolicyType contentPolicyType =
-                transferable->GetContentPolicyType();
-            remote->SendPasteTransferable(std::move(ipcTransferableData),
-                                          isPrivateData, requestingPrincipal,
-                                          contentPolicyType);
+            IPCTransferable ipcTransferable;
+            nsContentUtils::TransferableToIPCTransferable(
+                aEvent->mTransferable, &ipcTransferable, false,
+                remote->Manager());
+            remote->SendPasteTransferable(std::move(ipcTransferable));
             rv = NS_OK;
           } else {
             nsCOMPtr<nsICommandController> commandController =

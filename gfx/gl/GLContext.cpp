@@ -309,6 +309,13 @@ GLContext::~GLContext() {
 }
 
 /*static*/
+void GLContext::InvalidateCurrentContext() {
+  if (sCurrentContext.init()) {
+    sCurrentContext.set(nullptr);
+  }
+}
+
+/*static*/
 void GLContext::StaticDebugCallback(GLenum source, GLenum type, GLuint id,
                                     GLenum severity, GLsizei length,
                                     const GLchar* message,
@@ -657,6 +664,7 @@ bool GLContext::InitImpl() {
       "Gallium 0.4 on llvmpipe",
       "Intel HD Graphics 3000 OpenGL Engine",
       "Microsoft Basic Render Driver",
+      "Samsung Xclipse",
       "Unknown"};
 
   mRenderer = GLRenderer::Other;
@@ -753,6 +761,10 @@ bool GLContext::InitImpl() {
     if (IsMesa()) {
       // DrawElementsInstanced hangs the driver.
       MarkUnsupported(GLFeature::robust_buffer_access_behavior);
+    }
+
+    if (Renderer() == GLRenderer::SamsungXclipse) {
+      MarkUnsupported(GLFeature::invalidate_framebuffer);
     }
   }
 
@@ -2389,6 +2401,12 @@ uint32_t GetBytesPerTexel(GLenum format, GLenum type) {
   return 0;
 }
 
+void GLContext::ResetTLSCurrentContext() {
+  if (sCurrentContext.init()) {
+    sCurrentContext.set(nullptr);
+  }
+}
+
 bool GLContext::MakeCurrent(bool aForce) const {
   if (MOZ_UNLIKELY(IsContextLost())) return false;
 
@@ -2401,7 +2419,7 @@ bool GLContext::MakeCurrent(bool aForce) const {
     }
     if (MOZ_LIKELY(isCurrent)) {
       MOZ_ASSERT(IsCurrentImpl() ||
-                 !MakeCurrentImpl());  // Might have lost context.
+                 MakeCurrentImpl());  // Might have lost context.
       return true;
     }
   }

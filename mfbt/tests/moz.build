@@ -10,7 +10,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"]:
     ]
 
 # Important: for these tests to be run, they also need to be added
-# to testing/cppunittest.ini.
+# to testing/cppunittest.toml.
 CppUnitTests(
     [
         "TestAlgorithm",
@@ -77,6 +77,13 @@ if CONFIG["OS_ARCH"] != "WASI":
         [
             "TestSPSCQueue",
             "TestThreadSafeWeakPtr",
+        ]
+    )
+
+if CONFIG["OS_ARCH"] == "WINNT":
+    CppUnitTests(
+        [
+            "TestWinArchDefs",
         ]
     )
 

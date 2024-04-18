@@ -8,16 +8,19 @@
  */
 
 import { setSymbols } from "./symbols";
-import { setInScopeLines } from "../ast";
+import { setInScopeLines } from "../ast/index";
 import { prettyPrintAndSelectSource } from "./prettyPrint";
 import { addTab, closeTab } from "../tabs";
 import { loadSourceText } from "./loadSourceText";
-import { setBreakableLines } from ".";
+import { setBreakableLines } from "./breakableLines";
 
 import { prefs } from "../../utils/prefs";
 import { isMinified } from "../../utils/source";
 import { createLocation } from "../../utils/location";
-import { getRelatedMapLocation } from "../../utils/source-maps";
+import {
+  getRelatedMapLocation,
+  getOriginalLocation,
+} from "../../utils/source-maps";
 
 import {
   getSource,
@@ -32,7 +35,8 @@ import {
   hasSource,
   hasSourceActor,
   hasPrettyTab,
-} from "../../selectors";
+  isSourceActorWithSourceMap,
+} from "../../selectors/index";
 
 // This is only used by jest tests (and within this module)
 export const setSelectedLocation = (
@@ -189,7 +193,17 @@ export function selectLocation(location, { keepContext = true } = {}) {
 
     await dispatch(loadSourceText(source, sourceActor));
 
+    // Stop the async work if we started selecting another location
+    if (getSelectedLocation(getState()) != location) {
+      return;
+    }
+
     await dispatch(setBreakableLines(location));
+
+    // Stop the async work if we started selecting another location
+    if (getSelectedLocation(getState()) != location) {
+      return;
+    }
 
     const loadedSource = getSource(getState(), source.id);
 
@@ -212,8 +226,40 @@ export function selectLocation(location, { keepContext = true } = {}) {
     }
 
     await dispatch(setSymbols(location));
+
+    // Stop the async work if we started selecting another location
+    if (getSelectedLocation(getState()) != location) {
+      return;
+    }
+
     // /!\ we don't historicaly wait for this async action
     dispatch(setInScopeLines());
+
+    // When we select a generated source which has a sourcemap,
+    // asynchronously fetch the related original location in order to display
+    // the mapped location in the editor's footer.
+    if (
+      !location.source.isOriginal &&
+      isSourceActorWithSourceMap(getState(), sourceActor.id)
+    ) {
+      let originalLocation = await getOriginalLocation(location, thunkArgs, {
+        looseSearch: true,
+      });
+      // We pass a null original location when the location doesn't map
+      // in order to know when we are done processing the source map.
+      // * `getOriginalLocation` would return the exact same location if it doesn't map
+      // * `getOriginalLocation` may also return a distinct location object,
+      //   but refering to the same `source` object (which is the bundle) when it doesn't
+      //   map to any known original location.
+      if (originalLocation.source === location.source) {
+        originalLocation = null;
+      }
+      dispatch({
+        type: "SET_ORIGINAL_SELECTED_LOCATION",
+        location,
+        originalLocation,
+      });
+    }
   };
 }
 

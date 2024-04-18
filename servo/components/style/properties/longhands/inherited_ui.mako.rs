@@ -68,12 +68,13 @@ ${helpers.single_keyword(
 
 ${helpers.single_keyword(
     "-moz-user-focus",
-    "none ignore normal select-after select-before select-menu select-same select-all",
+    "normal none ignore",
     engines="gecko",
     gecko_ffi_name="mUserFocus",
     gecko_enum_prefix="StyleUserFocus",
     animation_value_type="discrete",
     spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-user-focus)",
+    enabled_in="chrome",
     affects="",
 )}
 

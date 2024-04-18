@@ -17,6 +17,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/Nullable.h"
@@ -311,15 +312,16 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   mutable FuncScope* mFuncScope = nullptr;
 
  public:
-  static RefPtr<WebGLContext> Create(HostWebGLContext&,
+  static RefPtr<WebGLContext> Create(HostWebGLContext*,
                                      const webgl::InitContextDesc&,
                                      webgl::InitContextResult* out);
 
  private:
+  bool mIsRgb8Renderable = false;
   void FinishInit();
 
  protected:
-  WebGLContext(HostWebGLContext&, const webgl::InitContextDesc&);
+  WebGLContext(HostWebGLContext*, const webgl::InitContextDesc&);
   virtual ~WebGLContext();
 
   RefPtr<layers::CompositableHost> mCompositableHost;
@@ -451,6 +453,8 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   static const char* ErrorName(GLenum error);
 
+  void JsWarning(const std::string& text) const;
+
   /**
    * Return displayable name for GLenum.
    * This version is like gl::GLenumToStr but with out the GL_ prefix to
@@ -460,6 +464,8 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   static void EnumName(GLenum val, nsCString* out_name);
 
   void DummyReadFramebufferOperation();
+
+  dom::ContentParentId GetContentId() const;
 
   WebGLTexture* GetActiveTex(const GLenum texTarget) const;
 
@@ -493,9 +499,10 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   // may differ subject to available format conversion options. Since this
   // operation uses an explicit copy, it inherently preserves the framebuffer
   // without need to set the preserveDrawingBuffer option.
-  void CopyToSwapChain(
+  bool CopyToSwapChain(
       WebGLFramebuffer*, layers::TextureType,
-      const webgl::SwapChainOptions& options = webgl::SwapChainOptions());
+      const webgl::SwapChainOptions& options = webgl::SwapChainOptions(),
+      layers::RemoteTextureOwnerClient* ownerClient = nullptr);
   // In use cases where a framebuffer is used as an offscreen framebuffer and
   // does not need to be committed to the swap chain, it may still be useful
   // for the implementation to delineate distinct frames, such as when sharing
@@ -1254,9 +1261,10 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   RefPtr<layers::RemoteTextureOwnerClient> mRemoteTextureOwner;
 
-  bool PushRemoteTexture(WebGLFramebuffer*, gl::SwapChain&,
-                         std::shared_ptr<gl::SharedSurface>,
-                         const webgl::SwapChainOptions& options);
+  bool PushRemoteTexture(
+      WebGLFramebuffer*, gl::SwapChain&, std::shared_ptr<gl::SharedSurface>,
+      const webgl::SwapChainOptions& options,
+      layers::RemoteTextureOwnerClient* ownerClient = nullptr);
 
   // --
 

@@ -344,7 +344,7 @@ impl<T: ?Sized> Arc<T> {
     /// allocation
     #[inline]
     pub fn ptr_eq(this: &Self, other: &Self) -> bool {
-        this.ptr() == other.ptr()
+        this.ptr() as *const () == other.ptr() as *const ()
     }
 
     fn ptr(&self) -> *mut ArcInner<T> {
@@ -892,11 +892,7 @@ impl<H, T> UniqueArc<HeaderSlice<H, T>> {
     }
 
     #[inline]
-    pub fn from_header_and_iter_with_size<I>(
-        header: H,
-        items: I,
-        num_items: usize,
-    ) -> Self
+    pub fn from_header_and_iter_with_size<I>(header: H, items: I, num_items: usize) -> Self
     where
         I: Iterator<Item = T>,
     {

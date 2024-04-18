@@ -174,6 +174,7 @@ gfxPlatform* gPlatform = nullptr;
 static bool gEverInitialized = false;
 
 const ContentDeviceData* gContentDeviceInitData = nullptr;
+Maybe<nsTArray<uint8_t>> gCMSOutputProfileData;
 
 Atomic<bool, MemoryOrdering::ReleaseAcquire> gfxPlatform::gCMSInitialized;
 CMSMode gfxPlatform::gCMSMode = CMSMode::Off;
@@ -467,10 +468,10 @@ bool gfxPlatform::Initialized() { return !!gPlatform; }
 /* static */
 void gfxPlatform::InitChild(const ContentDeviceData& aData) {
   MOZ_ASSERT(XRE_IsContentProcess());
-  MOZ_RELEASE_ASSERT(!gPlatform,
-                     "InitChild() should be called before first GetPlatform()");
+  MOZ_ASSERT(!gPlatform,
+             "InitChild() should be called before first GetPlatform()");
   // Make the provided initial ContentDeviceData available to the init
-  // routines, so they don't have to do a sync request from the parent.
+  // routines.
   gContentDeviceInitData = &aData;
   Init();
   gContentDeviceInitData = nullptr;
@@ -934,6 +935,12 @@ void gfxPlatform::Init() {
   }
 #endif
 
+  if (XRE_IsParentProcess()) {
+    mozilla::glean::gpu_process::feature_status.Set(
+        gfxConfig::GetFeature(Feature::GPU_PROCESS)
+            .GetStatusAndFailureIdString());
+  }
+
   if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
     GPUProcessManager* gpu = GPUProcessManager::Get();
     Unused << gpu->LaunchGPUProcess();
@@ -1059,8 +1066,6 @@ void gfxPlatform::ReportTelemetry() {
                          uint32_t(rect.Height()));
     Telemetry::ScalarSet(Telemetry::ScalarID::GFX_DISPLAY_PRIMARY_WIDTH,
                          uint32_t(rect.Width()));
-    mozilla::glean::fog_validation::gvsv_primary_height.Set(rect.Height());
-    mozilla::glean::fog_validation::gvsv_primary_width.Set(rect.Width());
   }
 
   nsString adapterDesc;
@@ -1190,7 +1195,8 @@ bool gfxPlatform::IsHeadless() {
 
 /* static */
 bool gfxPlatform::UseRemoteCanvas() {
-  return XRE_IsContentProcess() && gfx::gfxVars::RemoteCanvasEnabled();
+  return XRE_IsContentProcess() && (gfx::gfxVars::RemoteCanvasEnabled() ||
+                                    gfx::gfxVars::UseAcceleratedCanvas2D());
 }
 
 /* static */
@@ -2060,6 +2066,10 @@ const mozilla::gfx::ContentDeviceData* gfxPlatform::GetInitContentDeviceData() {
   return gContentDeviceInitData;
 }
 
+Maybe<nsTArray<uint8_t>>& gfxPlatform::GetCMSOutputProfileData() {
+  return gCMSOutputProfileData;
+}
+
 CMSMode GfxColorManagementMode() {
   const auto mode = StaticPrefs::gfx_color_management_mode();
   if (mode >= 0 && mode < UnderlyingValue(CMSMode::AllCount)) {
@@ -2534,11 +2544,6 @@ void gfxPlatform::InitGPUProcessPrefs() {
   if (IsHeadless()) {
     gpuProc.ForceDisable(FeatureStatus::Blocked, "Headless mode is enabled",
                          "FEATURE_FAILURE_HEADLESS_MODE"_ns);
-    return;
-  }
-  if (InSafeMode()) {
-    gpuProc.ForceDisable(FeatureStatus::Blocked, "Safe-mode is enabled",
-                         "FEATURE_FAILURE_SAFE_MODE"_ns);
     return;
   }
 
@@ -3042,7 +3047,7 @@ void gfxPlatform::InitWebGLConfig() {
   gfxVars::SetUseCanvasRenderThread(feature.IsEnabled());
 
   bool webglOopAsyncPresentForceSync =
-      !gfxVars::UseCanvasRenderThread() ||
+      (threadsafeGL && !gfxVars::UseCanvasRenderThread()) ||
       StaticPrefs::webgl_out_of_process_async_present_force_sync();
   gfxVars::SetWebglOopAsyncPresentForceSync(webglOopAsyncPresentForceSync);
 
@@ -3243,6 +3248,12 @@ static void AcceleratedCanvas2DPrefChangeCallback(const char*, void*) {
   if (!gfxPlatform::IsGfxInfoStatusOkay(
           nsIGfxInfo::FEATURE_ACCELERATED_CANVAS2D, &message, failureId)) {
     feature.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
+  }
+
+  if (StaticPrefs::gfx_canvas_remote_worker_threads_AtStartup() != 0) {
+    feature.ForceDisable(FeatureStatus::Failed,
+                         "Disabled with non-zero canvas worker threads",
+                         "FEATURE_FAILURE_DISABLE_BY_CANVAS_WORKER_THREADS"_ns);
   }
 
   gfxVars::SetUseAcceleratedCanvas2D(feature.IsEnabled());
@@ -3862,29 +3873,30 @@ void gfxPlatform::DisableGPUProcess() {
 }
 
 /* static */ void gfxPlatform::DisableRemoteCanvas() {
-  if (!gfxVars::RemoteCanvasEnabled()) {
-    return;
+  if (gfxVars::RemoteCanvasEnabled()) {
+    gfxConfig::ForceDisable(Feature::REMOTE_CANVAS, FeatureStatus::Failed,
+                            "Disabled by runtime error",
+                            "FEATURE_REMOTE_CANVAS_RUNTIME_ERROR"_ns);
+    gfxVars::SetRemoteCanvasEnabled(false);
   }
-  gfxConfig::ForceDisable(Feature::REMOTE_CANVAS, FeatureStatus::Failed,
-                          "Disabled by runtime error",
-                          "FEATURE_REMOTE_CANVAS_RUNTIME_ERROR"_ns);
-  gfxVars::SetRemoteCanvasEnabled(false);
+  if (gfxVars::UseAcceleratedCanvas2D()) {
+    gfxConfig::ForceDisable(Feature::ACCELERATED_CANVAS2D,
+                            FeatureStatus::Failed, "Disabled by runtime error",
+                            "FEATURE_ACCELERATED_CANVAS2D_RUNTIME_ERROR"_ns);
+    gfxVars::SetUseAcceleratedCanvas2D(false);
+  }
 }
 
-void gfxPlatform::FetchAndImportContentDeviceData() {
+void gfxPlatform::ImportCachedContentDeviceData() {
   MOZ_ASSERT(XRE_IsContentProcess());
 
-  if (gContentDeviceInitData) {
-    ImportContentDeviceData(*gContentDeviceInitData);
+  // Import the content device data if we've got some waiting.
+  if (!gContentDeviceInitData) {
     return;
   }
 
-  mozilla::dom::ContentChild* cc = mozilla::dom::ContentChild::GetSingleton();
-
-  mozilla::gfx::ContentDeviceData data;
-  cc->SendGetGraphicsDeviceInitData(&data);
-
-  ImportContentDeviceData(data);
+  ImportContentDeviceData(*gContentDeviceInitData);
+  gContentDeviceInitData = nullptr;
 }
 
 void gfxPlatform::ImportContentDeviceData(
@@ -3893,7 +3905,12 @@ void gfxPlatform::ImportContentDeviceData(
 
   const DevicePrefs& prefs = aData.prefs();
   gfxConfig::Inherit(Feature::HW_COMPOSITING, prefs.hwCompositing());
-  gfxConfig::Inherit(Feature::OPENGL_COMPOSITING, prefs.oglCompositing());
+
+  // We don't inherit Feature::OPENGL_COMPOSITING here, because platforms
+  // will handle that (without imported data from the parent) in
+  // InitOpenGLConfig.
+
+  gCMSOutputProfileData = Some(aData.cmsOutputProfileData().Clone());
 }
 
 void gfxPlatform::BuildContentDeviceData(

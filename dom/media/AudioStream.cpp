@@ -11,7 +11,6 @@
 #include "AudioStream.h"
 #include "VideoUtils.h"
 #include "mozilla/dom/AudioDeviceInfo.h"
-#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Sprintf.h"
@@ -195,7 +194,7 @@ nsresult AudioStream::EnsureTimeStretcherInitialized() {
 }
 
 nsresult AudioStream::SetPlaybackRate(double aPlaybackRate) {
-  TRACE("AudioStream::SetPlaybackRate");
+  TRACE_COMMENT("AudioStream::SetPlaybackRate", "%f", aPlaybackRate);
   NS_ASSERTION(
       aPlaybackRate > 0.0,
       "Can't handle negative or null playbackrate in the AudioStream.");
@@ -209,7 +208,7 @@ nsresult AudioStream::SetPlaybackRate(double aPlaybackRate) {
 }
 
 nsresult AudioStream::SetPreservesPitch(bool aPreservesPitch) {
-  TRACE("AudioStream::SetPreservesPitch");
+  TRACE_COMMENT("AudioStream::SetPreservesPitch", "%d", aPreservesPitch);
   if (aPreservesPitch == mPreservesPitch) {
     return NS_OK;
   }
@@ -253,10 +252,6 @@ nsresult AudioStream::Init(AudioDeviceInfo* aSinkInfo)
     return NS_ERROR_DOM_MEDIA_CUBEB_INITIALIZATION_ERR;
   }
 
-  mozilla::glean::fog_validation::gvsv_audio_stream_init.Get("inits"_ns).Add();
-  Telemetry::AccumulateCategorical(
-      mozilla::Telemetry::LABELS_GVSV_AUDIO_STREAM_INITS::inits);
-
   return OpenCubeb(cubebContext, params, startTime,
                    CubebUtils::GetFirstStream());
 }
@@ -294,7 +289,7 @@ nsresult AudioStream::OpenCubeb(cubeb* aContext, cubeb_stream_params& aParams,
 }
 
 void AudioStream::SetVolume(double aVolume) {
-  TRACE("AudioStream::SetVolume");
+  TRACE_COMMENT("AudioStream::SetVolume", "%f", aVolume);
   MOZ_ASSERT(aVolume >= 0.0 && aVolume <= 1.0, "Invalid volume");
 
   MOZ_ASSERT(mState != SHUTDOWN, "Don't set volume after shutdown.");

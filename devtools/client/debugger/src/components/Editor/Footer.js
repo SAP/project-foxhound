@@ -2,42 +2,37 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { PureComponent } from "react";
-import { div, button, span } from "react-dom-factories";
-import PropTypes from "prop-types";
-import { connect } from "../../utils/connect";
-import { createLocation } from "../../utils/location";
-import actions from "../../actions";
+import React, { PureComponent } from "devtools/client/shared/vendor/react";
+import {
+  div,
+  button,
+  span,
+} from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import { connect } from "devtools/client/shared/vendor/react-redux";
+import actions from "../../actions/index";
 import {
   getSelectedSource,
   getSelectedLocation,
   getSelectedSourceTextContent,
   getPrettySource,
   getPaneCollapse,
-  getGeneratedSource,
   isSourceBlackBoxed,
   canPrettyPrintSource,
   getPrettyPrintMessage,
   isSourceOnSourceMapIgnoreList,
   isSourceMapIgnoreListEnabled,
-} from "../../selectors";
+  getSelectedMappedSource,
+} from "../../selectors/index";
 
 import { isPretty, getFilename, shouldBlackbox } from "../../utils/source";
 
-import { PaneToggleButton } from "../shared/Button";
+import { PaneToggleButton } from "../shared/Button/index";
 import AccessibleImage from "../shared/AccessibleImage";
 
-const classnames = require("devtools/client/shared/classnames.js");
-
-import "./Footer.css";
+const classnames = require("resource://devtools/client/shared/classnames.js");
 
 class SourceFooter extends PureComponent {
-  constructor() {
-    super();
-
-    this.state = { cursorPosition: { line: 0, column: 0 } };
-  }
-
   static get propTypes() {
     return {
       canPrettyPrint: PropTypes.bool.isRequired,
@@ -47,6 +42,7 @@ class SourceFooter extends PureComponent {
       jumpToMappedLocation: PropTypes.func.isRequired,
       mappedSource: PropTypes.object,
       selectedSource: PropTypes.object,
+      selectedLocation: PropTypes.object,
       isSelectedSourceBlackBoxed: PropTypes.bool.isRequired,
       sourceLoaded: PropTypes.bool.isRequired,
       toggleBlackBox: PropTypes.func.isRequired,
@@ -54,30 +50,6 @@ class SourceFooter extends PureComponent {
       prettyPrintAndSelectSource: PropTypes.func.isRequired,
       isSourceOnIgnoreList: PropTypes.bool.isRequired,
     };
-  }
-
-  componentDidUpdate() {
-    const eventDoc = document.querySelector(".editor-mount .CodeMirror");
-    // querySelector can return null
-    if (eventDoc) {
-      this.toggleCodeMirror(eventDoc, true);
-    }
-  }
-
-  componentWillUnmount() {
-    const eventDoc = document.querySelector(".editor-mount .CodeMirror");
-
-    if (eventDoc) {
-      this.toggleCodeMirror(eventDoc, false);
-    }
-  }
-
-  toggleCodeMirror(eventDoc, toggle) {
-    if (toggle === true) {
-      eventDoc.CodeMirror.on("cursorActivity", this.onCursorChange);
-    } else {
-      eventDoc.CodeMirror.off("cursorActivity", this.onCursorChange);
-    }
   }
 
   prettyPrintButton() {
@@ -198,52 +170,52 @@ class SourceFooter extends PureComponent {
   }
 
   renderSourceSummary() {
-    const { mappedSource, jumpToMappedLocation, selectedSource } = this.props;
+    const { mappedSource, jumpToMappedLocation, selectedLocation } = this.props;
 
-    if (!mappedSource || !selectedSource || !selectedSource.isOriginal) {
+    if (!mappedSource) {
       return null;
     }
 
-    const filename = getFilename(mappedSource);
     const tooltip = L10N.getFormatStr(
-      "sourceFooter.mappedSourceTooltip",
+      mappedSource.isOriginal
+        ? "sourceFooter.mappedOriginalSource.tooltip"
+        : "sourceFooter.mappedGeneratedSource.tooltip",
+      mappedSource.url
+    );
+    const filename = getFilename(mappedSource);
+    const label = L10N.getFormatStr(
+      mappedSource.isOriginal
+        ? "sourceFooter.mappedOriginalSource.title"
+        : "sourceFooter.mappedGeneratedSource.title",
       filename
     );
-    const title = L10N.getFormatStr("sourceFooter.mappedSource", filename);
-    const mappedSourceLocation = createLocation({
-      source: selectedSource,
-      line: 1,
-      column: 1,
-    });
     return button(
       {
         className: "mapped-source",
-        onClick: () => jumpToMappedLocation(mappedSourceLocation),
+        onClick: () => jumpToMappedLocation(selectedLocation),
         title: tooltip,
       },
-      span(null, title)
+      span(null, label)
     );
   }
-  onCursorChange = event => {
-    const { line, ch } = event.doc.getCursor();
-    this.setState({ cursorPosition: { line, column: ch } });
-  };
 
   renderCursorPosition() {
-    if (!this.props.selectedSource) {
+    // When we open a new source, there is no particular location selected and the line will be set to zero or falsy
+    if (!this.props.selectedLocation || !this.props.selectedLocation.line) {
       return null;
     }
 
-    const { line, column } = this.state.cursorPosition;
+    // Note that line is 1-based while column is 0-based.
+    const { line, column } = this.props.selectedLocation;
 
     const text = L10N.getFormatStr(
       "sourceFooter.currentCursorPosition",
-      line + 1,
+      line,
       column + 1
     );
     const title = L10N.getFormatStr(
       "sourceFooter.currentCursorPosition.tooltip",
-      line + 1,
+      line,
       column + 1
     );
     return div(
@@ -285,6 +257,7 @@ const mapStateToProps = state => {
 
   return {
     selectedSource,
+    selectedLocation,
     isSelectedSourceBlackBoxed: selectedSource
       ? isSourceBlackBoxed(state, selectedSource)
       : null,
@@ -292,7 +265,7 @@ const mapStateToProps = state => {
       isSourceMapIgnoreListEnabled(state) &&
       isSourceOnSourceMapIgnoreList(state, selectedSource),
     sourceLoaded: !!sourceTextContent,
-    mappedSource: getGeneratedSource(state, selectedSource),
+    mappedSource: getSelectedMappedSource(state),
     prettySource: getPrettySource(
       state,
       selectedSource ? selectedSource.id : null

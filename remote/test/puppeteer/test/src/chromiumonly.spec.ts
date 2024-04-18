@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import {IncomingMessage} from 'http';
+import type {IncomingMessage} from 'http';
 
 import expect from 'expect';
 import {Deferred} from 'puppeteer-core/internal/util/Deferred.js';
@@ -38,7 +38,7 @@ describe('Chromium-Specific Launcher tests', function () {
             return 7 * 8;
           })
         ).toBe(56);
-        browser1.disconnect();
+        await browser1.disconnect();
 
         const browser2 = await puppeteer.connect({
           browserURL: browserURL + '/',
@@ -49,7 +49,7 @@ describe('Chromium-Specific Launcher tests', function () {
             return 8 * 7;
           })
         ).toBe(56);
-        browser2.disconnect();
+        await browser2.disconnect();
       } finally {
         await close();
       }

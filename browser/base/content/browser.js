@@ -41,7 +41,6 @@ ChromeUtils.defineESModuleGetters(this, {
   isProductURL: "chrome://global/content/shopping/ShoppingProduct.mjs",
   LightweightThemeConsumer:
     "resource://gre/modules/LightweightThemeConsumer.sys.mjs",
-  Log: "resource://gre/modules/Log.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   LoginManagerParent: "resource://gre/modules/LoginManagerParent.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
@@ -61,7 +60,6 @@ ChromeUtils.defineESModuleGetters(this, {
   Pocket: "chrome://pocket/content/Pocket.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.sys.mjs",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   PromptUtils: "resource://gre/modules/PromptUtils.sys.mjs",
   ReaderMode: "resource://gre/modules/ReaderMode.sys.mjs",
   ResetPBMPanel: "resource:///modules/ResetPBMPanel.sys.mjs",
@@ -719,7 +717,6 @@ var gInitialPages = [
   "about:blank",
   "about:home",
   "about:firefoxview",
-  "about:firefoxview-next",
   "about:newtab",
   "about:privatebrowsing",
   "about:sessionrestore",
@@ -1109,7 +1106,7 @@ const gStoragePressureObserver = {
     }
     messageFragment.appendChild(message);
 
-    gNotificationBox.appendNotification(
+    await gNotificationBox.appendNotification(
       NOTIFICATION_VALUE,
       {
         label: messageFragment,
@@ -1125,7 +1122,7 @@ const gStoragePressureObserver = {
 };
 
 var gPopupBlockerObserver = {
-  handleEvent(aEvent) {
+  async handleEvent(aEvent) {
     if (aEvent.originalTarget != gBrowser.selectedBrowser) {
       return;
     }
@@ -1161,23 +1158,31 @@ var gPopupBlockerObserver = {
 
         let notificationBox = gBrowser.getNotificationBox();
         let notification =
-          notificationBox.getNotificationWithValue("popup-blocked");
+          notificationBox.getNotificationWithValue("popup-blocked") ||
+          (await this.notificationPromise);
         if (notification) {
           notification.label = label;
         } else {
           const image = "chrome://browser/skin/notification-icons/popup.svg";
           const priority = notificationBox.PRIORITY_INFO_MEDIUM;
-          notificationBox.appendNotification(
-            "popup-blocked",
-            { label, image, priority },
-            [
-              {
-                "l10n-id": "popup-warning-button",
-                popup: "blockedPopupOptions",
-                callback: null,
-              },
-            ]
-          );
+          try {
+            this.notificationPromise = notificationBox.appendNotification(
+              "popup-blocked",
+              { label, image, priority },
+              [
+                {
+                  "l10n-id": "popup-warning-button",
+                  popup: "blockedPopupOptions",
+                  callback: null,
+                },
+              ]
+            );
+            await this.notificationPromise;
+          } catch (err) {
+            console.warn(err);
+          } finally {
+            this.notificationPromise = null;
+          }
         }
       }
 
@@ -1405,7 +1410,7 @@ var gKeywordURIFixup = {
     let asciiHost = fixedURI.asciiHost;
 
     let onLookupCompleteListener = {
-      onLookupComplete(request, record, status) {
+      async onLookupComplete(request, record, status) {
         let browserRef = weakBrowser.get();
         if (!Components.isSuccessCode(status) || !browserRef) {
           return;
@@ -1460,7 +1465,7 @@ var gKeywordURIFixup = {
             },
           },
         ];
-        let notification = notificationBox.appendNotification(
+        let notification = await notificationBox.appendNotification(
           "keyword-uri-fixup",
           {
             label: message,
@@ -1757,8 +1762,6 @@ var gBrowserInit = {
 
       // Stop the about:blank load
       gBrowser.stop();
-      // make sure it has a docshell
-      gBrowser.docShell;
 
       // Remove the speculative focus from the urlbar to let the url be formatted.
       gURLBar.removeAttribute("focused");
@@ -1952,10 +1955,7 @@ var gBrowserInit = {
     }
 
     FullScreen.init();
-
-    if (AppConstants.platform == "win") {
-      MenuTouchModeObserver.init();
-    }
+    MenuTouchModeObserver.init();
 
     if (AppConstants.MOZ_DATA_REPORTING) {
       gDataNotificationInfoBar.init();
@@ -2334,6 +2334,13 @@ var gBrowserInit = {
     });
 
     scheduleIdleTask(() => {
+      // load the tab preview component
+      import("chrome://browser/content/tabpreview/tabpreview.mjs").catch(
+        console.error
+      );
+    });
+
+    scheduleIdleTask(() => {
       // setup simple gestures support
       gGestureSupport.init(true);
 
@@ -2562,9 +2569,7 @@ var gBrowserInit = {
       );
       Services.obs.removeObserver(gKeywordURIFixup, "keyword-uri-fixup");
 
-      if (AppConstants.platform == "win") {
-        MenuTouchModeObserver.uninit();
-      }
+      MenuTouchModeObserver.uninit();
       BrowserOffline.uninit();
       CanvasPermissionPromptHelper.uninit();
       WebAuthnPromptHelper.uninit();
@@ -2584,7 +2589,7 @@ var gBrowserInit = {
 ChromeUtils.defineLazyGetter(
   gBrowserInit,
   "_firstContentWindowPaintDeferred",
-  () => PromiseUtils.defer()
+  () => Promise.withResolvers()
 );
 
 gBrowserInit.idleTasksFinishedPromise = new Promise(resolve => {
@@ -3339,22 +3344,9 @@ function PageProxyClickHandler(aEvent) {
  * us via async messaging.
  */
 var BrowserOnClick = {
-  ignoreWarningLink(reason, blockedInfo, browsingContext) {
-    let triggeringPrincipal =
-      blockedInfo.triggeringPrincipal ||
-      _createNullPrincipalFromTabUserContextId();
-
-    // Allow users to override and continue through to the site,
-    // but add a notify bar as a reminder, so that they don't lose
-    // track after, e.g., tab switching.
-    // Note that we have to use the passed URI info and can't just
-    // rely on the document URI, because the latter contains
-    // additional query parameters that should be stripped.
-    browsingContext.fixupAndLoadURIString(blockedInfo.uri, {
-      triggeringPrincipal,
-      flags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
-    });
-
+  async ignoreWarningLink(reason, blockedInfo, browsingContext) {
+    // Add a notify bar before allowing the user to continue through to the
+    // site, so that they don't lose track after, e.g., tab switching.
     // We can't use browser.contentPrincipal which is principal of about:blocked
     // Create one from uri with current principal origin attributes
     let principal = Services.scriptSecurityManager.createContentPrincipal(
@@ -3429,7 +3421,20 @@ var BrowserOnClick = {
       // provide a URL endpoint for these reports.
     }
 
-    SafeBrowsingNotificationBox.show(title, buttons);
+    await SafeBrowsingNotificationBox.show(title, buttons);
+
+    // Allow users to override and continue through to the site.
+    // Note that we have to use the passed URI info and can't just
+    // rely on the document URI, because the latter contains
+    // additional query parameters that should be stripped.
+    let triggeringPrincipal =
+      blockedInfo.triggeringPrincipal ||
+      _createNullPrincipalFromTabUserContextId();
+
+    browsingContext.fixupAndLoadURIString(blockedInfo.uri, {
+      triggeringPrincipal,
+      flags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
+    });
   },
 };
 
@@ -4198,7 +4203,7 @@ const BrowserSearch = {
       inBackground = !inBackground;
     }
 
-    let { engine, url } = await BrowserSearch._loadSearch(
+    let { engine } = await BrowserSearch._loadSearch(
       terms,
       where,
       usePrivate,
@@ -4214,8 +4219,7 @@ const BrowserSearch = {
       BrowserSearchTelemetry.recordSearch(
         gBrowser.selectedBrowser,
         engine,
-        "contextmenu",
-        { url }
+        "contextmenu"
       );
     }
   },
@@ -4224,7 +4228,7 @@ const BrowserSearch = {
    * Perform a search initiated from the command line.
    */
   async loadSearchFromCommandLine(terms, usePrivate, triggeringPrincipal, csp) {
-    let { engine, url } = await BrowserSearch._loadSearch(
+    let { engine } = await BrowserSearch._loadSearch(
       terms,
       "current",
       usePrivate,
@@ -4236,8 +4240,7 @@ const BrowserSearch = {
       BrowserSearchTelemetry.recordSearch(
         gBrowser.selectedBrowser,
         engine,
-        "system",
-        { url }
+        "system"
       );
     }
   },
@@ -4267,8 +4270,7 @@ const BrowserSearch = {
     BrowserSearchTelemetry.recordSearch(
       gBrowser.selectedBrowser,
       result.engine,
-      "webextension",
-      { url: result.url }
+      "webextension"
     );
   },
 
@@ -4288,26 +4290,8 @@ const BrowserSearch = {
    * @param {string} newEngine
    *   name of the application default engine to replaced the removed engine.
    */
-  removalOfSearchEngineNotificationBox(oldEngine, newEngine) {
-    let messageFragment = document.createDocumentFragment();
-    let message = document.createElement("span");
-    let link = document.createXULElement("label", {
-      is: "text-link",
-    });
-
-    link.href = Services.urlFormatter.formatURLPref(
-      "browser.search.searchEngineRemoval"
-    );
-    link.setAttribute("data-l10n-name", "remove-search-engine-article");
-    document.l10n.setAttributes(message, "removed-search-engine-message", {
-      oldEngine,
-      newEngine,
-    });
-
-    message.appendChild(link);
-    messageFragment.appendChild(message);
-
-    let button = [
+  async removalOfSearchEngineNotificationBox(oldEngine, newEngine) {
+    let buttons = [
       {
         "l10n-id": "remove-search-engine-button",
         primary: true,
@@ -4318,15 +4302,21 @@ const BrowserSearch = {
           gNotificationBox.removeNotification(notificationBox);
         },
       },
+      {
+        supportPage: "search-engine-removal",
+      },
     ];
 
-    gNotificationBox.appendNotification(
+    await gNotificationBox.appendNotification(
       "search-engine-removal",
       {
-        label: messageFragment,
+        label: {
+          "l10n-id": "removed-search-engine-message2",
+          "l10n-args": { oldEngine, newEngine },
+        },
         priority: gNotificationBox.PRIORITY_SYSTEM,
       },
-      button
+      buttons
     );
 
     // Update engine name in the placeholder to the new default engine name.
@@ -4983,7 +4973,16 @@ var XULBrowserWindow = {
     StatusPanel.update();
   },
 
-  setOverLink(url) {
+  /**
+   * Tells the UI what link we are currently over.
+   *
+   * @param {String} url
+   *   The URL of the link.
+   * @param {Object} [options]
+   *   This is an extension of nsIXULBrowserWindow for JS callers, will be
+   *   passed on to LinkTargetDisplay.
+   */
+  setOverLink(url, options = undefined) {
     if (url) {
       url = Services.textToSubURI.unEscapeURIForUI(url);
 
@@ -5000,16 +4999,14 @@ var XULBrowserWindow = {
     }
 
     this.overLink = url;
-    LinkTargetDisplay.update();
+    LinkTargetDisplay.update(options);
   },
 
   onEnterDOMFullscreen() {
     // Clear the status panel.
-    this.hideOverLinkImmediately = true;
-    this.setOverLink("");
-    this.hideOverLinkImmediately = false;
     this.status = "";
     this.setDefaultStatus("");
+    this.setOverLink("", { hideStatusPanelImmediately: true });
   },
 
   showTooltip(xDevPix, yDevPix, tooltip, direction, browser) {
@@ -5209,9 +5206,7 @@ var XULBrowserWindow = {
       return;
     }
 
-    this.hideOverLinkImmediately = true;
-    this.setOverLink("");
-    this.hideOverLinkImmediately = false;
+    this.setOverLink("", { hideStatusPanelImmediately: true });
 
     let isSameDocument =
       aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT;
@@ -5397,19 +5392,17 @@ var XULBrowserWindow = {
       }
     }
 
-    if (TranslationsParent.isRestrictedPage(gBrowser.currentURI.scheme)) {
+    if (TranslationsParent.isRestrictedPage(gBrowser)) {
       this._menuItemForTranslations.setAttribute("disabled", "true");
     } else {
       this._menuItemForTranslations.removeAttribute("disabled");
     }
     if (gTranslationsEnabled) {
-      TranslationsParent.onIsTranslationsEngineSupported(isSupported => {
-        if (isSupported) {
-          this._menuItemForTranslations.removeAttribute("hidden");
-        } else {
-          this._menuItemForTranslations.setAttribute("hidden", "true");
-        }
-      });
+      if (TranslationsParent.getIsTranslationsEngineSupported()) {
+        this._menuItemForTranslations.removeAttribute("hidden");
+      } else {
+        this._menuItemForTranslations.setAttribute("hidden", "true");
+      }
     } else {
       this._menuItemForTranslations.setAttribute("hidden", "true");
     }
@@ -5443,6 +5436,53 @@ var XULBrowserWindow = {
       win.gBrowser.contentTitle,
       baseWin
     );
+  },
+
+  /**
+   * Potentially gets a URI for a MozBrowser to be shown to the user in the
+   * identity panel. For browsers whose content does not have a principal,
+   * this tries the precursor. If this is null, we should not override the
+   * browser's currentURI.
+   * @param {MozBrowser} browser
+   *   The browser that we need a URI to show the user in the
+   *   identity panel.
+   * @return nsIURI of the principal for the browser's content if
+   *   the browser's currentURI should not be used, null otherwise.
+   */
+  _securityURIOverride(browser) {
+    let uri = browser.currentURI;
+    if (!uri) {
+      return null;
+    }
+
+    // If the browser's currentURI is sufficiently good that we
+    // do not require an override, bail out here.
+    // browser.currentURI should be used.
+    let { URI_INHERITS_SECURITY_CONTEXT } = Ci.nsIProtocolHandler;
+    if (
+      !(doGetProtocolFlags(uri) & URI_INHERITS_SECURITY_CONTEXT) &&
+      !(uri.scheme == "about" && uri.filePath == "srcdoc") &&
+      !(uri.scheme == "about" && uri.filePath == "blank")
+    ) {
+      return null;
+    }
+
+    let principal = browser.contentPrincipal;
+
+    if (principal.isNullPrincipal) {
+      principal = principal.precursorPrincipal;
+    }
+
+    if (!principal) {
+      return null;
+    }
+
+    // Can't get the original URI for a PDF viewer principal yet.
+    if (principal.originNoSuffix == "resource://pdf.js") {
+      return null;
+    }
+
+    return principal.URI;
   },
 
   asyncUpdateUI() {
@@ -5532,6 +5572,14 @@ var XULBrowserWindow = {
     // depending on the current mixed active content blocking state.
     gURLBar.formatValue();
 
+    // Update the identity panel, making sure we use the precursorPrincipal's
+    // URI where appropriate, for example about:blank windows.
+    let uriOverride = this._securityURIOverride(gBrowser.selectedBrowser);
+    if (uriOverride) {
+      uri = uriOverride;
+      this._state |= Ci.nsIWebProgressListener.STATE_IDENTITY_ASSOCIATED;
+    }
+
     try {
       uri = Services.io.createExposableURI(uri);
     } catch (e) {}
@@ -5597,7 +5645,7 @@ var LinkTargetDisplay = {
     ));
   },
 
-  update() {
+  update({ hideStatusPanelImmediately = false } = {}) {
     if (
       this._contextMenu.state == "open" ||
       this._contextMenu.state == "showing"
@@ -5612,7 +5660,7 @@ var LinkTargetDisplay = {
     window.removeEventListener("mousemove", this, true);
 
     if (!XULBrowserWindow.overLink) {
-      if (XULBrowserWindow.hideOverLinkImmediately) {
+      if (hideStatusPanelImmediately) {
         this._hide();
       } else {
         this._timer = setTimeout(this._hide.bind(this), this.DELAY_HIDE);
@@ -5992,7 +6040,8 @@ nsBrowserAccess.prototype = {
     aTriggeringPrincipal = null,
     aName = "",
     aCsp = null,
-    aSkipLoad = false
+    aSkipLoad = false,
+    aForceLoadInBackground = false
   ) {
     let win, needToFocusWin;
 
@@ -6018,6 +6067,9 @@ nsBrowserAccess.prototype = {
     let loadInBackground = Services.prefs.getBoolPref(
       "browser.tabs.loadDivertedInBackground"
     );
+    if (aForceLoadInBackground) {
+      loadInBackground = true;
+    }
 
     let tab = win.gBrowser.addTab(aURI ? aURI.spec : "about:blank", {
       triggeringPrincipal: aTriggeringPrincipal,
@@ -6087,8 +6139,15 @@ nsBrowserAccess.prototype = {
   ) {
     var browsingContext = null;
     var isExternal = !!(aFlags & Ci.nsIBrowserDOMWindow.OPEN_EXTERNAL);
+    var guessUserContextIdEnabled =
+      isExternal &&
+      !Services.prefs.getBoolPref(
+        "browser.link.force_default_user_context_id_for_external_opens",
+        false
+      );
     var openingUserContextId =
-      (isExternal && URILoadingHelper.guessUserContextId(aURI)) ||
+      (guessUserContextIdEnabled &&
+        URILoadingHelper.guessUserContextId(aURI)) ||
       Ci.nsIScriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
 
     if (aOpenWindowInfo && isExternal) {
@@ -6185,7 +6244,8 @@ nsBrowserAccess.prototype = {
           console.error(ex);
         }
         break;
-      case Ci.nsIBrowserDOMWindow.OPEN_NEWTAB: {
+      case Ci.nsIBrowserDOMWindow.OPEN_NEWTAB:
+      case Ci.nsIBrowserDOMWindow.OPEN_NEWTAB_BACKGROUND: {
         // If we have an opener, that means that the caller is expecting access
         // to the nsIDOMWindow of the opened tab right away. For e10s windows,
         // this means forcing the newly opened browser to be non-remote so that
@@ -6196,6 +6256,8 @@ nsBrowserAccess.prototype = {
         let userContextId = aOpenWindowInfo
           ? aOpenWindowInfo.originAttributes.userContextId
           : openingUserContextId;
+        let forceLoadInBackground =
+          aWhere == Ci.nsIBrowserDOMWindow.OPEN_NEWTAB_BACKGROUND;
         let browser = this._openURIInNewTab(
           aURI,
           referrerInfo,
@@ -6208,7 +6270,8 @@ nsBrowserAccess.prototype = {
           aTriggeringPrincipal,
           "",
           aCsp,
-          aSkipLoad
+          aSkipLoad,
+          forceLoadInBackground
         );
         if (browser) {
           browsingContext = browser.browsingContext;
@@ -6307,7 +6370,10 @@ nsBrowserAccess.prototype = {
         );
       }
 
-      if (aWhere != Ci.nsIBrowserDOMWindow.OPEN_NEWTAB) {
+      if (
+        aWhere != Ci.nsIBrowserDOMWindow.OPEN_NEWTAB &&
+        aWhere != Ci.nsIBrowserDOMWindow.OPEN_NEWTAB_BACKGROUND
+      ) {
         dump("Error: openURIInFrame can only open in new tabs or print");
         return null;
       }
@@ -6319,6 +6385,9 @@ nsBrowserAccess.prototype = {
         "userContextId" in aParams.openerOriginAttributes
           ? aParams.openerOriginAttributes.userContextId
           : Ci.nsIScriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
+
+      var forceLoadInBackground =
+        aWhere == Ci.nsIBrowserDOMWindow.OPEN_NEWTAB_BACKGROUND;
 
       return this._openURIInNewTab(
         aURI,
@@ -6332,7 +6401,8 @@ nsBrowserAccess.prototype = {
         aParams.triggeringPrincipal,
         aName,
         aParams.csp,
-        aSkipLoad
+        aSkipLoad,
+        forceLoadInBackground
       );
     },
 
@@ -9009,7 +9079,7 @@ var PanicButtonNotifier = {
 
 const SafeBrowsingNotificationBox = {
   _currentURIBaseDomain: null,
-  show(title, buttons) {
+  async show(title, buttons) {
     let uri = gBrowser.currentURI;
 
     // start tracking host so that we know when we leave the domain
@@ -9030,7 +9100,7 @@ const SafeBrowsingNotificationBox = {
       notificationBox.removeNotification(previousNotification);
     }
 
-    let notification = notificationBox.appendNotification(
+    let notification = await notificationBox.appendNotification(
       value,
       {
         label: title,
@@ -9905,17 +9975,11 @@ var ConfirmationHint = {
 var FirefoxViewHandler = {
   tab: null,
   BUTTON_ID: "firefox-view-button",
-  _enabled: false,
   get button() {
     return document.getElementById(this.BUTTON_ID);
   },
   init() {
     CustomizableUI.addListener(this);
-
-    this._updateEnabledState = this._updateEnabledState.bind(this);
-    this._updateEnabledState();
-    NimbusFeatures.majorRelease2022.onUpdate(this._updateEnabledState);
-    NimbusFeatures.firefoxViewNext.onUpdate(this._updateEnabledState);
 
     ChromeUtils.defineESModuleGetters(this, {
       SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
@@ -9925,25 +9989,6 @@ var FirefoxViewHandler = {
   uninit() {
     CustomizableUI.removeListener(this);
     Services.obs.removeObserver(this, "firefoxview-notification-dot-update");
-    NimbusFeatures.majorRelease2022.offUpdate(this._updateEnabledState);
-    NimbusFeatures.firefoxViewNext.offUpdate(this._updateEnabledState);
-  },
-  _updateEnabledState() {
-    this._enabled =
-      NimbusFeatures.majorRelease2022.getVariable("firefoxView") ||
-      NimbusFeatures.firefoxViewNext.getVariable("enabled");
-    // We use a root attribute because there's no guarantee the button is in the
-    // DOM, and visibility changes need to take effect even if it isn't in the DOM
-    // right now.
-    document.documentElement.toggleAttribute(
-      "firefoxviewhidden",
-      !this._enabled
-    );
-    document.getElementById("menu_openFirefoxView").hidden = !this._enabled;
-    document.getElementById("firefox-view-button").style.listStyleImage =
-      NimbusFeatures.firefoxViewNext.getVariable("newIcon")
-        ? ""
-        : 'url("chrome://branding/content/about-logo.png")';
   },
   onWidgetRemoved(aWidgetId) {
     if (aWidgetId == this.BUTTON_ID && this.tab) {
@@ -9955,10 +10000,7 @@ var FirefoxViewHandler = {
       this.button.removeAttribute("open");
     }
   },
-  openTab(event) {
-    if (event?.type == "mousedown" && event?.button != 0) {
-      return;
-    }
+  openTab(section) {
     if (!CustomizableUI.getPlacementOfWidget(this.BUTTON_ID)) {
       CustomizableUI.addWidgetToArea(
         this.BUTTON_ID,
@@ -9966,9 +10008,10 @@ var FirefoxViewHandler = {
         CustomizableUI.getPlacementOfWidget("tabbrowser-tabs").position
       );
     }
-    const viewURL = NimbusFeatures.firefoxViewNext.getVariable("enabled")
-      ? "about:firefoxview-next"
-      : "about:firefoxview";
+    let viewURL = "about:firefoxview";
+    if (section) {
+      viewURL = `${viewURL}#${section}`;
+    }
     // Need to account for navigation to Firefox View pages
     if (
       this.tab &&
@@ -9990,6 +10033,12 @@ var FirefoxViewHandler = {
     this._closeDeviceConnectedTab();
     gBrowser.selectedTab = this.tab;
   },
+  openToolbarMouseEvent(event, section) {
+    if (event?.type == "mousedown" && event?.button != 0) {
+      return;
+    }
+    this.openTab(section);
+  },
   handleEvent(e) {
     switch (e.type) {
       case "TabSelect":
@@ -9998,13 +10047,10 @@ var FirefoxViewHandler = {
         this.button?.setAttribute("aria-pressed", selected);
         this._recordViewIfTabSelected();
         this._onTabForegrounded();
-        if (e.target == this.tab) {
-          // If Fx View is opened, add temporary style to make first available tab focusable
-          gBrowser.visibleTabs[0].style["-moz-user-focus"] = "normal";
-        } else {
-          // When Fx View is closed, remove temporary -moz-user-focus style from first available tab
-          gBrowser.visibleTabs[0].style.removeProperty("-moz-user-focus");
-        }
+        // If Fx View is opened, add temporary style to make first available tab focusable
+        // When Fx View is closed, remove temporary -moz-user-focus style from first available tab
+        gBrowser.visibleTabs[0].style.MozUserFocus =
+          e.target == this.tab ? "normal" : "";
         break;
       case "TabClose":
         this.tab = null;
@@ -10066,18 +10112,11 @@ var FirefoxViewHandler = {
       const PREF_NAME = "browser.firefox-view.view-count";
       const MAX_VIEW_COUNT = 10;
       let viewCount = Services.prefs.getIntPref(PREF_NAME, 0);
-      let isFirefoxViewNext = Services.prefs.getBoolPref(
-        "browser.tabs.firefox-view-next",
-        false
-      );
 
       // Record telemetry
-      Services.telemetry.setEventRecordingEnabled(
-        isFirefoxViewNext ? "firefoxview_next" : "firefoxview",
-        true
-      );
+      Services.telemetry.setEventRecordingEnabled("firefoxview_next", true);
       Services.telemetry.recordEvent(
-        isFirefoxViewNext ? "firefoxview_next" : "firefoxview",
+        "firefoxview_next",
         "tab_selected",
         "toolbarbutton",
         null,

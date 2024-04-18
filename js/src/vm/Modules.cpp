@@ -40,19 +40,6 @@ using mozilla::Utf8Unit;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Public API
-
-JS_PUBLIC_API void JS::SetSupportedImportAssertions(
-    JSRuntime* rt, const ImportAssertionVector& assertions) {
-  AssertHeapIsIdle();
-  MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
-  MOZ_ASSERT(rt->supportedImportAssertions.ref().empty());
-
-  AutoEnterOOMUnsafeRegion oomUnsafe;
-  if (!rt->supportedImportAssertions.ref().appendAll(assertions)) {
-    oomUnsafe.crash("SetSupportedImportAssertions");
-  }
-}
-
 JS_PUBLIC_API JS::ModuleResolveHook JS::GetModuleResolveHook(JSRuntime* rt) {
   AssertHeapIsIdle();
 
@@ -856,9 +843,14 @@ static void ThrowResolutionError(JSContext* cx, Handle<ModuleObject*> module,
 
   bool isAmbiguous = resolution == StringValue(cx->names().ambiguous);
 
+  // ErrorNumbers:
+  //          | MISSING | AMBIGUOUS |
+  // ---------+---------+-----------+
+  // INDIRECT |
+  // DIRECT   |
   static constexpr unsigned ErrorNumbers[2][2] = {
-      {JSMSG_AMBIGUOUS_IMPORT, JSMSG_MISSING_IMPORT},
-      {JSMSG_AMBIGUOUS_INDIRECT_EXPORT, JSMSG_MISSING_INDIRECT_EXPORT}};
+      {JSMSG_MISSING_INDIRECT_EXPORT, JSMSG_AMBIGUOUS_INDIRECT_EXPORT},
+      {JSMSG_MISSING_IMPORT, JSMSG_AMBIGUOUS_IMPORT}};
   unsigned errorNumber = ErrorNumbers[isDirectImport][isAmbiguous];
 
   const JSErrorFormatString* errorString =
@@ -917,13 +909,16 @@ bool js::ModuleInitializeEnvironment(JSContext* cx,
   Rooted<JSAtom*> exportName(cx);
   Rooted<Value> resolution(cx);
   for (const ExportEntry& e : module->indirectExportEntries()) {
-    // Step 1.a. Let resolution be ? module.ResolveExport(e.[[ExportName]]).
+    // Step 1.a. Assert: e.[[ExportName]] is not null.
+    MOZ_ASSERT(e.exportName());
+
+    // Step 1.b. Let resolution be ? module.ResolveExport(e.[[ExportName]]).
     exportName = e.exportName();
     if (!ModuleResolveExport(cx, module, exportName, &resolution)) {
       return false;
     }
 
-    // Step 1.b. If resolution is null or ambiguous, throw a SyntaxError
+    // Step 1.c. If resolution is either null or AMBIGUOUS, throw a SyntaxError
     //           exception.
     if (!IsResolvedBinding(cx, resolution)) {
       ThrowResolutionError(cx, module, resolution, false, exportName,

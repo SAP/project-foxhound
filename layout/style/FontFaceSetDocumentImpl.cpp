@@ -5,7 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FontFaceSetDocumentImpl.h"
-#include "FontPreloader.h"
+#include "mozilla/FontLoaderUtils.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
@@ -20,6 +20,7 @@
 #include "nsFontFaceLoader.h"
 #include "nsIDocShell.h"
 #include "nsINetworkPredictor.h"
+#include "nsISupportsPriority.h"
 #include "nsIWebNavigation.h"
 #include "nsPresContext.h"
 
@@ -282,10 +283,11 @@ nsresult FontFaceSetDocumentImpl::StartLoad(gfxUserFontEntry* aUserFontEntry,
   nsCOMPtr<nsILoadGroup> loadGroup(mDocument->GetDocumentLoadGroup());
   if (NS_FAILED(rv)) {
     nsCOMPtr<nsIChannel> channel;
-    rv = FontPreloader::BuildChannel(
+    rv = FontLoaderUtils::BuildChannel(
         getter_AddRefs(channel), src.mURI->get(), CORS_ANONYMOUS,
         dom::ReferrerPolicy::_empty /* not used */, aUserFontEntry, &src,
-        mDocument, loadGroup, nullptr, false);
+        mDocument, loadGroup, nullptr, false,
+        nsISupportsPriority::PRIORITY_HIGH);
     NS_ENSURE_SUCCESS(rv, rv);
 
     fontLoader = new nsFontFaceLoader(aUserFontEntry, aSrcIndex, this, channel);
@@ -361,10 +363,9 @@ bool FontFaceSetDocumentImpl::IsFontLoadAllowed(const gfxFontFaceSrc& aSrc) {
       nsIContentPolicy::TYPE_FONT);
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
-  nsresult rv = NS_CheckContentLoadPolicy(aSrc.mURI->get(), secCheckLoadInfo,
-                                          ""_ns,  // mime type
-                                          &shouldLoad,
-                                          nsContentUtils::GetContentPolicy());
+  nsresult rv =
+      NS_CheckContentLoadPolicy(aSrc.mURI->get(), secCheckLoadInfo, &shouldLoad,
+                                nsContentUtils::GetContentPolicy());
 
   return NS_SUCCEEDED(rv) && NS_CP_ACCEPTED(shouldLoad);
 }

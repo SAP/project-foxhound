@@ -44,21 +44,23 @@
       '--test-arg=--undefok=test_launcher_summary_output'
     ],
   },
-  'ios-device-15.7': {
+  'ios-device-16.6': {
     'swarming': {
       'dimensions': {
-        'os': 'iOS-15.7',
+        'os': 'iOS-16.6',
         'pool': 'chrome.tests',
-      },
-    },
+        'device_status': 'available'
+      }
+    }
   },
   'ios-device-perf': {
     'swarming': {
       'idempotent': False,
       'dimensions': {
-        'os': 'iOS-12.4.1',
+        'os': 'iOS-15.7.8',
         'pool': 'WebRTC',
         'id': 'mac-254-e504',
+        'device_status': 'available'
       },
     },
   },
@@ -67,6 +69,14 @@
       'named_caches': [{
         'name': 'runtime_ios_14_5',
         'path': 'Runtime-ios-14.5'
+      }]
+    }
+  },
+  'ios_runtime_cache_16_2': {
+    'swarming': {
+      'named_caches': [{
+        'name': 'runtime_ios_16_2',
+        'path': 'Runtime-ios-16.2'
       }]
     }
   },
@@ -203,6 +213,15 @@
     'swarming': {
       'named_caches': [{
         'name': 'xcode_ios_13c100',
+        'path': 'Xcode.app'
+      }]
+    }
+  },
+  'xcode_14_main': {
+    'args': ['--xcode-build-version', '14c18'],
+    'swarming': {
+      'named_caches': [{
+        'name': 'xcode_ios_14c18',
         'path': 'Xcode.app'
       }]
     }

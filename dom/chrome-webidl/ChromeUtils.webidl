@@ -297,6 +297,22 @@ namespace ChromeUtils {
   LibcConstants getLibcConstants();
 #endif
 
+#ifdef MOZ_WMF_CDM
+  /**
+   * Returns the information about all Media Foundation based content decryption
+   * modules, which would include key system names and their capabilities.
+   */
+  [NewObject]
+  Promise<sequence<CDMInformation>> getWMFContentDecryptionModuleInformation();
+#endif
+
+  /**
+   * Returns the information about the GMP based content decryption
+   * modules, which would include key system names and their capabilities.
+   */
+  [NewObject]
+  Promise<sequence<CDMInformation>> getGMPContentDecryptionModuleInformation();
+
   /**
    * IF YOU ADD NEW METHODS HERE, MAKE SURE THEY ARE THREAD-SAFE.
    */
@@ -445,6 +461,11 @@ partial namespace ChromeUtils {
    * probably what you want.
    */
   boolean isDOMObject(object obj, optional boolean unwrap = true);
+
+  /**
+   * Returns whether |str| follows the Date Time String Format.
+   */
+  boolean isISOStyleDate(UTF8String str);
 
   /**
    * Clones the properties of the given object into a new object in the given
@@ -1079,3 +1100,9 @@ dictionary LibcConstants {
 #endif
 };
 #endif
+
+dictionary CDMInformation {
+  required DOMString keySystemName;
+  required DOMString capabilities;
+  required boolean clearlead;
+};

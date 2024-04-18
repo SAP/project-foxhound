@@ -16,7 +16,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   ReaderMode: "resource://gre/modules/ReaderMode.sys.mjs",
   SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
@@ -24,6 +23,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarEventBufferer: "resource:///modules/UrlbarEventBufferer.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarQueryContext: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
@@ -283,6 +283,10 @@ export class UrlbarInput {
 
     this.editor.newlineHandling =
       Ci.nsIEditor.eNewlinesStripSurroundingWhitespace;
+
+    ChromeUtils.defineLazyGetter(this, "logger", () =>
+      lazy.UrlbarUtils.getLogger({ prefix: "Input" })
+    );
   }
 
   /**
@@ -420,6 +424,8 @@ export class UrlbarInput {
           uri = Services.io.createExposableURI(uri);
         } catch (e) {}
 
+        let isInitialPageControlledByWebContent = false;
+
         // Replace initial page URIs with an empty string
         // only if there's no opener (bug 370555).
         if (
@@ -431,6 +437,8 @@ export class UrlbarInput {
         ) {
           value = "";
         } else {
+          isInitialPageControlledByWebContent = true;
+
           // We should deal with losslessDecodeURI throwing for exotic URIs
           try {
             value = losslessDecodeURI(uri);
@@ -444,7 +452,8 @@ export class UrlbarInput {
         valid =
           !dueToSessionRestore &&
           (!this.window.isBlankPageURL(uri.spec) ||
-            uri.schemeIs("moz-extension"));
+            uri.schemeIs("moz-extension") ||
+            isInitialPageControlledByWebContent);
       }
     } else if (
       this.window.isInitialPage(value) &&
@@ -634,10 +643,20 @@ export class UrlbarInput {
       result.payload.inPrivateWindow;
     let selectedPrivateEngineResult =
       selectedPrivateResult && result.payload.isPrivateEngine;
+    // Whether the user has been editing the value in the URL bar after selecting
+    // the result. However, if the result type is tip, pick as it is. The result
+    // heuristic is also kept the behavior as is for safety.
+    let safeToPickResult =
+      result &&
+      (result.heuristic ||
+        !this.valueIsTyped ||
+        result.type == lazy.UrlbarUtils.RESULT_TYPE.TIP ||
+        this.value == this._getValueFromResult(result));
     if (
       !isComposing &&
       element &&
-      (!oneOffParams?.engine || selectedPrivateEngineResult)
+      (!oneOffParams?.engine || selectedPrivateEngineResult) &&
+      safeToPickResult
     ) {
       this.pickElement(element, event);
       return;
@@ -685,7 +704,7 @@ export class UrlbarInput {
         oneOffParams.engine,
         searchString
       );
-      this._recordSearch(oneOffParams.engine, event, { url });
+      this._recordSearch(oneOffParams.engine, event);
 
       lazy.UrlbarUtils.addToFormHistory(
         this,
@@ -875,6 +894,9 @@ export class UrlbarInput {
    */
   pickElement(element, event) {
     let result = this.view.getResultFromElement(element);
+    this.logger.debug(
+      `pickElement ${element} with event ${event?.type}, result: ${result}`
+    );
     if (!result) {
       return;
     }
@@ -1070,7 +1092,7 @@ export class UrlbarInput {
 
         let switched = this.window.switchToTabHavingURI(
           Services.io.newURI(url),
-          false,
+          true,
           loadOpts,
           lazy.UrlbarPrefs.get("switchTabs.searchAllContainers")
             ? result.payload.userContextId
@@ -1085,6 +1107,18 @@ export class UrlbarInput {
           // the load. Just reportError it.
           lazy.UrlbarUtils.addToInputHistory(url, searchString).catch(
             console.error
+          );
+        }
+
+        // TODO (Bug 1865757): We should not show a "switchtotab" result for
+        // tabs that are not currently open. Find out why tabs are not being
+        // properly unregistered when they are being closed.
+        if (!switched) {
+          console.error(`Tried to switch to non existant tab: ${url}`);
+          lazy.UrlbarProviderOpenTabs.unregisterOpenTab(
+            url,
+            result.payload.userContextId,
+            this.isPrivate
           );
         }
 
@@ -1145,7 +1179,6 @@ export class UrlbarInput {
           isFormHistory:
             result.source == lazy.UrlbarUtils.RESULT_SOURCE.HISTORY,
           alias: result.payload.keyword,
-          url,
         };
         const engine = Services.search.getEngineByName(result.payload.engine);
         this._recordSearch(engine, event, actionDetails);
@@ -1565,11 +1598,11 @@ export class UrlbarInput {
    *   will record engagement event telemetry for the query.
    */
   startQuery({
-    allowAutofill = true,
+    allowAutofill,
     autofillIgnoresSelection = false,
-    searchString = null,
+    searchString,
     resetSearchState = true,
-    event = null,
+    event,
   } = {}) {
     if (!searchString) {
       searchString =
@@ -1578,8 +1611,14 @@ export class UrlbarInput {
       throw new Error("The current value doesn't start with the search string");
     }
 
+    let queryContext = this.#makeQueryContext({
+      allowAutofill,
+      event,
+      searchString,
+    });
+
     if (event) {
-      this.controller.engagementEvent.start(event, searchString);
+      this.controller.engagementEvent.start(event, queryContext, searchString);
     }
 
     if (this._suppressStartQuery) {
@@ -1591,39 +1630,17 @@ export class UrlbarInput {
       this._resetSearchState();
     }
 
-    this._lastSearchString = searchString;
-    this._valueOnLastSearch = this.value;
-
-    let options = {
-      allowAutofill,
-      isPrivate: this.isPrivate,
-      maxResults: lazy.UrlbarPrefs.get("maxRichResults"),
-      searchString,
-      userContextId:
-        this.window.gBrowser.selectedBrowser.getAttribute("usercontextid"),
-      currentPage: this.window.gBrowser.currentURI.spec,
-      formHistoryName: this.formHistoryName,
-      prohibitRemoteResults:
-        event &&
-        lazy.UrlbarUtils.isPasteEvent(event) &&
-        lazy.UrlbarPrefs.get("maxCharsForSearchSuggestions") <
-          event.data?.length,
-    };
-
     if (this.searchMode) {
       this.confirmSearchMode();
-      options.searchMode = this.searchMode;
-      if (this.searchMode.source) {
-        options.sources = [this.searchMode.source];
-      }
     }
+
+    this._lastSearchString = searchString;
+    this._valueOnLastSearch = this.value;
 
     // TODO (Bug 1522902): This promise is necessary for tests, because some
     // tests are not listening for completion when starting a query through
     // other methods than startQuery (input events for example).
-    this.lastQueryContextPromise = this.controller.startQuery(
-      new lazy.UrlbarQueryContext(options)
-    );
+    this.lastQueryContextPromise = this.controller.startQuery(queryContext);
   }
 
   /**
@@ -2762,12 +2779,18 @@ export class UrlbarInput {
   ) {
     // No point in setting these because we'll handleRevert() a few rows below.
     if (openUILinkWhere == "current") {
+      // Make sure URL is formatted properly (don't show punycode).
+      let formattedURL = url;
+      try {
+        formattedURL = losslessDecodeURI(new URL(url).URI);
+      } catch {}
+
       this.value =
         lazy.UrlbarPrefs.get("showSearchTermsFeatureGate") &&
         lazy.UrlbarPrefs.get("showSearchTerms.enabled") &&
         resultDetails?.searchTerm
           ? resultDetails.searchTerm
-          : url;
+          : formattedURL;
       browser.userTypedValue = this.value;
     }
 
@@ -3260,6 +3283,7 @@ export class UrlbarInput {
   }
 
   _on_blur(event) {
+    this.logger.debug("Blur Event");
     // We cannot count every blur events after a missed engagement as abandoment
     // because the user may have clicked on some view element that executes
     // a command causing a focus change. For example opening preferences from
@@ -3375,6 +3399,7 @@ export class UrlbarInput {
   }
 
   _on_focus(event) {
+    this.logger.debug("Focus Event");
     if (!this._hideFocus) {
       this.setAttribute("focused", "true");
     }
@@ -3778,6 +3803,47 @@ export class UrlbarInput {
     return lazy.UrlbarUtils.stripUnsafeProtocolOnPaste(pasteData);
   }
 
+  /**
+   * Generate a UrlbarQueryContext from the current context.
+   *
+   * @param {object} [options]               Optional params
+   * @param {boolean} options.allowAutofill  Whether autofill is enabled.
+   * @param {string}  options.searchString   The string being searched.
+   * @param {object}  options.event          The event triggering the query.
+   * @returns {UrlbarQueryContext}
+   *   The queryContext object.
+   */
+  #makeQueryContext({
+    allowAutofill = true,
+    searchString = null,
+    event = null,
+  } = {}) {
+    let options = {
+      allowAutofill,
+      isPrivate: this.isPrivate,
+      maxResults: lazy.UrlbarPrefs.get("maxRichResults"),
+      searchString,
+      userContextId:
+        this.window.gBrowser.selectedBrowser.getAttribute("usercontextid"),
+      currentPage: this.window.gBrowser.currentURI.spec,
+      formHistoryName: this.formHistoryName,
+      prohibitRemoteResults:
+        event &&
+        lazy.UrlbarUtils.isPasteEvent(event) &&
+        lazy.UrlbarPrefs.get("maxCharsForSearchSuggestions") <
+          event.data?.length,
+    };
+
+    if (this.searchMode) {
+      options.searchMode = this.searchMode;
+      if (this.searchMode.source) {
+        options.sources = [this.searchMode.source];
+      }
+    }
+
+    return new lazy.UrlbarQueryContext(options);
+  }
+
   _on_scrollend(event) {
     this.updateTextOverflow();
   }
@@ -3799,7 +3865,7 @@ export class UrlbarInput {
       if (this._keyDownEnterDeferred) {
         this._keyDownEnterDeferred.reject();
       }
-      this._keyDownEnterDeferred = lazy.PromiseUtils.defer();
+      this._keyDownEnterDeferred = Promise.withResolvers();
       event._disableCanonization = this._isKeyDownWithCtrl;
     } else if (event.keyCode !== KeyEvent.DOM_VK_CONTROL && event.ctrlKey) {
       this._isKeyDownWithCtrl = true;
@@ -3962,8 +4028,9 @@ export class UrlbarInput {
       this.focus();
       // To simplify tracking of events, register an initial event for event
       // telemetry, to replace the missing input event.
-      this.controller.engagementEvent.start(event);
-      this.controller.clearLastQueryContextCache();
+      let queryContext = this.#makeQueryContext({ searchString: droppedURL });
+      this.controller.setLastQueryContextCache(queryContext);
+      this.controller.engagementEvent.start(event, queryContext);
       this.handleNavigation({ triggeringPrincipal: principal });
       // For safety reasons, in the drop case we don't want to immediately show
       // the the dropped value, instead we want to keep showing the current page

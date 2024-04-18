@@ -14,6 +14,8 @@
 // http://greenbytes.de/tech/webdav/rfc3986.html#rfc.section.5.4
 // http://greenbytes.de/tech/tc/uris/
 
+Services.prefs.setBoolPref("network.url.useDefaultURI", true);
+
 // TEST DATA
 // ---------
 var gTests = [
@@ -177,8 +179,8 @@ var gTests = [
   {
     spec: "gopher://mozilla.org/",
     scheme: "gopher",
-    prePath: "gopher:",
-    pathQueryRef: "//mozilla.org/",
+    prePath: "gopher://mozilla.org",
+    pathQueryRef: "/",
     ref: "",
     nsIURL: false,
     nsINestedURI: false,

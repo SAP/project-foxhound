@@ -3,7 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { getSelectedLocation } from "./selected-location";
-import { getSource } from "../selectors";
+import { getSource } from "../selectors/index";
 
 /**
  * Note that arguments can be created via `createLocation`.
@@ -27,10 +27,10 @@ export function createLocation({
     sourceActor,
     sourceActorId: sourceActor?.id,
 
-    // `line` is 1-based while `column` is 0-based.
+    // `line` and `column` are 1-based.
     // This data is mostly coming from and driven by
     // JSScript::lineno and JSScript::column
-    // https://searchfox.org/mozilla-central/rev/d81e60336d9f498ad3985491dc17c2b77969ade4/js/src/vm/JSScript.h#1544-1547
+    // https://searchfox.org/mozilla-central/rev/90dce6b0223b4dc17bb10f1125b44f70951585f9/js/src/vm/JSScript.h#1545-1548
     line,
     column,
   };
@@ -44,8 +44,10 @@ export function createLocation({
 export function debuggerToSourceMapLocation(location) {
   return {
     sourceId: location.source.id,
-    line: location.line,
-    column: location.column,
+    // In case of errors loading the source, we might not have a precise location.
+    // Defaults to first line and column.
+    line: location.line || 1,
+    column: location.column || 0,
   };
 }
 

@@ -458,6 +458,7 @@ GCRuntime::GCRuntime(JSRuntime* rt)
       alwaysPreserveCode(false),
       lowMemoryState(false),
       lock(mutexid::GCLock),
+      storeBufferLock(mutexid::StoreBuffer),
       delayedMarkingLock(mutexid::GCDelayedMarkingLock),
       allocTask(this, emptyChunks_.ref()),
       unmarkTask(this),
@@ -466,7 +467,7 @@ GCRuntime::GCRuntime(JSRuntime* rt)
       freeTask(this),
       decommitTask(this),
       nursery_(this),
-      storeBuffer_(rt, nursery()),
+      storeBuffer_(rt),
       lastAllocRateUpdateTime(TimeStamp::Now()) {
 }
 
@@ -845,17 +846,6 @@ bool GCRuntime::init(uint32_t maxbytes) {
     if (!nursery().init(lock)) {
       return false;
     }
-
-    const char* pretenureThresholdStr = getenv("JSGC_PRETENURE_THRESHOLD");
-    if (pretenureThresholdStr && pretenureThresholdStr[0]) {
-      char* last;
-      long pretenureThreshold = strtol(pretenureThresholdStr, &last, 10);
-      if (last[0] || !tunables.setParameter(JSGC_PRETENURE_THRESHOLD,
-                                            pretenureThreshold)) {
-        fprintf(stderr, "Invalid value for JSGC_PRETENURE_THRESHOLD: %s\n",
-                pretenureThresholdStr);
-      }
-    }
   }
 
 #ifdef JS_GC_ZEAL
@@ -1046,8 +1036,7 @@ bool GCRuntime::setParameter(JSGCParamKey key, uint32_t value,
     case JSGC_PARALLEL_MARKING_ENABLED:
       // Not supported on workers.
       parallelMarkingEnabled = rt->isMainRuntime() && value != 0;
-      updateMarkersVector();
-      break;
+      return initOrDisableParallelMarking();
     case JSGC_INCREMENTAL_WEAKMAP_ENABLED:
       for (auto& marker : markers) {
         marker->incrementalWeakMapMarkingEnabled = value != 0;
@@ -1101,7 +1090,7 @@ bool GCRuntime::setThreadParameter(JSGCParamKey key, uint32_t value,
   }
 
   updateHelperThreadCount();
-  updateMarkersVector();
+  initOrDisableParallelMarking();
 
   return true;
 }
@@ -1133,7 +1122,7 @@ void GCRuntime::resetParameter(JSGCParamKey key, AutoLockGC& lock) {
       break;
     case JSGC_PARALLEL_MARKING_ENABLED:
       parallelMarkingEnabled = TuningDefaults::ParallelMarkingEnabled;
-      updateMarkersVector();
+      initOrDisableParallelMarking();
       break;
     case JSGC_INCREMENTAL_WEAKMAP_ENABLED:
       for (auto& marker : markers) {
@@ -1178,7 +1167,7 @@ void GCRuntime::resetThreadParameter(JSGCParamKey key, AutoLockGC& lock) {
   }
 
   updateHelperThreadCount();
-  updateMarkersVector();
+  initOrDisableParallelMarking();
 }
 
 uint32_t GCRuntime::getParameter(JSGCParamKey key) {
@@ -1333,6 +1322,19 @@ void GCRuntime::assertNoMarkingWork() const {
   MOZ_ASSERT(!hasDelayedMarking());
 }
 #endif
+
+bool GCRuntime::initOrDisableParallelMarking() {
+  // Attempt to initialize parallel marking state or disable it on failure.
+
+  MOZ_ASSERT(markers.length() != 0);
+
+  if (!updateMarkersVector()) {
+    parallelMarkingEnabled = false;
+    return false;
+  }
+
+  return true;
+}
 
 static size_t GetGCParallelThreadCount() {
   AutoLockHelperThreadState lock;
@@ -1619,14 +1621,14 @@ JS_PUBLIC_API void JS::SetCreateGCSliceBudgetCallback(
 void TimeBudget::setDeadlineFromNow() { deadline = TimeStamp::Now() + budget; }
 
 SliceBudget::SliceBudget(TimeBudget time, InterruptRequestFlag* interrupt)
-    : budget(TimeBudget(time)),
+    : counter(StepsPerExpensiveCheck),
       interruptRequested(interrupt),
-      counter(StepsPerExpensiveCheck) {
+      budget(TimeBudget(time)) {
   budget.as<TimeBudget>().setDeadlineFromNow();
 }
 
 SliceBudget::SliceBudget(WorkBudget work)
-    : budget(work), interruptRequested(nullptr), counter(work.budget) {}
+    : counter(work.budget), interruptRequested(nullptr), budget(work) {}
 
 int SliceBudget::describe(char* buffer, size_t maxlen) const {
   if (isUnlimited()) {
@@ -1658,7 +1660,6 @@ bool SliceBudget::checkOverBudget() {
   }
 
   if (interruptRequested && *interruptRequested) {
-    *interruptRequested = false;
     interrupted = true;
   }
 
@@ -2695,9 +2696,6 @@ void GCRuntime::endPreparePhase(JS::GCReason reason) {
      */
     zone->arenas.clearFreeLists();
 
-    zone->markedStrings = 0;
-    zone->finalizedStrings = 0;
-
     zone->setPreservingCode(false);
 
 #ifdef JS_GC_ZEAL
@@ -2726,6 +2724,9 @@ void GCRuntime::endPreparePhase(JS::GCReason reason) {
     c->gcState.scheduledForDestruction = false;
     c->gcState.maybeAlive = false;
     c->gcState.hasEnteredRealm = false;
+    if (c->invisibleToDebugger()) {
+      c->gcState.maybeAlive = true;  // Presumed to be a system compartment.
+    }
     bool isActiveCompartment = c == activeCompartment;
     for (RealmsInCompartmentIter r(c); !r.done(); r.next()) {
       if (r->shouldTraceGlobal() || !r->zone()->isGCScheduled()) {
@@ -2896,12 +2897,14 @@ void GCRuntime::findDeadCompartments() {
    *
    *   (1) the compartment has been entered (set in beginMarkPhase() above)
    *   (2) the compartment's zone is not being collected (set in
-   *       beginMarkPhase() above)
+   *       endPreparePhase() above)
    *   (3) an object in the compartment was marked during root marking, either
    *       as a black root or a gray root. This is arranged by
    *       SetCompartmentHasMarkedCells and AutoUpdateLiveCompartments.
    *   (4) the compartment has incoming cross-compartment edges from another
    *       compartment that has maybeAlive set (set by this method).
+   *   (5) the compartment has the invisibleToDebugger flag set, as it is
+   *       presumed to be a system compartment (set in endPreparePhase() above)
    *
    * If the maybeAlive is false, then we set the scheduledForDestruction flag.
    * At the end of the GC, we look for compartments where
@@ -2909,15 +2912,20 @@ void GCRuntime::findDeadCompartments() {
    * "revived" during the incremental GC. If any are found, we do a special,
    * non-incremental GC of those compartments to try to collect them.
    *
-   * Compartments can be revived for a variety of reasons. On reason is bug
-   * 811587, where a reflector that was dead can be revived by DOM code that
-   * still refers to the underlying DOM node.
+   * Compartments can be revived for a variety of reasons, including:
    *
-   * Read barriers and allocations can also cause revival. This might happen
-   * during a function like JS_TransplantObject, which iterates over all
-   * compartments, live or dead, and operates on their objects. See bug 803376
-   * for details on this problem. To avoid the problem, we try to avoid
-   * allocation and read barriers during JS_TransplantObject and the like.
+   *   (1) A dead reflector can be revived by DOM code that still refers to the
+   *       underlying DOM node (see bug 811587).
+   *   (2) JS_TransplantObject iterates over all compartments, live or dead, and
+   *       operates on their objects. This can trigger read barriers and mark
+   *       unreachable objects. See bug 803376 for details on this problem. To
+   *       avoid the problem, we try to avoid allocation and read barriers
+   *       during JS_TransplantObject and the like.
+   *   (3) Read barriers. A compartment may only have weak roots and reading one
+   *       of these will cause the compartment to stay alive even though the GC
+   *       thought it should die. An example of this is Gecko's unprivileged
+   *       junk scope, which is handled by ignoring system compartments (see bug
+   *       1868437).
    */
 
   // Propagate the maybeAlive flag via cross-compartment edges.
@@ -3000,6 +3008,13 @@ IncrementalProgress GCRuntime::markUntilBudgetExhausted(
   // Run a marking slice and return whether the stack is now empty.
 
   AutoMajorGCProfilerEntry s(this);
+
+  if (initialState != State::Mark) {
+    sliceBudget.forceCheck();
+    if (sliceBudget.isOverBudget()) {
+      return NotFinished;
+    }
+  }
 
   if (processTestMarkQueue() == QueueYielded) {
     return NotFinished;
@@ -3266,19 +3281,37 @@ void GCRuntime::checkGCStateNotInUse() {
 void GCRuntime::maybeStopPretenuring() {
   nursery().maybeStopPretenuring(this);
 
-  for (GCZonesIter zone(this); !zone.done(); zone.next()) {
-    if (!zone->nurseryStringsDisabled) {
-      continue;
-    }
+  size_t zonesWhereStringsEnabled = 0;
+  size_t zonesWhereBigIntsEnabled = 0;
 
-    // Count the number of strings before the major GC.
-    size_t numStrings = zone->markedStrings + zone->finalizedStrings;
-    double rate = double(zone->finalizedStrings) / double(numStrings);
-    if (rate > tunables.stopPretenureStringThreshold()) {
-      zone->markedStrings = 0;
-      zone->finalizedStrings = 0;
-      zone->nurseryStringsDisabled = false;
-      nursery().updateAllocFlagsForZone(zone);
+  for (GCZonesIter zone(this); !zone.done(); zone.next()) {
+    if (zone->nurseryStringsDisabled || zone->nurseryBigIntsDisabled) {
+      // We may need to reset allocation sites and discard JIT code to recover
+      // if we find object lifetimes have changed.
+      if (zone->pretenuring.shouldResetPretenuredAllocSites()) {
+        zone->unknownAllocSite(JS::TraceKind::String)->maybeResetState();
+        zone->unknownAllocSite(JS::TraceKind::BigInt)->maybeResetState();
+        if (zone->nurseryStringsDisabled) {
+          zone->nurseryStringsDisabled = false;
+          zonesWhereStringsEnabled++;
+        }
+        if (zone->nurseryBigIntsDisabled) {
+          zone->nurseryBigIntsDisabled = false;
+          zonesWhereBigIntsEnabled++;
+        }
+        nursery().updateAllocFlagsForZone(zone);
+      }
+    }
+  }
+
+  if (nursery().reportPretenuring()) {
+    if (zonesWhereStringsEnabled) {
+      fprintf(stderr, "GC re-enabled nursery string allocation in %zu zones\n",
+              zonesWhereStringsEnabled);
+    }
+    if (zonesWhereBigIntsEnabled) {
+      fprintf(stderr, "GC re-enabled nursery big int allocation in %zu zones\n",
+              zonesWhereBigIntsEnabled);
     }
   }
 }

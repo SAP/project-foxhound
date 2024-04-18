@@ -8,7 +8,7 @@
 # documentation and how to modify this file.
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2023-11-16T11:14:06.284084'
+updated_at: '2024-01-16T17:14:53.714398'
 export:
   path: ./docs/mots/index.rst
   format: rst
@@ -724,6 +724,10 @@ people:
     bmo_id: 547538
     name: Miko Mynttinen
     nick: mikokm
+  - &mixedpuppy
+    bmo_id: 443354
+    name: Shane Caraveo
+    nick: mixedpuppy
   - &mkaply
     bmo_id: 7313
     name: Mike Kaply
@@ -888,10 +892,6 @@ people:
     bmo_id: 704132
     name: Alexandra Borovova
     nick: Sasha
-  - &scaraveo
-    bmo_id: 443354
-    name: ''
-    nick: scaraveo
   - &sclements
     bmo_id: 603840
     name: Sarah Clements
@@ -1162,16 +1162,17 @@ modules:
         - Ehsan Akhgari
         - Erica Wright
         - Gary Chen
+        - *baku
+        - *johannh
       group: dev-platform
       components:
         - 'Core::Privacy: Anti-Tracking'
     owners:
       - *timhuang
     peers:
-      - *baku
+      - *bvandersloot
       - *dimi
       - *pbz
-      - *johannh
     machine_name: core_antitracking
 
   - name: 'Core: APZ (Graphics submodule)'
@@ -1501,7 +1502,7 @@ modules:
         - Kyle Machulis
       group: dev-platform
       components:
-        - Core::Document Navigation
+        - Core::DOM: Navigation
     owners:
       - *smaug
       - *nika
@@ -2364,14 +2365,15 @@ modules:
         - Christian Biesinger
         - Shawn Wilsher
         - Honza Bambas
+        - *baku
+        - *johannh
       group: dev-platform
       components:
         - 'Core :: Permission Manager'
+      review_group: permissions-reviewers
     owners:
       - *timhuang
     peers:
-      - *baku
-      - *johannh
       - *pbz
     machine_name: core_permissions
 
@@ -3218,7 +3220,7 @@ modules:
             - Andrew Swan
             - Kris Maglione
         owners:
-          - *scaraveo
+          - *mixedpuppy
           - *rpl
         peers:
           - *rpl
@@ -3236,7 +3238,7 @@ modules:
             - Robert Strong
             - Andrew Swan
         owners:
-          - *scaraveo
+          - *mixedpuppy
           - *mstriemer
         peers:
           - *rpl
@@ -3577,6 +3579,7 @@ modules:
           peers_emeritus:
             - Erica Wright
             - Nihanth Subramanya
+            - *prathiksha
           owners_emeritus:
             - Johann Hofmann
           components:
@@ -3586,8 +3589,6 @@ modules:
             - Firefox::Site Permissions
         owners:
           - *pbz
-        peers:
-          - *prathiksha
         machine_name: security_and_privacy_ui
 
       - name: Session Restore
@@ -4194,12 +4195,12 @@ modules:
         meta:
           peers_emeritus:
             - Andrew Swan
+            - Kris Maglione
         owners:
-          - *scaraveo
+          - *mixedpuppy
           - *zombie
         peers:
           - *rpl
-          - *kmag
           - *robwu
           - *willdurand
         machine_name: webextensions
@@ -4250,5 +4251,5 @@ modules:
         - Ryan Tilder
       group: dev-platform
 hashes:
-  config: d5b62265988dc82ca65cc890040bb62f7b0d7cf9
-  export: 71d3735e528428378a13e202f072302ab8edfb4b
+  config: fb060c17e3de2c36297486934de8c2bd6b42aaa3
+  export: ef436c78e9aaead2c41a6331db4800928d144df0

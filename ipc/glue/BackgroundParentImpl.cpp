@@ -244,7 +244,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvFlushPendingFileDeletions() {
   return IPC_OK();
 }
 
-BackgroundParentImpl::PBackgroundSDBConnectionParent*
+already_AddRefed<BackgroundParentImpl::PBackgroundSDBConnectionParent>
 BackgroundParentImpl::AllocPBackgroundSDBConnectionParent(
     const PersistenceType& aPersistenceType,
     const PrincipalInfo& aPrincipalInfo) {
@@ -271,16 +271,7 @@ BackgroundParentImpl::RecvPBackgroundSDBConnectionConstructor(
   return IPC_OK();
 }
 
-bool BackgroundParentImpl::DeallocPBackgroundSDBConnectionParent(
-    PBackgroundSDBConnectionParent* aActor) {
-  AssertIsInMainProcess();
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aActor);
-
-  return mozilla::dom::DeallocPBackgroundSDBConnectionParent(aActor);
-}
-
-BackgroundParentImpl::PBackgroundLSDatabaseParent*
+already_AddRefed<BackgroundParentImpl::PBackgroundLSDatabaseParent>
 BackgroundParentImpl::AllocPBackgroundLSDatabaseParent(
     const PrincipalInfo& aPrincipalInfo, const uint32_t& aPrivateBrowsingId,
     const uint64_t& aDatastoreId) {
@@ -304,15 +295,6 @@ BackgroundParentImpl::RecvPBackgroundLSDatabaseConstructor(
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
-}
-
-bool BackgroundParentImpl::DeallocPBackgroundLSDatabaseParent(
-    PBackgroundLSDatabaseParent* aActor) {
-  AssertIsInMainProcess();
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aActor);
-
-  return mozilla::dom::DeallocPBackgroundLSDatabaseParent(aActor);
 }
 
 BackgroundParentImpl::PBackgroundLSObserverParent*
@@ -506,7 +488,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateWebTransportParent(
     const nsAString& aURL, nsIPrincipal* aPrincipal,
     const mozilla::Maybe<IPCClientInfo>& aClientInfo, const bool& aDedicated,
     const bool& aRequireUnreliable, const uint32_t& aCongestionControl,
-    // Sequence<WebTransportHash>* aServerCertHashes,
+    nsTArray<WebTransportHash>&& aServerCertHashes,
     Endpoint<PWebTransportParent>&& aParentEndpoint,
     CreateWebTransportParentResolver&& aResolver) {
   AssertIsInMainProcess();
@@ -515,9 +497,8 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateWebTransportParent(
   RefPtr<mozilla::dom::WebTransportParent> webt =
       new mozilla::dom::WebTransportParent();
   webt->Create(aURL, aPrincipal, aClientInfo, aDedicated, aRequireUnreliable,
-               aCongestionControl,
-               /*aServerCertHashes, */ std::move(aParentEndpoint),
-               std::move(aResolver));
+               aCongestionControl, std::move(aServerCertHashes),
+               std::move(aParentEndpoint), std::move(aResolver));
   return IPC_OK();
 }
 
@@ -528,12 +509,12 @@ BackgroundParentImpl::AllocPIdleSchedulerParent() {
   return actor.forget();
 }
 
-dom::PRemoteWorkerControllerParent*
+already_AddRefed<dom::PRemoteWorkerControllerParent>
 BackgroundParentImpl::AllocPRemoteWorkerControllerParent(
     const dom::RemoteWorkerData& aRemoteWorkerData) {
   RefPtr<dom::RemoteWorkerControllerParent> actor =
       new dom::RemoteWorkerControllerParent(aRemoteWorkerData);
-  return actor.forget().take();
+  return actor.forget();
 }
 
 IPCResult BackgroundParentImpl::RecvPRemoteWorkerControllerConstructor(
@@ -542,13 +523,6 @@ IPCResult BackgroundParentImpl::RecvPRemoteWorkerControllerConstructor(
   MOZ_ASSERT(aActor);
 
   return IPC_OK();
-}
-
-bool BackgroundParentImpl::DeallocPRemoteWorkerControllerParent(
-    dom::PRemoteWorkerControllerParent* aActor) {
-  RefPtr<dom::RemoteWorkerControllerParent> actor =
-      dont_AddRef(static_cast<dom::RemoteWorkerControllerParent*>(aActor));
-  return true;
 }
 
 already_AddRefed<dom::PRemoteWorkerServiceParent>
@@ -956,19 +930,12 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvMessagePortForceClose(
   return IPC_OK();
 }
 
-BackgroundParentImpl::PQuotaParent* BackgroundParentImpl::AllocPQuotaParent() {
+already_AddRefed<BackgroundParentImpl::PQuotaParent>
+BackgroundParentImpl::AllocPQuotaParent() {
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
 
   return mozilla::dom::quota::AllocPQuotaParent();
-}
-
-bool BackgroundParentImpl::DeallocPQuotaParent(PQuotaParent* aActor) {
-  AssertIsInMainProcess();
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aActor);
-
-  return mozilla::dom::quota::DeallocPQuotaParent(aActor);
 }
 
 mozilla::ipc::IPCResult BackgroundParentImpl::RecvShutdownQuotaManager() {
@@ -1201,14 +1168,9 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvHasMIDIDevice(
   return IPC_OK();
 }
 
-mozilla::dom::PClientManagerParent*
+already_AddRefed<mozilla::dom::PClientManagerParent>
 BackgroundParentImpl::AllocPClientManagerParent() {
   return mozilla::dom::AllocClientManagerParent();
-}
-
-bool BackgroundParentImpl::DeallocPClientManagerParent(
-    mozilla::dom::PClientManagerParent* aActor) {
-  return mozilla::dom::DeallocClientManagerParent(aActor);
 }
 
 mozilla::ipc::IPCResult BackgroundParentImpl::RecvPClientManagerConstructor(
@@ -1375,21 +1337,22 @@ BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge(
 }
 
 mozilla::ipc::IPCResult BackgroundParentImpl::RecvRequestCameraAccess(
+    const bool& aAllowPermissionRequest,
     RequestCameraAccessResolver&& aResolver) {
 #ifdef MOZ_WEBRTC
-  mozilla::camera::CamerasParent::RequestCameraAccess()->Then(
-      GetCurrentSerialEventTarget(), __func__,
-      [resolver = std::move(aResolver)](
-          const mozilla::camera::CamerasParent::CameraAccessRequestPromise::
-              ResolveOrRejectValue& aValue) {
-        if (aValue.IsResolve()) {
-          resolver(aValue.ResolveValue());
-        } else {
-          resolver(aValue.RejectValue());
-        }
-      });
+  mozilla::camera::CamerasParent::RequestCameraAccess(aAllowPermissionRequest)
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [resolver = std::move(aResolver)](
+                 const mozilla::camera::CamerasParent::
+                     CameraAccessRequestPromise::ResolveOrRejectValue& aValue) {
+               if (aValue.IsResolve()) {
+                 resolver(aValue.ResolveValue());
+               } else {
+                 resolver(CamerasAccessStatus::Error);
+               }
+             });
 #else
-  aResolver(NS_ERROR_NOT_IMPLEMENTED);
+  aResolver(CamerasAccessStatus::Error);
 #endif
   return IPC_OK();
 }

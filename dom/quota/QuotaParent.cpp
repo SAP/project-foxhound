@@ -77,7 +77,7 @@ class BoolPromiseResolveOrRejectCallback {
 
 }  // namespace
 
-PQuotaParent* AllocPQuotaParent() {
+already_AddRefed<PQuotaParent> AllocPQuotaParent() {
   AssertIsOnBackgroundThread();
 
   if (NS_WARN_IF(QuotaManager::IsShuttingDown())) {
@@ -86,15 +86,7 @@ PQuotaParent* AllocPQuotaParent() {
 
   auto actor = MakeRefPtr<Quota>();
 
-  return actor.forget().take();
-}
-
-bool DeallocPQuotaParent(PQuotaParent* aActor) {
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aActor);
-
-  RefPtr<Quota> actor = dont_AddRef(static_cast<Quota*>(aActor));
-  return true;
+  return actor.forget();
 }
 
 Quota::Quota()
@@ -150,9 +142,6 @@ bool Quota::VerifyRequestParams(const RequestParams& aParams) const {
 
   switch (aParams.type()) {
     case RequestParams::TStorageNameParams:
-    case RequestParams::TStorageInitializedParams:
-    case RequestParams::TTemporaryStorageInitializedParams:
-    case RequestParams::TInitTemporaryStorageParams:
       break;
 
     case RequestParams::TInitializePersistentOriginParams: {
@@ -367,15 +356,6 @@ PQuotaRequestParent* Quota::AllocPQuotaRequestParent(
       case RequestParams::TStorageNameParams:
         return CreateStorageNameOp(quotaManager);
 
-      case RequestParams::TStorageInitializedParams:
-        return CreateStorageInitializedOp(quotaManager);
-
-      case RequestParams::TTemporaryStorageInitializedParams:
-        return CreateTemporaryStorageInitializedOp(quotaManager);
-
-      case RequestParams::TInitTemporaryStorageParams:
-        return CreateInitTemporaryStorageOp(quotaManager);
-
       case RequestParams::TInitializePersistentOriginParams:
         return CreateInitializePersistentOriginOp(quotaManager, aParams);
 
@@ -435,6 +415,42 @@ bool Quota::DeallocPQuotaRequestParent(PQuotaRequestParent* aActor) {
   RefPtr<QuotaRequestBase> actor =
       dont_AddRef(static_cast<QuotaRequestBase*>(aActor));
   return true;
+}
+
+mozilla::ipc::IPCResult Quota::RecvStorageInitialized(
+    StorageInitializedResolver&& aResolver) {
+  AssertIsOnBackgroundThread();
+
+  QM_TRY(MOZ_TO_RESULT(!QuotaManager::IsShuttingDown()),
+         ResolveBoolResponseAndReturn(aResolver));
+
+  QM_TRY_UNWRAP(const NotNull<RefPtr<QuotaManager>> quotaManager,
+                QuotaManager::GetOrCreate(),
+                ResolveBoolResponseAndReturn(aResolver));
+
+  quotaManager->StorageInitialized()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      BoolPromiseResolveOrRejectCallback(this, std::move(aResolver)));
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult Quota::RecvTemporaryStorageInitialized(
+    TemporaryStorageInitializedResolver&& aResolver) {
+  AssertIsOnBackgroundThread();
+
+  QM_TRY(MOZ_TO_RESULT(!QuotaManager::IsShuttingDown()),
+         ResolveBoolResponseAndReturn(aResolver));
+
+  QM_TRY_UNWRAP(const NotNull<RefPtr<QuotaManager>> quotaManager,
+                QuotaManager::GetOrCreate(),
+                ResolveBoolResponseAndReturn(aResolver));
+
+  quotaManager->TemporaryStorageInitialized()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      BoolPromiseResolveOrRejectCallback(this, std::move(aResolver)));
+
+  return IPC_OK();
 }
 
 mozilla::ipc::IPCResult Quota::RecvInitializeStorage(
@@ -510,6 +526,24 @@ mozilla::ipc::IPCResult Quota::RecvInitializeTemporaryClient(
       ->InitializeTemporaryClient(aPersistenceType, aPrincipalInfo, aClientType)
       ->Then(GetCurrentSerialEventTarget(), __func__,
              BoolPromiseResolveOrRejectCallback(this, std::move(aResolve)));
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult Quota::RecvInitializeTemporaryStorage(
+    InitializeTemporaryStorageResolver&& aResolver) {
+  AssertIsOnBackgroundThread();
+
+  QM_TRY(MOZ_TO_RESULT(!QuotaManager::IsShuttingDown()),
+         ResolveBoolResponseAndReturn(aResolver));
+
+  QM_TRY_UNWRAP(const NotNull<RefPtr<QuotaManager>> quotaManager,
+                QuotaManager::GetOrCreate(),
+                ResolveBoolResponseAndReturn(aResolver));
+
+  quotaManager->InitializeTemporaryStorage()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      BoolPromiseResolveOrRejectCallback(this, std::move(aResolver)));
 
   return IPC_OK();
 }

@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { PureComponent } from "react";
-import PropTypes from "prop-types";
+import { PureComponent } from "devtools/client/shared/vendor/react";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
-import { getDocument } from "../../utils/editor";
-const classnames = require("devtools/client/shared/classnames.js");
+import { getDocument } from "../../utils/editor/index";
+const classnames = require("resource://devtools/client/shared/classnames.js");
 
 // eslint-disable-next-line max-len
 

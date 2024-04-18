@@ -159,9 +159,6 @@ JS::Zone::Zone(JSRuntime* rt, Kind kind)
     : ZoneAllocator(rt, kind),
       arenas(this),
       data(nullptr),
-      tenuredBigInts(0),
-      markedStrings(0),
-      finalizedStrings(0),
       suppressAllocationMetadataBuilder(false),
       allocNurseryObjects_(true),
       allocNurseryStrings_(true),
@@ -296,17 +293,13 @@ void Zone::sweepEphemeronTablesAfterMinorGC() {
 
     // Live (moved) nursery cell. Append entries to gcEphemeronEdges.
     EphemeronEdgeTable& tenuredEdges = gcEphemeronEdges();
-    auto* entry = tenuredEdges.get(key);
+    AutoEnterOOMUnsafeRegion oomUnsafe;
+    auto* entry = tenuredEdges.getOrAdd(key);
     if (!entry) {
-      if (!tenuredEdges.put(key, gc::EphemeronEdgeVector())) {
-        AutoEnterOOMUnsafeRegion oomUnsafe;
-        oomUnsafe.crash("Failed to tenure weak keys entry");
-      }
-      entry = tenuredEdges.get(key);
+      oomUnsafe.crash("Failed to tenure weak keys entry");
     }
 
     if (!entry->value.appendAll(entries)) {
-      AutoEnterOOMUnsafeRegion oomUnsafe;
       oomUnsafe.crash("Failed to tenure weak keys entry");
     }
 
@@ -410,13 +403,14 @@ void Zone::forceDiscardJitCode(JS::GCContext* gcx,
   jit::ICStubSpace newStubSpace;
 
 #ifdef DEBUG
-  // Assert no JitScripts are marked as active.
-  jitZone()->forEachJitScript(
-      [](jit::JitScript* jitScript) { MOZ_ASSERT(!jitScript->active()); });
+  // Assert no ICScripts are marked as active.
+  jitZone()->forEachJitScript([](jit::JitScript* jitScript) {
+    MOZ_ASSERT(!jitScript->hasActiveICScript());
+  });
 #endif
 
-  // Mark JitScripts on the stack as active and copy active Baseline stubs.
-  jit::MarkActiveJitScriptsAndCopyStubs(this, newStubSpace);
+  // Mark ICScripts on the stack as active and copy active Baseline stubs.
+  jit::MarkActiveICScriptsAndCopyStubs(this, newStubSpace);
 
   // Invalidate all Ion code in this zone.
   jit::InvalidateAll(gcx, this);
@@ -427,7 +421,8 @@ void Zone::forceDiscardJitCode(JS::GCContext* gcx,
         jit::FinishInvalidation(gcx, script);
 
         // Discard baseline script if it's not marked as active.
-        if (jitScript->hasBaselineScript() && !jitScript->active()) {
+        if (jitScript->hasBaselineScript() &&
+            !jitScript->icScript()->active()) {
           jit::FinishDiscardBaselineScript(gcx, script);
         }
 
@@ -457,8 +452,10 @@ void Zone::forceDiscardJitCode(JS::GCContext* gcx,
         }
 
         // If we did not release the JitScript, we need to purge IC stubs
-        // because the ICStubSpace will be purged below.
-        jitScript->purgeStubs(script);
+        // because the ICStubSpace will be purged below. Also purge all
+        // trial-inlined ICScripts that are not active on the stack.
+        jitScript->purgeInactiveICScripts();
+        jitScript->purgeStubs(script, newStubSpace);
 
         if (options.resetNurseryAllocSites ||
             options.resetPretenuredAllocSites) {
@@ -466,8 +463,8 @@ void Zone::forceDiscardJitCode(JS::GCContext* gcx,
                                      options.resetPretenuredAllocSites);
         }
 
-        // Reset the active flag.
-        jitScript->resetActive();
+        // Reset the active flag of each ICScript.
+        jitScript->resetAllActiveFlags();
 
         // Optionally trace weak edges in remaining JitScripts.
         if (options.traceWeakJitScripts) {
@@ -786,8 +783,8 @@ void ZoneList::clear() {
   }
 }
 
-JS_PUBLIC_API void JS::shadow::RegisterWeakCache(
-    JS::Zone* zone, detail::WeakCacheBase* cachep) {
+JS_PUBLIC_API void js::gc::RegisterWeakCache(JS::Zone* zone,
+                                             WeakCacheBase* cachep) {
   zone->registerWeakCache(cachep);
 }
 

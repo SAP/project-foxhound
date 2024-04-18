@@ -21,6 +21,7 @@
 #include "mozilla/XorShift128PlusRNG.h"
 
 #include <algorithm>
+#include <utility>
 
 #ifdef JS_HAS_INTL_API
 #  include "builtin/intl/SharedIntlData.h"
@@ -551,14 +552,13 @@ struct JSRuntime {
  private:
   // List of non-ephemeron weak containers to sweep during
   // beginSweepingSweepGroup.
-  js::MainThreadData<mozilla::LinkedList<JS::detail::WeakCacheBase>>
-      weakCaches_;
+  js::MainThreadData<mozilla::LinkedList<js::gc::WeakCacheBase>> weakCaches_;
 
  public:
-  mozilla::LinkedList<JS::detail::WeakCacheBase>& weakCaches() {
+  mozilla::LinkedList<js::gc::WeakCacheBase>& weakCaches() {
     return weakCaches_.ref();
   }
-  void registerWeakCache(JS::detail::WeakCacheBase* cachep) {
+  void registerWeakCache(js::gc::WeakCacheBase* cachep) {
     weakCaches().insertBack(cachep);
   }
 
@@ -669,8 +669,19 @@ struct JSRuntime {
   /* Code coverage output. */
   js::UnprotectedData<js::coverage::LCovRuntime> lcovOutput_;
 
+  /* Functions to call, together with data, when the runtime is being torn down.
+   */
+  js::MainThreadData<mozilla::Vector<std::pair<void (*)(void*), void*>, 4>>
+      cleanupClosures;
+
  public:
   js::coverage::LCovRuntime& lcovOutput() { return lcovOutput_.ref(); }
+
+  /* Register a cleanup function to be called during runtime shutdown. Do not
+   * depend on the ordering of cleanup calls. */
+  bool atExit(void (*function)(void*), void* data) {
+    return cleanupClosures.ref().append(std::pair(function, data));
+  }
 
  private:
   js::UnprotectedData<js::jit::JitRuntime*> jitRuntime_;
@@ -1027,10 +1038,6 @@ struct JSRuntime {
   // HostImportModuleDynamically. This is also used to enable/disable dynamic
   // module import and can accessed by off-thread parsing.
   mozilla::Atomic<JS::ModuleDynamicImportHook> moduleDynamicImportHook;
-
-  // The supported module import assertions.
-  // https://tc39.es/proposal-import-assertions/#sec-hostgetsupportedimportassertions
-  js::MainThreadData<JS::ImportAssertionVector> supportedImportAssertions;
 
   // Hooks called when script private references are created and destroyed.
   js::MainThreadData<JS::ScriptPrivateReferenceHook> scriptPrivateAddRefHook;

@@ -24,7 +24,13 @@ endif
 include $(topsrcdir)/config/config.mk
 
 ifneq (mobile/android,$(MOZ_BUILD_APP))
-$(MDDEPDIR)/buildid.h.stub $(MDDEPDIR)/source-repo.h.stub: FORCE
+# We only want to generate buildid.h once, during the export phase.
+ifeq ($(MAKECMDGOALS),buildid.h)
+$(MDDEPDIR)/buildid.h.stub: FORCE
+endif
+ifeq ($(MAKECMDGOALS),source-repo.h)
+$(MDDEPDIR)/source-repo.h.stub: FORCE
+endif
 endif
 source-repo.h: $(MDDEPDIR)/source-repo.h.stub
 buildid.h: $(MDDEPDIR)/buildid.h.stub
@@ -147,9 +153,9 @@ include $(topsrcdir)/config/rules.mk
 
 ifdef SCCACHE_VERBOSE_STATS
 default::
-	-$(CCACHE) --show-stats --stats-format=json > '$(UPLOAD_PATH)/sccache-stats.json'
+	-$(CCACHE) --show-adv-stats --stats-format=json > '$(UPLOAD_PATH)/sccache-stats.json'
 	@echo "===SCCACHE STATS==="
-	-$(CCACHE) --show-stats
+	-$(CCACHE) --show-adv-stats
 	@echo "==================="
 endif
 

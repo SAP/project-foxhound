@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.63"
+rust-version = "1.66"
 name = "glean-core"
-version = "55.0.0"
+version = "56.1.0"
 authors = [
     "Jan-Erik Rediger <jrediger@mozilla.com>",
     "The Glean Team <glean-team@mozilla.com>",
@@ -35,7 +35,7 @@ license = "MPL-2.0"
 repository = "https://github.com/mozilla/glean"
 
 [package.metadata.glean]
-glean-parser = "10.0.0"
+glean-parser = "11.0.1"
 
 [dependencies.bincode]
 version = "1.2.1"
@@ -80,7 +80,7 @@ version = "1.0.4"
 version = "0.1.40"
 
 [dependencies.uniffi]
-version = "0.24.1"
+version = "0.25.2"
 default-features = false
 
 [dependencies.uuid]
@@ -105,7 +105,7 @@ version = "0.4"
 version = "3.8.0"
 
 [build-dependencies.uniffi]
-version = "0.24.1"
+version = "0.25.2"
 features = ["build"]
 default-features = false
 

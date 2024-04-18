@@ -21,7 +21,7 @@ import {
 } from "resource://gre/modules/ExtensionPageChild.sys.mjs";
 import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
 
-const { BaseContext, defineLazyGetter } = ExtensionCommon;
+const { BaseContext, redefineGetter } = ExtensionCommon;
 
 const {
   ChildAPIManager,
@@ -154,14 +154,12 @@ class WorkerPort extends Port {
     api.portId = this.portId;
     return api;
   }
-}
 
-defineLazyGetter(WorkerPort.prototype, "api", function () {
-  // No need to clone the API object for the worker, because it runs
-  // on a different JSRuntime and doesn't have direct access to this
-  // object.
-  return this.getAPI();
-});
+  get api() {
+    // No need to clone this for the worker, it's on a separate JSRuntime.
+    return redefineGetter(this, "api", this.getAPI());
+  }
+}
 
 /**
  * A Messenger subclass specialized for the background service worker.
@@ -206,6 +204,12 @@ class WorkerMessenger extends Messenger {
     return this.portsById.get(portId);
   }
 
+  /**
+   * @typedef {object} ExtensionPortDescriptor
+   * https://phabricator.services.mozilla.com/D196385?id=801874#inline-1093734
+   *
+   * @returns {ExtensionPortDescriptor}
+   */
   connect({ name, native, ...args }) {
     let portId = getUniqueId();
     let port = new WorkerPort(this.context, portId, name, !!native);
@@ -444,7 +448,6 @@ class WebIDLChildAPIManager extends ChildAPIManager {
    * @returns {any}
    * @throws {Error | WorkerExtensionError}
    */
-
   handleForProxyAPIImplementation(request, impl) {
     const { requestType } = request;
     switch (requestType) {
@@ -692,23 +695,22 @@ class WorkerContextChild extends BaseContext {
 
     super.unload();
   }
+
+  get childManager() {
+    const childManager = getContextChildManagerGetter(
+      { envType: "addon_parent" },
+      WebIDLChildAPIManager
+    ).call(this);
+    return redefineGetter(this, "childManager", childManager);
+  }
+
+  get messenger() {
+    return redefineGetter(this, "messenger", new WorkerMessenger(this));
+  }
 }
 
-defineLazyGetter(WorkerContextChild.prototype, "messenger", function () {
-  return new WorkerMessenger(this);
-});
-
-defineLazyGetter(
-  WorkerContextChild.prototype,
-  "childManager",
-  getContextChildManagerGetter(
-    { envType: "addon_parent" },
-    WebIDLChildAPIManager
-  )
-);
-
 export var ExtensionWorkerChild = {
-  // Map<serviceWorkerDescriptorId, ExtensionWorkerContextChild>
+  /** @type {Map<number, WorkerContextChild>} */
   extensionWorkerContexts: new Map(),
 
   apiManager: ExtensionPageChild.apiManager,
@@ -753,7 +755,7 @@ export var ExtensionWorkerChild = {
    *     The extension for which the context should be created.
    * @param {mozIExtensionServiceWorkerInfo} serviceWorkerInfo
    *
-   * @returns {ExtensionWorkerContextChild}
+   * @returns {WorkerContextChild}
    */
   getExtensionWorkerContext(extension, serviceWorkerInfo) {
     if (!serviceWorkerInfo) {
@@ -793,7 +795,7 @@ export var ExtensionWorkerChild = {
   },
 
   /**
-   * Close the ExtensionWorkerContextChild belonging to the given service worker, if any.
+   * Close the WorkerContextChild belonging to the given service worker, if any.
    *
    * @param {number} descriptorId The service worker descriptor ID of the destroyed context.
    */

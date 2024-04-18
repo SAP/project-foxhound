@@ -11,17 +11,9 @@ job-defaults:
         max-run-time: 7200
     run:
         script: build-cpython.sh
-
-linux64-python-3.7:
-    treeherder:
-        symbol: TL(python3.7)
-    run:
-        toolchain-artifact: public/build/python.tar.zst
-    fetches:
-        fetch:
-            - cpython-3.7.15
-    worker:
-        docker-image: {in-tree: ubuntu1804-build-python}
+        resources:
+            - 'build/psutil_requirements.txt'
+            - 'build/zstandard_requirements.txt'
 
 linux64-python-3.8:
     treeherder:
@@ -59,6 +51,46 @@ macosx64-python-3.8:
     fetches:
         fetch:
             - cpython-3.8.10
+        toolchain:
+            - macosx64-clang-toolchain
+            - macosx64-sdk-toolchain
+            - macosx64-xz
+
+###
+
+linux64-python-3.11:
+    treeherder:
+        symbol: TL(python3.11)
+    run:
+        toolchain-artifact: public/build/python.tar.zst
+    fetches:
+        fetch:
+            - cpython-3.11.7
+    worker:
+        docker-image: {in-tree: ubuntu1804-build-python}
+
+win64-python-3.11:
+    description: "cpython 3.11.7"
+    treeherder:
+        symbol: TW64(python3.11)
+    run:
+        script: pack-cpython.sh
+        toolchain-artifact: public/build/python.tar.zst
+    fetches:
+        toolchain:
+            - linux64-wine
+        fetch:
+            - cpython-3.11.7.exe
+
+macosx64-python-3.11:
+    treeherder:
+        symbol: TM(python3.11)
+    worker-type: b-osx-1015
+    run:
+        toolchain-artifact: public/build/python.tar.zst
+    fetches:
+        fetch:
+            - cpython-3.11.7
         toolchain:
             - macosx64-clang-toolchain
             - macosx64-sdk-toolchain

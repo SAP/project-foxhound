@@ -50,7 +50,6 @@ job-defaults:
         extra-options:
             # Bug 1635749, disable window recorder temporarily
             - --browsertime-no-ffwindowrecorder
-            - --conditioned-profile=settled
     optimization:
         skip-unless-backstop: null
     limit-platforms:
@@ -154,7 +153,8 @@ browsertime-tp6m-essential:
             - allrecipes
             - [amazon-search, amazon-s]
             - espn
-            - facebook
+            # Bug 1682027 - Disabled due to high failure rate
+            # - facebook
             - google
             - [microsoft-support, micros-sup]
             - [youtube-watch, youtube-w]
@@ -176,6 +176,36 @@ browsertime-tp6m-essential:
             geckoview: 1
             refbrow: 2
             default: 3
+
+browsertime-tp6m-webextensions:
+    <<: *tp6m-defaults
+    description: Raptor (browsertime) tp6 page-load tests with webextensions installed on android
+    treeherder-symbol: Btime-webext(tp6m)
+    run-without-variant: false
+    mozharness:
+        extra-options:
+            - --chimera
+            - --browsertime-no-ffwindowrecorder
+            - --conditioned-profile=settled-webext
+            - --browser-cycles=5
+    raptor:
+        apps: [fenix]
+        run-visual-metrics: true
+        test: tp6m
+        subtests:
+            - [amazon-search, amazon-s]
+    fetches:
+        fetch:
+            - firefox-addons
+    run-on-projects:
+        by-app:
+            fenix:
+                by-test-platform:
+                    android-hw-(g5|a51).*shippable.*: [mozilla-central]
+                    default: []
+            default: []
+    # TODO(Bug 1867781): promote to tier 2 after confirming no issue have been caught while runing as tier 3.
+    tier: 3
 
 browsertime-youtube-playback-mobile:
     description: Browsertime YouTube Playback on Android
@@ -320,6 +350,7 @@ browsertime-benchmark-speedometer-mobile:
                 by-test-platform:
                     android-hw-(g5|a51).*shippable-qr.*: [trunk]
                     default: []
+            cstm-car-m: [mozilla-central]
             default: []
     treeherder-symbol: Btime(sp)
     mozharness:
@@ -343,6 +374,7 @@ browsertime-benchmark-speedometer3-mobile:
                 by-test-platform:
                     android-hw-a51.*shippable-qr.*: [trunk-only]
                     default: []
+            cstm-car-m: [mozilla-central]
             default: []
     treeherder-symbol: Btime(sp3)
     mozharness:
@@ -374,13 +406,18 @@ browsertime-benchmark-unity-webgl-mobile:
     run-without-variant: false
     raptor:
         apps: [geckoview, refbrow, fenix, chrome-m]
+    tier:
+        by-app:
+            geckoview: 2
+            default: 3
     treeherder-symbol: Btime(ugl)
     run-on-projects:
         by-app:
             refbrow: []
             geckoview:
                 by-test-platform:
-                    android-hw-a51-.*aarch64-shippable-qr.*: [trunk-only]
+                    # Disabled on autoland due to bug 1720063, and bug 1795826
+                    android-hw-a51-.*aarch64-shippable-qr.*: [mozilla-central]
                     default: []
             default:
                 by-test-platform:

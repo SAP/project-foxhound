@@ -15,13 +15,13 @@
  */
 
 import expect from 'expect';
-import {BrowserContext} from 'puppeteer-core/internal/api/BrowserContext.js';
-import {CDPTarget} from 'puppeteer-core/internal/common/Target.js';
+import type {BrowserContext} from 'puppeteer-core/internal/api/BrowserContext.js';
+import type {CdpTarget} from 'puppeteer-core/internal/cdp/Target.js';
 
-import {describeWithDebugLogs, getTestState, launch} from './mocha-utils.js';
+import {getTestState, launch} from './mocha-utils.js';
 import {attachFrame, detachFrame, navigateFrame} from './utils.js';
 
-describeWithDebugLogs('OOPIF', function () {
+describe('OOPIF', function () {
   /* We use a special browser for this test as we need the --site-per-process flag */
   let state: Awaited<ReturnType<typeof launch>>;
 
@@ -418,7 +418,7 @@ describeWithDebugLogs('OOPIF', function () {
       return target.url().endsWith('dynamic-oopif.html');
     });
     await target.page();
-    browser1.disconnect();
+    await browser1.disconnect();
   });
 
   it('should support lazy OOP frames', async () => {
@@ -454,6 +454,6 @@ describeWithDebugLogs('OOPIF', function () {
 
 function oopifs(context: BrowserContext) {
   return context.targets().filter(target => {
-    return (target as CDPTarget)._getTargetInfo().type === 'iframe';
+    return (target as CdpTarget)._getTargetInfo().type === 'iframe';
   });
 }

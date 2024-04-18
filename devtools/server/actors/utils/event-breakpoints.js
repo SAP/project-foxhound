@@ -129,6 +129,10 @@ const AVAILABLE_BREAKPOINTS = [
   {
     name: "Control",
     items: [
+      // The condition should be removed when "dom.element.popover.enabled" is removed
+      generalEvent("control", "beforetoggle", () =>
+        Services.prefs.getBoolPref("dom.element.popover.enabled")
+      ),
       generalEvent("control", "blur"),
       generalEvent("control", "change"),
       generalEvent("control", "focus"),
@@ -139,9 +143,9 @@ const AVAILABLE_BREAKPOINTS = [
       generalEvent("control", "reset"),
       generalEvent("control", "resize"),
       generalEvent("control", "scroll"),
-      // The condition should be removed when "apz.scrollend-event.content.enabled" is removed
-      generalEvent("control", "scrollend", win => "onscrollend" in win),
+      generalEvent("control", "scrollend"),
       generalEvent("control", "select"),
+      generalEvent("control", "toggle"),
       generalEvent("control", "submit"),
       generalEvent("control", "zoom"),
     ],
@@ -203,9 +207,8 @@ const AVAILABLE_BREAKPOINTS = [
     name: "Load",
     items: [
       globalEvent("load", "load"),
-      // TODO: Disabled pending fixes for bug 1569775.
-      // globalEvent("load", "beforeunload"),
-      // globalEvent("load", "unload"),
+      globalEvent("load", "beforeunload"),
+      globalEvent("load", "unload"),
       globalEvent("load", "abort"),
       globalEvent("load", "error"),
       globalEvent("load", "hashchange"),

@@ -1116,7 +1116,7 @@ void CanonicalBrowsingContext::SetActiveSessionHistoryEntry(
 
   shistory->InternalSetRequestedIndex(-1);
 
-  // FIXME Need to do the equivalent of EvictContentViewersOrReplaceEntry.
+  // FIXME Need to do the equivalent of EvictDocumentViewersOrReplaceEntry.
   HistoryCommitIndexAndLength(aChangeID, caller);
 
   static_cast<nsSHistory*>(shistory)->LogHistory();
@@ -1142,7 +1142,7 @@ void CanonicalBrowsingContext::ReplaceActiveSessionHistoryEntry(
     mActiveEntry->SetWireframe(Nothing());
   }
 
-  // FIXME Need to do the equivalent of EvictContentViewersOrReplaceEntry.
+  // FIXME Need to do the equivalent of EvictDocumentViewersOrReplaceEntry.
 }
 
 void CanonicalBrowsingContext::RemoveDynEntriesFromActiveSessionHistoryEntry() {
@@ -2366,7 +2366,7 @@ void CanonicalBrowsingContext::HistoryCommitIndexAndLength(
 
   GetChildSessionHistory()->SetIndexAndLength(index, length, aChangeID);
 
-  shistory->EvictOutOfRangeContentViewers(index);
+  shistory->EvictOutOfRangeDocumentViewers(index);
 
   Group()->EachParent([&](ContentParent* aParent) {
     Unused << aParent->SendHistoryCommitIndexAndLength(this, index, length,

@@ -157,9 +157,8 @@ ReflowInput::ReflowInput(nsPresContext* aPresContext,
     : SizeComputationInput(aFrame, aParentReflowInput.mRenderingContext),
       mParentReflowInput(&aParentReflowInput),
       mFloatManager(aParentReflowInput.mFloatManager),
-      mLineLayout(mFrame->IsFrameOfType(nsIFrame::eLineParticipant)
-                      ? aParentReflowInput.mLineLayout
-                      : nullptr),
+      mLineLayout(mFrame->IsLineParticipant() ? aParentReflowInput.mLineLayout
+                                              : nullptr),
       mBreakType(aParentReflowInput.mBreakType),
       mPercentBSizeObserver(
           (aParentReflowInput.mPercentBSizeObserver &&
@@ -304,7 +303,8 @@ bool ReflowInput::ShouldReflowAllKids() const {
   // frames NS_FRAME_CONTAINS_RELATIVE_BSIZE is marked on.
   return mFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY) || IsIResize() ||
          (IsBResize() &&
-          mFrame->HasAnyStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE));
+          mFrame->HasAnyStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE)) ||
+         mFlags.mIsInLastColumnBalancingReflow;
 }
 
 void ReflowInput::SetComputedISize(nscoord aComputedISize,
@@ -371,8 +371,7 @@ void ReflowInput::Init(nsPresContext* aPresContext,
     return;
   }
 
-  mFlags.mIsReplaced = mFrame->IsFrameOfType(nsIFrame::eReplaced) ||
-                       mFrame->IsFrameOfType(nsIFrame::eReplacedContainsBlock);
+  mFlags.mIsReplaced = mFrame->IsReplaced() || mFrame->IsReplacedWithBlock();
 
   InitConstraints(aPresContext, aContainingBlockSize, aBorder, aPadding, type);
 
@@ -449,13 +448,13 @@ void ReflowInput::Init(nsPresContext* aPresContext,
     SetAvailableBSize(NS_UNCONSTRAINEDSIZE);
   }
 
-  LAYOUT_WARN_IF_FALSE((mStyleDisplay->IsInlineOutsideStyle() &&
-                        !mFrame->IsFrameOfType(nsIFrame::eReplaced)) ||
-                           type == LayoutFrameType::Text ||
-                           ComputedISize() != NS_UNCONSTRAINEDSIZE,
-                       "have unconstrained inline-size; this should only "
-                       "result from very large sizes, not attempts at "
-                       "intrinsic inline-size calculation");
+  LAYOUT_WARN_IF_FALSE(
+      (mStyleDisplay->IsInlineOutsideStyle() && !mFrame->IsReplaced()) ||
+          type == LayoutFrameType::Text ||
+          ComputedISize() != NS_UNCONSTRAINEDSIZE,
+      "have unconstrained inline-size; this should only "
+      "result from very large sizes, not attempts at "
+      "intrinsic inline-size calculation");
 }
 
 static bool MightBeContainingBlockFor(nsIFrame* aMaybeContainingBlock,
@@ -796,7 +795,7 @@ void ReflowInput::InitDynamicReflowRoot() {
 }
 
 bool ReflowInput::ShouldApplyAutomaticMinimumOnBlockAxis() const {
-  MOZ_ASSERT(!mFrame->IsFrameOfType(nsIFrame::eReplacedSizing));
+  MOZ_ASSERT(!mFrame->HasReplacedSizing());
   return mFlags.mIsBSizeSetByAspectRatio &&
          !mStyleDisplay->IsScrollableOverflow() &&
          mStylePosition->MinBSize(GetWritingMode()).IsAuto();
@@ -1542,7 +1541,7 @@ bool ReflowInput::IsInlineSizeComputableByBlockSizeAndAspectRatio(
 
   // We don't have to compute the inline size by aspect-ratio and the resolved
   // block size (from insets) for replaced elements.
-  if (mFrame->IsFrameOfType(nsIFrame::eReplaced)) {
+  if (mFrame->IsReplaced()) {
     return false;
   }
 
@@ -2078,6 +2077,11 @@ LogicalSize ReflowInput::ComputeContainingBlockRectangle(
 
   if (aContainingBlockRI->mFlags.mTreatBSizeAsIndefinite) {
     cbSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
+  } else if (aContainingBlockRI->mPercentageBasisInBlockAxis) {
+    MOZ_ASSERT(cbSize.BSize(wm) == NS_UNCONSTRAINEDSIZE,
+               "Why provide a percentage basis when the containing block's "
+               "block-size is definite?");
+    cbSize.BSize(wm) = *aContainingBlockRI->mPercentageBasisInBlockAxis;
   }
 
   if (((mFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
@@ -2361,34 +2365,16 @@ void ReflowInput::InitConstraints(
       }
 
       nsIFrame* alignCB = mFrame->GetParent();
-      if (alignCB->IsTableWrapperFrame() && alignCB->GetParent()) {
-        // XXX grid-specific for now; maybe remove this check after we address
-        // bug 799725
-        if (alignCB->GetParent()->IsGridContainerFrame()) {
-          alignCB = alignCB->GetParent();
+      if (alignCB->IsTableWrapperFrame()) {
+        nsIFrame* alignCBParent = alignCB->GetParent();
+        if (alignCBParent && alignCBParent->IsGridContainerFrame()) {
+          alignCB = alignCBParent;
         }
       }
-      if (alignCB->IsGridContainerFrame()) {
-        // Shrink-wrap grid items that will be aligned (rather than stretched)
-        // in its inline axis.
-        auto inlineAxisAlignment =
-            wm.IsOrthogonalTo(cbwm)
-                ? mStylePosition->UsedAlignSelf(alignCB->Style())._0
-                : mStylePosition->UsedJustifySelf(alignCB->Style())._0;
-        if ((inlineAxisAlignment != StyleAlignFlags::STRETCH &&
-             inlineAxisAlignment != StyleAlignFlags::NORMAL) ||
-            mStyleMargin->mMargin.GetIStart(wm).IsAuto() ||
-            mStyleMargin->mMargin.GetIEnd(wm).IsAuto()) {
-          mComputeSizeFlags += ComputeSizeFlag::ShrinkWrap;
-        }
-      } else {
+      if (!alignCB->IsGridContainerFrame()) {
         // Shrink-wrap blocks that are orthogonal to their container.
         if (isBlockLevel && mCBReflowInput &&
             mCBReflowInput->GetWritingMode().IsOrthogonalTo(mWritingMode)) {
-          mComputeSizeFlags += ComputeSizeFlag::ShrinkWrap;
-        }
-
-        if (alignCB->IsFlexContainerFrame()) {
           mComputeSizeFlags += ComputeSizeFlag::ShrinkWrap;
         }
       }

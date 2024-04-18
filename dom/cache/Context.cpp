@@ -399,8 +399,8 @@ Context::QuotaInitRunnable::Run() {
         QuotaManager* quotaManager = QuotaManager::Get();
         MOZ_DIAGNOSTIC_ASSERT(quotaManager);
 
-        QM_TRY(
-            MOZ_TO_RESULT(quotaManager->EnsureTemporaryStorageIsInitialized()));
+        QM_TRY(MOZ_TO_RESULT(
+            quotaManager->EnsureTemporaryStorageIsInitializedInternal()));
 
         QM_TRY_UNWRAP(
             mDirectoryMetadata->mDir,
@@ -461,8 +461,8 @@ Context::QuotaInitRunnable::Run() {
       mInitAction->CompleteOnInitiatingThread(mResult);
 
       mContext->OnQuotaInit(mResult, mDirectoryMetadata,
-                            mDirectoryLock.forget(),
-                            mCipherKeyManager.forget());
+                            std::move(mDirectoryLock),
+                            std::move(mCipherKeyManager));
 
       mState = STATE_COMPLETE;
 
@@ -566,6 +566,22 @@ class Context::ActionRunnable final : public nsIRunnable,
     MOZ_DIAGNOSTIC_ASSERT(mState == STATE_COMPLETE);
     MOZ_DIAGNOSTIC_ASSERT(!mContext);
     MOZ_DIAGNOSTIC_ASSERT(!mAction);
+  }
+
+  void DoStringify(nsACString& aData) override {
+    aData.Append("ActionRunnable ("_ns +
+                 //
+                 "State:"_ns + IntToCString(mState) + kStringifyDelimiter +
+                 //
+                 "Action:"_ns + IntToCString(static_cast<bool>(mAction)) +
+                 kStringifyDelimiter +
+                 // TODO: We might want to have Action::Stringify, too.
+                 //
+                 "Context:"_ns + IntToCString(static_cast<bool>(mContext)) +
+                 kStringifyDelimiter +
+                 // We do not print out mContext as we most probably were called
+                 // by its Stringify.
+                 ")"_ns);
   }
 
   void Clear() {
@@ -1015,26 +1031,23 @@ void Context::DispatchAction(SafeRefPtr<Action> aAction, bool aDoomData) {
 
 void Context::OnQuotaInit(
     nsresult aRv, const Maybe<CacheDirectoryMetadata>& aDirectoryMetadata,
-    already_AddRefed<DirectoryLock> aDirectoryLock,
-    already_AddRefed<CipherKeyManager> aCipherKeyManager) {
+    RefPtr<DirectoryLock> aDirectoryLock,
+    RefPtr<CipherKeyManager> aCipherKeyManager) {
   NS_ASSERT_OWNINGTHREAD(Context);
 
   MOZ_DIAGNOSTIC_ASSERT(mInitRunnable);
   mInitRunnable = nullptr;
 
-  if (aDirectoryMetadata) {
-    mDirectoryMetadata.emplace(*aDirectoryMetadata);
-
-    MOZ_DIAGNOSTIC_ASSERT(!mCipherKeyManager);
-    mCipherKeyManager = aCipherKeyManager;
-
-    MOZ_DIAGNOSTIC_ASSERT_IF(mDirectoryMetadata->mIsPrivate, mCipherKeyManager);
-  }
+  MOZ_DIAGNOSTIC_ASSERT(!mDirectoryMetadata);
+  mDirectoryMetadata = aDirectoryMetadata;
 
   // Always save the directory lock to ensure QuotaManager does not shutdown
   // before the Context has gone away.
   MOZ_DIAGNOSTIC_ASSERT(!mDirectoryLock);
-  mDirectoryLock = aDirectoryLock;
+  mDirectoryLock = std::move(aDirectoryLock);
+
+  MOZ_DIAGNOSTIC_ASSERT(!mCipherKeyManager);
+  mCipherKeyManager = std::move(aCipherKeyManager);
 
   // If we opening the context failed, but we were not explicitly canceled,
   // still treat the entire context as canceled.  We don't want to allow
@@ -1053,6 +1066,12 @@ void Context::OnQuotaInit(
     // Context will destruct after return here and last ref is released.
     return;
   }
+
+  // We could only assert below if quota initialization was a success which
+  // is ensured by NS_FAILED(aRv) above
+  MOZ_DIAGNOSTIC_ASSERT(mDirectoryMetadata);
+  MOZ_DIAGNOSTIC_ASSERT(mDirectoryLock);
+  MOZ_DIAGNOSTIC_ASSERT_IF(mDirectoryMetadata->mIsPrivate, mCipherKeyManager);
 
   MOZ_DIAGNOSTIC_ASSERT(mState == STATE_CONTEXT_INIT);
   mState = STATE_CONTEXT_READY;
@@ -1113,32 +1132,54 @@ void Context::DoomTargetData() {
   MOZ_DIAGNOSTIC_ASSERT(!mData);
 }
 
-void Context::Stringify(nsACString& aData) {
+void Context::DoStringify(nsACString& aData) {
   NS_ASSERT_OWNINGTHREAD(Context);
 
-  constexpr auto kQuotaGenericDelimiterString = "|"_ns;
-
   aData.Append(
-      "Context ("_ns +
+      "Context "_ns + kStringifyStartInstance +
       //
-      "State:"_ns + IntToCString(mState) + kQuotaGenericDelimiterString +
+      "State:"_ns + IntToCString(mState) + kStringifyDelimiter +
       //
-      "OrphanedData:"_ns + IntToCString(mOrphanedData) +
-      kQuotaGenericDelimiterString +
+      "OrphanedData:"_ns + IntToCString(mOrphanedData) + kStringifyDelimiter +
+      //
+      "InitRunnable:"_ns + IntToCString(static_cast<bool>(mInitRunnable)) +
+      kStringifyDelimiter +
+      //
+      "InitAction:"_ns + IntToCString(static_cast<bool>(mInitAction)) +
+      kStringifyDelimiter +
       //
       "PendingActions:"_ns +
       IntToCString(static_cast<uint64_t>(mPendingActions.Length())) +
-      kQuotaGenericDelimiterString +
+      kStringifyDelimiter +
+      //
+      "ActivityList:"_ns +
+      IntToCString(static_cast<uint64_t>(mActivityList.Length())));
+
+  if (mActivityList.Length() > 0) {
+    aData.Append(kStringifyStartSet);
+    for (auto activity : mActivityList.ForwardRange()) {
+      activity->Stringify(aData);
+      aData.Append(kStringifyDelimiter);
+    }
+    aData.Append(kStringifyEndSet);
+  };
+
+  aData.Append(
+      kStringifyDelimiter +
       //
       "DirectoryLock:"_ns + IntToCString(static_cast<bool>(mDirectoryLock)) +
-      kQuotaGenericDelimiterString +
+      kStringifyDelimiter +
       //
-      "NextContext:"_ns + IntToCString(static_cast<bool>(mNextContext)));
+      "NextContext:"_ns + IntToCString(static_cast<bool>(mNextContext)) +
+      //
+      kStringifyEndInstance);
 
   if (mNextContext) {
-    aData.Append(kQuotaGenericDelimiterString);
+    aData.Append(kStringifyDelimiter);
     mNextContext->Stringify(aData);
   };
+
+  aData.Append(kStringifyEndInstance);
 }
 
 }  // namespace mozilla::dom::cache

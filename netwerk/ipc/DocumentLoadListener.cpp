@@ -453,9 +453,25 @@ void DocumentLoadListener::AddURIVisit(nsIChannel* aChannel,
   nsCOMPtr<nsIWidget> widget =
       browsingContext->GetParentProcessWidgetContaining();
 
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+
+  // Check if the URI has a http scheme and if either HSTS is enabled for this
+  // host, or if we were upgraded by HTTPS-Only/First. If this is the case, we
+  // want to mark this URI specially, as it will be followed shortly by an
+  // almost identical https history entry. That way the global history
+  // implementation can handle the visit appropriately (e.g. by marking it as
+  // `hidden`, so only the https url appears in default history views).
+  bool wasUpgraded =
+      uri->SchemeIs("http") &&
+      (loadInfo->GetHstsStatus() ||
+       (loadInfo->GetHttpsOnlyStatus() &
+        (nsILoadInfo::HTTPS_ONLY_UPGRADED_HTTPS_FIRST |
+         nsILoadInfo::HTTPS_ONLY_UPGRADED_LISTENER_NOT_REGISTERED |
+         nsILoadInfo::HTTPS_ONLY_UPGRADED_LISTENER_REGISTERED)));
+
   nsDocShell::InternalAddURIVisit(uri, previousURI, previousFlags,
                                   responseStatus, browsingContext, widget,
-                                  mLoadStateLoadType);
+                                  mLoadStateLoadType, wasUpgraded);
 }
 
 CanonicalBrowsingContext* DocumentLoadListener::GetLoadingBrowsingContext()
@@ -917,7 +933,7 @@ auto DocumentLoadListener::OpenDocument(
     nsDocShellLoadState* aLoadState, uint32_t aCacheKey,
     const Maybe<uint64_t>& aChannelId, const TimeStamp& aAsyncOpenTime,
     nsDOMNavigationTiming* aTiming, Maybe<dom::ClientInfo>&& aInfo,
-    Maybe<bool> aUriModified, Maybe<bool> aIsXFOError,
+    Maybe<bool> aUriModified, Maybe<bool> aIsEmbeddingBlockedError,
     dom::ContentParent* aContentParent, nsresult* aRv) -> RefPtr<OpenPromise> {
   LOG(("DocumentLoadListener [%p] OpenDocument [uri=%s]", this,
        aLoadState->URI()->GetSpecOrDefault().get()));
@@ -934,7 +950,8 @@ auto DocumentLoadListener::OpenDocument(
       CreateDocumentLoadInfo(browsingContext, aLoadState);
 
   nsLoadFlags loadFlags = aLoadState->CalculateChannelLoadFlags(
-      browsingContext, std::move(aUriModified), std::move(aIsXFOError));
+      browsingContext, std::move(aUriModified),
+      std::move(aIsEmbeddingBlockedError));
 
   // Keep track of navigation for the Bounce Tracking Protection.
   if (browsingContext->IsTopContent()) {
@@ -1000,19 +1017,6 @@ auto DocumentLoadListener::OpenInParent(nsDocShellLoadState* aLoadState,
       !browsingContext->GetContentParent()) {
     LOG(("DocumentLoadListener::OpenInParent failed because of subdoc"));
     return nullptr;
-  }
-
-  if (nsCOMPtr<nsIContentSecurityPolicy> csp = aLoadState->Csp()) {
-    // Check CSP navigate-to
-    bool allowsNavigateTo = false;
-    nsresult rv = csp->GetAllowsNavigateTo(aLoadState->URI(),
-                                           aLoadState->IsFormSubmission(),
-                                           false, /* aWasRedirected */
-                                           false, /* aEnforceWhitelist */
-                                           &allowsNavigateTo);
-    if (NS_FAILED(rv) || !allowsNavigateTo) {
-      return nullptr;
-    }
   }
 
   // Clone because this mutates the load flags in the load state, which
@@ -1466,7 +1470,7 @@ bool DocumentLoadListener::ResumeSuspendedChannel(
     streamListenerFunctions.Clear();
   }
 
-  ForwardStreamListenerFunctions(streamListenerFunctions, aListener);
+  ForwardStreamListenerFunctions(std::move(streamListenerFunctions), aListener);
 
   // We don't expect to get new stream listener functions added
   // via re-entrancy. If this ever happens, we should understand
@@ -1653,6 +1657,8 @@ static int32_t GetWhereToOpen(nsIChannel* aChannel, bool aIsDocumentLoad) {
       where == nsIBrowserDOMWindow::OPEN_NEWTAB) {
     return where;
   }
+  // NOTE: nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND is not allowed as a pref
+  //       value.
   return nsIBrowserDOMWindow::OPEN_NEWTAB;
 }
 
@@ -1744,6 +1750,7 @@ static bool ContextCanProcessSwitch(CanonicalBrowsingContext* aBrowsingContext,
 static RefPtr<dom::BrowsingContextCallbackReceivedPromise> SwitchToNewTab(
     CanonicalBrowsingContext* aLoadingBrowsingContext, int32_t aWhere) {
   MOZ_ASSERT(aWhere == nsIBrowserDOMWindow::OPEN_NEWTAB ||
+                 aWhere == nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND ||
                  aWhere == nsIBrowserDOMWindow::OPEN_NEWWINDOW,
              "Unsupported open location");
 
@@ -2696,7 +2703,7 @@ DocumentLoadListener::OnDataAvailable(nsIRequest* aRequest,
 
   mStreamListenerFunctions.AppendElement(StreamListenerFunction{
       VariantIndex<1>{},
-      OnDataAvailableParams{aRequest, data, aOffset, aCount}});
+      OnDataAvailableParams{aRequest, std::move(data), aOffset, aCount}});
 
   return NS_OK;
 }
@@ -3009,7 +3016,8 @@ NS_IMETHODIMP DocumentLoadListener::EarlyHint(const nsACString& aLinkHeader,
                                               const nsACString& aCSPHeader) {
   LOG(("DocumentLoadListener::EarlyHint.\n"));
   mEarlyHintsService.EarlyHint(aLinkHeader, GetChannelCreationURI(), mChannel,
-                               aReferrerPolicy, aCSPHeader, this);
+                               aReferrerPolicy, aCSPHeader,
+                               GetLoadingBrowsingContext());
   return NS_OK;
 }
 

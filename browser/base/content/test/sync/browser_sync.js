@@ -44,36 +44,36 @@ add_task(async function test_navBar_button_visibility() {
   };
   gSync.updateAllUI(state);
   ok(
-    BrowserTestUtils.is_hidden(button),
-    "Button should be hidden with STATUS_NOT_CONFIGURED"
+    BrowserTestUtils.isVisible(button),
+    "Check button visibility with STATUS_NOT_CONFIGURED"
   );
 
   state.email = "foo@bar.com";
   state.status = UIState.STATUS_NOT_VERIFIED;
   gSync.updateAllUI(state);
   ok(
-    BrowserTestUtils.is_visible(button),
+    BrowserTestUtils.isVisible(button),
     "Check button visibility with STATUS_NOT_VERIFIED"
   );
 
   state.status = UIState.STATUS_LOGIN_FAILED;
   gSync.updateAllUI(state);
   ok(
-    BrowserTestUtils.is_visible(button),
+    BrowserTestUtils.isVisible(button),
     "Check button visibility with STATUS_LOGIN_FAILED"
   );
 
   state.status = UIState.STATUS_SIGNED_IN;
   gSync.updateAllUI(state);
   ok(
-    BrowserTestUtils.is_visible(button),
+    BrowserTestUtils.isVisible(button),
     "Check button visibility with STATUS_SIGNED_IN"
   );
 
   state.syncEnabled = false;
   gSync.updateAllUI(state);
   is(
-    BrowserTestUtils.is_visible(button),
+    BrowserTestUtils.isVisible(button),
     true,
     "Check button visibility when signed in, but sync disabled"
   );
@@ -117,8 +117,8 @@ add_task(async function test_overflow_navBar_button_visibility() {
   gSync.updateAllUI(state);
 
   ok(
-    BrowserTestUtils.is_hidden(button),
-    "Button should be hidden with STATUS_NOT_CONFIGURED"
+    BrowserTestUtils.isVisible(button),
+    "Button should still be visable even if user sync not configured"
   );
 
   let hidePanelPromise = BrowserTestUtils.waitForEvent(
@@ -177,6 +177,12 @@ add_task(async function test_ui_state_signedin() {
 
   checkMenuBarItem("sync-syncnowitem");
   checkPanelHeader();
+  ok(
+    BrowserTestUtils.isVisible(
+      document.getElementById("fxa-menu-header-title")
+    ),
+    "expected toolbar to be visible after opening"
+  );
   checkFxaToolbarButtonPanel({
     headerTitle: "Manage account",
     headerDescription: state.displayName,
@@ -581,6 +587,137 @@ add_task(
   }
 );
 
+// If the PXI experiment is enabled, we need to ensure we can see the CTAs when signed out
+add_task(async function test_experiment_ui_state_unconfigured() {
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com/");
+
+  // The experiment enables this bool, found in FeatureManifest.yaml
+  Services.prefs.setBoolPref(
+    "identity.fxaccounts.toolbar.pxiToolbarEnabled",
+    true
+  );
+  let state = {
+    status: UIState.STATUS_NOT_CONFIGURED,
+  };
+
+  gSync.updateAllUI(state);
+
+  checkMenuBarItem("sync-setup");
+
+  checkFxAAvatar("not_configured");
+
+  let expectedLabel = gSync.fluentStrings.formatValueSync(
+    "appmenuitem-moz-accounts-sign-in"
+  );
+
+  await openMainPanel();
+
+  checkFxaToolbarButtonPanel({
+    headerTitle: expectedLabel,
+    headerDescription: "",
+    enabledItems: [
+      "PanelUI-fxa-pxi-cta-menu",
+      "PanelUI-fxa-menu-sync-button",
+      "PanelUI-fxa-menu-monitor-button",
+      "PanelUI-fxa-menu-relay-button",
+      "PanelUI-fxa-menu-vpn-button",
+    ],
+    disabledItems: [],
+    hiddenItems: [
+      "PanelUI-fxa-menu-syncnow-button",
+      "PanelUI-fxa-menu-sync-prefs-button",
+    ],
+  });
+
+  // Revert the pref at the end of the test
+  Services.prefs.setBoolPref(
+    "identity.fxaccounts.toolbar.pxiToolbarEnabled",
+    false
+  );
+  await closeTabAndMainPanel();
+});
+
+// Ensure we can see the regular signed in flow + the extra PXI CTAs when
+// the experiment is enabled
+add_task(async function test_experiment_ui_state_signedin() {
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com/");
+
+  // The experiment enables this bool, found in FeatureManifest.yaml
+  Services.prefs.setBoolPref(
+    "identity.fxaccounts.toolbar.pxiToolbarEnabled",
+    true
+  );
+
+  const relativeDateAnchor = new Date();
+  let state = {
+    status: UIState.STATUS_SIGNED_IN,
+    syncEnabled: true,
+    email: "foo@bar.com",
+    displayName: "Foo Bar",
+    avatarURL: "https://foo.bar",
+    lastSync: new Date(),
+    syncing: false,
+  };
+
+  const origRelativeTimeFormat = gSync.relativeTimeFormat;
+  gSync.relativeTimeFormat = {
+    formatBestUnit(date) {
+      return origRelativeTimeFormat.formatBestUnit(date, {
+        now: relativeDateAnchor,
+      });
+    },
+  };
+
+  gSync.updateAllUI(state);
+
+  await openFxaPanel();
+
+  checkMenuBarItem("sync-syncnowitem");
+  checkPanelHeader();
+  ok(
+    BrowserTestUtils.isVisible(
+      document.getElementById("fxa-menu-header-title")
+    ),
+    "expected toolbar to be visible after opening"
+  );
+  checkFxaToolbarButtonPanel({
+    headerTitle: "Manage account",
+    headerDescription: state.displayName,
+    enabledItems: [
+      "PanelUI-fxa-menu-sendtab-button",
+      "PanelUI-fxa-menu-connect-device-button",
+      "PanelUI-fxa-menu-syncnow-button",
+      "PanelUI-fxa-menu-sync-prefs-button",
+      "PanelUI-fxa-menu-account-signout-button",
+      "PanelUI-fxa-pxi-cta-menu",
+      "PanelUI-fxa-menu-sync-button",
+      "PanelUI-fxa-menu-monitor-button",
+      "PanelUI-fxa-menu-relay-button",
+      "PanelUI-fxa-menu-vpn-button",
+    ],
+    disabledItems: [],
+    hiddenItems: ["PanelUI-fxa-menu-setup-sync-button"],
+  });
+  checkFxAAvatar("signedin");
+  gSync.relativeTimeFormat = origRelativeTimeFormat;
+  await closeFxaPanel();
+
+  await openMainPanel();
+
+  checkPanelUIStatusBar({
+    description: "Foo Bar",
+    titleHidden: true,
+    hideFxAText: true,
+  });
+
+  // Revert the pref at the end of the test
+  Services.prefs.setBoolPref(
+    "identity.fxaccounts.toolbar.pxiToolbarEnabled",
+    false
+  );
+  await closeTabAndMainPanel();
+});
+
 function checkPanelUIStatusBar({
   description,
   title,
@@ -707,7 +844,7 @@ async function checkFxABadged() {
   });
   const badge = button.querySelector("label.feature-callout");
   ok(badge, "expected feature-callout style badge");
-  ok(BrowserTestUtils.is_visible(badge), "expected the badge to be visible");
+  ok(BrowserTestUtils.isVisible(badge), "expected the badge to be visible");
 }
 
 // fxaStatus is one of 'not_configured', 'unverified', 'login-failed', or 'signedin'.

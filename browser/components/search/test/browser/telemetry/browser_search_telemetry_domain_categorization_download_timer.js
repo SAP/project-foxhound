@@ -12,14 +12,9 @@
 ChromeUtils.defineESModuleGetters(this, {
   TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS:
     "resource:///modules/SearchSERPTelemetry.sys.mjs",
-  RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
-  SearchSERPCategorization: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchSERPDomainToCategoriesMap:
     "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
-  sinon: "resource://testing-common/Sinon.sys.mjs",
-  TELEMETRY_CATEGORIZATION_KEY:
-    "resource:///modules/SearchSERPTelemetry.sys.mjs",
 });
 
 const TEST_PROVIDER_INFO = [
@@ -79,15 +74,18 @@ function waitForDownloadError() {
 const client = RemoteSettings(TELEMETRY_CATEGORIZATION_KEY);
 const db = client.db;
 
-let stub;
 // Shorten the timer so that tests don't have to wait too long.
 const TIMEOUT_IN_MS = 250;
 add_setup(async function () {
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   await waitForIdle();
 
+  await db.clear();
+
+  // Set the state of the pref to false so that tests toggle the preference,
+  // triggering the map to be updated.
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.log", true]],
+    set: [["browser.search.serpEventTelemetryCategorization.enabled", false]],
   });
 
   let defaultDownloadSettings = {
@@ -105,14 +103,9 @@ add_setup(async function () {
   TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS.minAdjust = 0;
   TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS.maxAdjust = 0;
 
-  stub = sinon.stub(SearchSERPCategorization, "dummyLogger");
-  await db.clear();
-
   registerCleanupFunction(async () => {
-    stub.restore();
     SearchSERPTelemetry.overrideSearchTelemetryForTests();
     resetTelemetry();
-    await db.clear();
     TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS = {
       ...defaultDownloadSettings,
     };
@@ -120,6 +113,8 @@ add_setup(async function () {
 });
 
 add_task(async function test_download_after_failure() {
+  // Most cases, we should use a convenience function, but in this case,
+  // we want to explictly "forget" to include an attachment to cause a failure.
   let { record, attachment } = await mockRecordWithAttachment({
     id: "example_id",
     version: 1,
@@ -140,28 +135,38 @@ add_task(async function test_download_after_failure() {
   await TestUtils.topicObserved("domain-to-categories-map-update-complete");
 
   let url = getSERPUrl("searchTelemetryDomainCategorizationReporting.html");
-  info("Load a sample SERP with organic results.");
+  info("Load a sample SERP with organic and sponsored results.");
   let promise = waitForPageWithCategorizedDomains();
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
   await promise;
 
-  Assert.deepEqual(
-    Array.from(stub.getCall(0).args[0]),
-    ["foobar.org"],
-    "Categorization of non-ads should match."
-  );
-
-  Assert.deepEqual(
-    Array.from(stub.getCall(1).args[0]),
-    ["abc.org", "def.org"],
-    "Categorization of ads should match."
-  );
+  await BrowserTestUtils.removeTab(tab);
+  assertCategorizationValues([
+    {
+      organic_category: "3",
+      organic_num_domains: "1",
+      organic_num_inconclusive: "0",
+      organic_num_unknown: "0",
+      sponsored_category: "4",
+      sponsored_num_domains: "2",
+      sponsored_num_inconclusive: "0",
+      sponsored_num_unknown: "0",
+      mappings_version: "1",
+      app_version: APP_VERSION,
+      channel: CHANNEL,
+      locale: LOCALE,
+      region: REGION,
+      partner_code: "ff",
+      provider: "example",
+      tagged: "true",
+      num_ads_visible: "2",
+      num_ads_clicked: "0",
+    },
+  ]);
 
   // Clean up.
-  BrowserTestUtils.removeTab(tab);
   await SpecialPowers.popPrefEnv();
-  await db.clear();
-  await client.attachments.cacheImpl.delete(record.id);
+  await resetCategorizationCollection(record);
 });
 
 add_task(async function test_download_after_multiple_failures() {
@@ -208,8 +213,7 @@ add_task(async function test_download_after_multiple_failures() {
 
   // Clean up.
   await SpecialPowers.popPrefEnv();
-  await db.clear();
-  await client.attachments.cacheImpl.delete(record.id);
+  await resetCategorizationCollection(record);
 });
 
 add_task(async function test_cancel_download_timer() {
@@ -257,8 +261,8 @@ add_task(async function test_cancel_download_timer() {
   Assert.ok(SearchSERPDomainToCategoriesMap.empty, "Map is empty");
 
   // Clean up.
-  await client.attachments.cacheImpl.delete(record.id);
-  await db.clear();
+  await SpecialPowers.popPrefEnv();
+  await resetCategorizationCollection(record);
 });
 
 add_task(async function test_download_adjust() {
@@ -302,8 +306,8 @@ add_task(async function test_download_adjust() {
   Assert.equal(consoleObserved, true, "Encountered download failure");
 
   // Clean up.
-  await client.attachments.cacheImpl.delete(record.id);
-  await db.clear();
+  await SpecialPowers.popPrefEnv();
+  await resetCategorizationCollection(record);
   TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS.base = TIMEOUT_IN_MS;
   TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS.minAdjust = 0;
   TELEMETRY_CATEGORIZATION_DOWNLOAD_SETTINGS.maxAdjust = 0;

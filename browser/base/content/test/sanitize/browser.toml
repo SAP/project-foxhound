@@ -3,6 +3,7 @@ support-files = [
   "head.js",
   "dummy.js",
   "dummy_page.html",
+  "site_data_test.html",
 ]
 
 ["browser_cookiePermission.js"]
@@ -12,6 +13,8 @@ support-files = [
 ["browser_cookiePermission_containers.js"]
 
 ["browser_cookiePermission_subDomains.js"]
+
+["browser_cookiePermission_subDomains_v2.js"]
 
 ["browser_purgehistory_clears_sh.js"]
 
@@ -30,3 +33,5 @@ support-files = [
 ["browser_sanitize-timespans.js"]
 
 ["browser_sanitizeDialog.js"]
+
+["browser_sanitizeDialog_v2.js"]

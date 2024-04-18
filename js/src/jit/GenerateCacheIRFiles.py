@@ -4,8 +4,6 @@
 
 # This script generates jit/CacheIROpsGenerated.h from CacheIROps.yaml
 
-from collections import OrderedDict
-
 import buildconfig
 import six
 import yaml
@@ -46,20 +44,7 @@ def load_yaml(yaml_path):
     pp.do_filter("substitution")
     pp.do_include(yaml_path)
     contents = pp.out.getvalue()
-
-    # Load into an OrderedDict to ensure order is preserved. Note: Python 3.7+
-    # also preserves ordering for normal dictionaries.
-    # Code based on https://stackoverflow.com/a/21912744.
-    class OrderedLoader(yaml.Loader):
-        pass
-
-    def construct_mapping(loader, node):
-        loader.flatten_mapping(node)
-        return OrderedDict(loader.construct_pairs(node))
-
-    tag = yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG
-    OrderedLoader.add_constructor(tag, construct_mapping)
-    return yaml.load(contents, OrderedLoader)
+    return yaml.safe_load(contents)
 
 
 # Information for generating CacheIRWriter code for a single argument. Tuple
@@ -109,6 +94,7 @@ arg_writer_info = {
     "StaticStringImm": ("const char*", "writeStaticStringImm"),
     "AllocKindImm": ("gc::AllocKind", "writeAllocKindImm"),
     "CompletionKindImm": ("CompletionKind", "writeCompletionKindImm"),
+    "RealmFuseIndexImm": ("RealmFuses::FuseIndex", "writeRealmFuseIndexImm"),
 }
 
 
@@ -210,6 +196,7 @@ arg_reader_info = {
     "StaticStringImm": ("const char*", "", "reinterpret_cast<char*>(reader.pointer())"),
     "AllocKindImm": ("gc::AllocKind", "", "reader.allocKind()"),
     "CompletionKindImm": ("CompletionKind", "", "reader.completionKind()"),
+    "RealmFuseIndexImm": ("RealmFuses::FuseIndex", "", "reader.realmFuseIndex()"),
 }
 
 
@@ -297,6 +284,7 @@ arg_spewer_method = {
     "StaticStringImm": "spewStaticStringImm",
     "AllocKindImm": "spewAllocKindImm",
     "CompletionKindImm": "spewCompletionKindImm",
+    "RealmFuseIndexImm": "spewRealmFuseIndexImm",
 }
 
 
@@ -435,6 +423,7 @@ arg_length = {
     "StaticStringImm": "sizeof(uintptr_t)",
     "AllocKindImm": 1,
     "CompletionKindImm": 1,
+    "RealmFuseIndexImm": 1,
 }
 
 
@@ -472,7 +461,7 @@ def generate_cacheirops_header(c_out, yaml_path):
         name = op["name"]
 
         args = op["args"]
-        assert args is None or isinstance(args, OrderedDict)
+        assert args is None or isinstance(args, dict)
 
         shared = op["shared"]
         assert isinstance(shared, bool)

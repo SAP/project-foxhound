@@ -400,6 +400,12 @@ urlbar:
         If neither Nimbus nor remote settings defines a cap, no cap will be
         used, and the user will be able to increment the minimum length without
         any limit.
+    yelpFeatureGate:
+      type: boolean
+      fallbackPref: browser.urlbar.yelp.featureGate
+      description: >-
+        Feature gate that controls whether all aspects of the Yelp suggestion
+        feature are exposed to the user.
 
 frecency:
   description: "The address bar ranking algorithm"
@@ -498,6 +504,11 @@ aboutwelcome:
       fallbackPref: browser.aboutwelcome.backdrop
       description: >-
         Specify the color to be used to update the background color
+    newtabUrlBarFocus:
+      type: boolean
+      fallbackPref: browser.aboutwelcome.newtabUrlBarFocus
+      description: >-
+        Should the urlbar be focused when the new tab page loads after new user onboarding
 
 moreFromMozilla:
   description: "New page on about:preferences to suggest more Mozilla products"
@@ -528,6 +539,17 @@ windowsLaunchOnLogin:
       type: boolean
       setPref: browser.startup.windowsLaunchOnLogin.enabled
       description: Should users see the Windows launch on login checkbox.
+
+windowsJumpList:
+  description: "Controls for the Windows Jump List integration."
+  owner: mconley@mozilla.com
+  hasExposure: false
+  isEarlyStartup: true
+  variables:
+    legacyBackend:
+      type: boolean
+      setPref: browser.taskbar.lists.legacyBackend
+      description: True if users should use the legacy Windows Jump List backend.
 
 abouthomecache:
   description: "The startup about:home cache."
@@ -581,6 +603,10 @@ pocketNewtab:
       type: string
       fallbackPref: browser.newtabpage.activity-stream.discoverystream.spoc-topsites-positions
       description: CSV string of spoc position indexes on newtab topsites section
+    contileTopsitesPositions:
+      type: string
+      fallbackPref: browser.newtabpage.activity-stream.discoverystream.contile-topsites-positions
+      description: CSV string of contile position indexes on newtab topsites section
     spocAdTypes:
       type: string
       fallbackPref: browser.newtabpage.activity-stream.discoverystream.spocAdTypes
@@ -752,6 +778,14 @@ pocketNewtab:
       description: The URL for the spocs endpoint.
       type: string
       setPref: "browser.newtabpage.activity-stream.discoverystream.spocs-endpoint"
+    spocsEndpointAllowlist:
+      description: Comma separated list of allowed endpoints for fetching spocs
+      type: string
+      setPref: "browser.newtabpage.activity-stream.discoverystream.endpoints"
+    spocsClearEndpoint:
+      description: URL for deleting any server data when a user opts out of sponsored content
+      type: string
+      setPref: "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear"
     regionStoriesConfig:
       description: A comma-separated list of region to get stories for.
       type: string
@@ -837,6 +871,17 @@ cm-csv-import:
       type: boolean
       description: Can show CSV Import in about:logins or Migration Wizard
       setPref: "signon.management.page.fileImport.enabled"
+
+# This feature flag mirrors the one used for ios
+# https://github.com/mozilla-mobile/firefox-ios/blob/main/nimbus-features/addressAutofillFeature.yaml
+address-autofill-feature:
+  description: Enabling address autofill feature
+  owner: issozi@mozilla.com
+  hasExposure: false
+  variables:
+    status:
+      type: boolean
+      description: If true, we will allow user to use address autofill
 
 shellService:
   description: "Interface with OS, e.g., pinning and set default"
@@ -1138,6 +1183,23 @@ backgroundTaskMessage:
     path: "browser/components/newtab/content-src/asrouter/schemas/BackgroundTaskMessagingExperiment.schema.json"
   variables: {}
 
+backgroundUpdateAutomaticRestart:
+  description: "Whether to automatically restart when the background update task could make more progress."
+  owner: nalexander@mozilla.com
+  applications:
+    - firefox-desktop-background-task
+  hasExposure: false
+  isEarlyStartup: false
+  variables:
+    enabled:
+      type: boolean
+      fallbackPref: app.update.background.automaticRestartEnabled
+      description: >-
+        When true, make the background update task restart when the final update state is `READY_FOR_RESTART`.
+        Generally, this will finish applying a staged update, completing the update earlier than it
+        otherwise would have been completed.
+
+
 pictureinpicture:
   description: Message for first time Picture-in-Picture users
   owner: nbaumgardner@mozilla.com
@@ -1222,10 +1284,6 @@ majorRelease2022:
       type: boolean
       fallbackPref: "browser.theme.colorway-closet"
       description: "Whether or not to show the colorway closet modal"
-    firefoxView:
-      type: boolean
-      fallbackPref: "browser.tabs.firefox-view"
-      description: "Whether or not to show the firefox view tab"
     onboarding:
       type: boolean
       fallbackPref: "browser.majorrelease.onboarding"
@@ -1460,6 +1518,12 @@ fxaButtonVisibility:
       description: True if the Firefox Accounts toolbar button should be visible when not signed in.
       type: boolean
       setPref: identity.fxaccounts.toolbar.defaultVisible
+    pxiToolbarEnabled:
+      description: >-
+        True if we're enabling the PXI dropdown menu for the FxA toolbar button instead of
+        taking the user straight to login
+      type: boolean
+      setPref: identity.fxaccounts.toolbar.pxiToolbarEnabled
 
 legacyHeartbeat:
   description: Normandy Heartbeat exposed to Nimbus
@@ -1736,6 +1800,11 @@ shopping2023:
       description: True if showing survey is enabled
       type: boolean
       fallbackPref: browser.shopping.experience2023.survey.enabled
+    autoOpenEnabled:
+      description: True if auto-open behavior for the sidebar is enabled
+      type: boolean
+      setPref: browser.shopping.experience2023.autoOpen.enabled
+
 shoppingOHTTP:
   description: Prefs to control the OHTTP URLs used for shopping.
   owner: gijs@mozilla.com
@@ -1824,21 +1893,6 @@ powerSaver:
       description: >-
         Limit how quickly the background tab timer budget regenerates.
 
-firefoxViewNext:
-  description: Next Iteration of Firefox View
-  owner: firefoxview@mozilla.com
-  hasExposure: false
-  isEarlyStartup: true
-  variables:
-    enabled:
-      type: boolean
-      fallbackPref: "browser.tabs.firefox-view-next"
-      description: "Whether or not to enable the new Firefox View"
-    newIcon:
-      type: boolean
-      fallbackPref: "browser.tabs.firefox-view-newIcon"
-      description: "Whether or not use the new icon"
-
 backgroundUpdate:
   description: Prefs to control aspects of the background update process.
   owner: install-update@mozilla.com
@@ -1857,6 +1911,20 @@ backgroundUpdate:
         directory can be written.
       type: boolean
       setPref: app.update.background.allowUpdatesForUnelevatedInstallations
+
+defaultAgent:
+  description: >-
+    Features that configure the Windows Default Browser Agent.
+  owner: install-update@mozilla.com
+  applications:
+    - firefox-desktop-background-task
+  hasExposure: false
+  variables:
+    cppFallback:
+      description: >-
+        Triggers the Default Agent to fall back to the C++ implementation of DoTask if true.
+      type: boolean
+      fallbackPref: "defaultAgent.cppFallback.enabled"
 
 bookmarks:
   description: Prefs to control aspects of the bookmarks system.
@@ -1914,6 +1982,10 @@ cookieBannerHandling:
       type: boolean
       setPref: browser.promo.cookiebanners.enabled
       description: Enables the cookie banner promo in about:privatebrowsing.
+    enableDesktopFeatureCallout:
+      type: boolean
+      setPref: cookiebanners.ui.desktop.showCallout
+      description: Enables the cookie banner feature callout on desktop.
 
 backgroundThreads:
   description: Prefs to control MacOS thread priorities for power savings.
@@ -1975,16 +2047,6 @@ feltPrivacy:
       description: >-
         Enables the reset PBM feature button and confirmation panel.
 
-attribution:
-  description: Prefs related to install attribution
-  hasExposure: false
-  isEarlyStartup: true
-  variables:
-    macosEnabled:
-      type: boolean
-      description: Whether or not macOS attribution data will be processed and sent in Telemetry
-      fallbackPref: browser.attribution.macos.enabled
-
 phc:
   description: Prefs to control the Probabalistic Heap Checker (PHC)
   owner: pbone@mozilla.com
@@ -1995,6 +2057,10 @@ phc:
       description: Whether to enable PHC
       type: boolean
       setPref: memory.phc.enabled
+    phcMinRamMB:
+      description: The minimum amount of RAM required to enable PHC
+      type: int
+      setPref: memory.phc.min_ram_mb
 
 mailto:
   description: Prefs to control aspects of the mailto handler
@@ -2018,3 +2084,14 @@ mailto:
         webmail site in Firefox.
       fallbackPref: browser.mailto.dualPrompt.os
 
+nimbusIsReady:
+  description: A feature that provides the number of Nimbus is_ready events to send
+      when Nimbus is ready.
+  owner: chumphreys@mozilla.com
+  hasExposure: false
+  applications:
+    - firefox-desktop
+  variables:
+    eventCount:
+      description: The number of events that should be sent.
+      type: int

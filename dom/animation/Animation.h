@@ -498,6 +498,7 @@ class Animation : public DOMEventTargetHelper,
   bool IsHiddenByContentVisibility() const {
     return mHiddenByContentVisibility;
   }
+  void UpdateHiddenByContentVisibility();
 
   DocGroup* GetDocGroup();
 

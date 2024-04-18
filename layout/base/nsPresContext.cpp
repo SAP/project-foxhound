@@ -27,7 +27,7 @@
 #include "nsCSSFrameConstructor.h"
 #include "nsDocShell.h"
 #include "nsIConsoleService.h"
-#include "nsIContentViewer.h"
+#include "nsIDocumentViewer.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/MediaFeatureChange.h"
@@ -77,6 +77,7 @@
 #include "mozilla/Preferences.h"
 #include "gfxTextRun.h"
 #include "nsFontFaceUtils.h"
+#include "COLRFonts.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/GlobalStyleSheetCache.h"
 #include "mozilla/ServoBindings.h"
@@ -214,6 +215,11 @@ void nsPresContext::ForceReflowForFontInfoUpdate(bool aNeedsReframe) {
 
   FlushFontCache();
 
+  if (!mPresShell) {
+    // RebuildAllStyleData won't do anything without mPresShell.
+    return;
+  }
+
   nsChangeHint changeHint =
       aNeedsReframe ? nsChangeHint_ReconstructFrame : NS_STYLE_HINT_REFLOW;
 
@@ -287,6 +293,7 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mHadFirstContentfulPaint(false),
       mHadNonTickContentfulPaint(false),
       mHadContentfulPaintComposite(false),
+      mNeedsToUpdateHiddenByContentVisibilityForAnimations(false),
       mUserInputEventsAllowed(false),
 #ifdef DEBUG
       mInitialized(false),
@@ -529,6 +536,10 @@ void nsPresContext::PreferenceChanged(const char* aPrefName, void* aSelf) {
 }
 
 void nsPresContext::PreferenceChanged(const char* aPrefName) {
+  if (!mPresShell) {
+    return;
+  }
+
   nsDependentCString prefName(aPrefName);
   if (prefName.EqualsLiteral("layout.css.dpi") ||
       prefName.EqualsLiteral("layout.css.devPixelsPerPx")) {
@@ -537,35 +548,30 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
     // other documents, and we'd need to save the return value of the first call
     // for all of them.
     Unused << mDeviceContext->CheckDPIChange();
-    if (mPresShell) {
-      OwningNonNull<mozilla::PresShell> presShell(*mPresShell);
-      // Re-fetch the view manager's window dimensions in case there's a
-      // deferred resize which hasn't affected our mVisibleArea yet
-      nscoord oldWidthAppUnits, oldHeightAppUnits;
-      RefPtr<nsViewManager> vm = presShell->GetViewManager();
-      if (!vm) {
-        return;
-      }
-      vm->GetWindowDimensions(&oldWidthAppUnits, &oldHeightAppUnits);
-      float oldWidthDevPixels = oldWidthAppUnits / oldAppUnitsPerDevPixel;
-      float oldHeightDevPixels = oldHeightAppUnits / oldAppUnitsPerDevPixel;
-
-      UIResolutionChangedInternal();
-
-      nscoord width = NSToCoordRound(oldWidthDevPixels * AppUnitsPerDevPixel());
-      nscoord height =
-          NSToCoordRound(oldHeightDevPixels * AppUnitsPerDevPixel());
-      vm->SetWindowDimensions(width, height);
+    OwningNonNull<mozilla::PresShell> presShell(*mPresShell);
+    // Re-fetch the view manager's window dimensions in case there's a
+    // deferred resize which hasn't affected our mVisibleArea yet
+    nscoord oldWidthAppUnits, oldHeightAppUnits;
+    RefPtr<nsViewManager> vm = presShell->GetViewManager();
+    if (!vm) {
+      return;
     }
+    vm->GetWindowDimensions(&oldWidthAppUnits, &oldHeightAppUnits);
+    float oldWidthDevPixels = oldWidthAppUnits / oldAppUnitsPerDevPixel;
+    float oldHeightDevPixels = oldHeightAppUnits / oldAppUnitsPerDevPixel;
+
+    UIResolutionChangedInternal();
+
+    nscoord width = NSToCoordRound(oldWidthDevPixels * AppUnitsPerDevPixel());
+    nscoord height = NSToCoordRound(oldHeightDevPixels * AppUnitsPerDevPixel());
+    vm->SetWindowDimensions(width, height);
     return;
   }
 
   if (StringBeginsWith(prefName, "browser.viewport."_ns) ||
       StringBeginsWith(prefName, "font.size.inflation."_ns) ||
       prefName.EqualsLiteral("dom.meta-viewport.enabled")) {
-    if (mPresShell) {
-      mPresShell->MaybeReflowForInflationScreenSizeChange();
-    }
+    mPresShell->MaybeReflowForInflationScreenSizeChange();
   }
 
   auto changeHint = nsChangeHint{0};
@@ -1034,11 +1040,15 @@ void nsPresContext::DetachPresShell() {
 struct QueryContainerState {
   nsSize mSize;
   WritingMode mWm;
+  StyleContainerType mType;
 
   nscoord GetInlineSize() const { return LogicalSize(mWm, mSize).ISize(mWm); }
 
-  bool Changed(const QueryContainerState& aNewState, StyleContainerType aType) {
-    switch (aType) {
+  bool Changed(const QueryContainerState& aNewState) {
+    if (mType != aNewState.mType) {
+      return true;
+    }
+    switch (mType) {
       case StyleContainerType::Normal:
         break;
       case StyleContainerType::Size:
@@ -1081,13 +1091,13 @@ bool nsPresContext::UpdateContainerQueryStyles() {
 
     auto type = frame->StyleDisplay()->mContainerType;
     MOZ_ASSERT(type != StyleContainerType::Normal,
-               "Non-container frames shouldn't be in this type");
+               "Non-container frames shouldn't be in this set");
 
     const QueryContainerState newState{frame->GetSize(),
-                                       frame->GetWritingMode()};
+                                       frame->GetWritingMode(), type};
     QueryContainerState* oldState = frame->GetProperty(ContainerState());
 
-    const bool changed = !oldState || oldState->Changed(newState, type);
+    const bool changed = !oldState || oldState->Changed(newState);
 
     // Make sure to update the state regardless. It's cheap and it keeps tracks
     // of both axes correctly even if only one axis is contained.
@@ -1233,7 +1243,7 @@ bool nsPresContext::UserInputEventsAllowed() {
   }
 
   // Special document
-  if (Document()->IsInitialDocument()) {
+  if (Document()->IsEverInitialDocument()) {
     return true;
   }
 
@@ -2126,14 +2136,14 @@ bool nsPresContext::EnsureVisible() {
   if (!docShell) {
     return false;
   }
-  nsCOMPtr<nsIContentViewer> cv;
-  docShell->GetContentViewer(getter_AddRefs(cv));
+  nsCOMPtr<nsIDocumentViewer> viewer;
+  docShell->GetDocViewer(getter_AddRefs(viewer));
   // Make sure this is the content viewer we belong with
-  if (!cv || cv->GetPresContext() != this) {
+  if (!viewer || viewer->GetPresContext() != this) {
     return false;
   }
   // OK, this is us.  We want to call Show() on the content viewer.
-  nsresult result = cv->Show();
+  nsresult result = viewer->Show();
   return NS_SUCCEEDED(result);
 }
 
@@ -2944,9 +2954,20 @@ void nsPresContext::FlushFontPaletteValues() {
   mFontPaletteValueSet = styleSet->BuildFontPaletteValueSet();
   mFontPaletteValuesDirty = false;
 
+  if (mFontPaletteCache) {
+    mFontPaletteCache->SetPaletteValueSet(mFontPaletteValueSet);
+  }
+
   // Even if we're not reflowing anything, a change to the palette means we
   // need to repaint in order to show the new colors.
   InvalidatePaintedLayers();
+}
+
+gfx::PaletteCache& nsPresContext::FontPaletteCache() {
+  if (!mFontPaletteCache) {
+    mFontPaletteCache = MakeUnique<gfx::PaletteCache>(mFontPaletteValueSet);
+  }
+  return *mFontPaletteCache.get();
 }
 
 void nsPresContext::SetVisibleArea(const nsRect& r) {
@@ -3075,6 +3096,13 @@ PerformanceMainThread* nsPresContext::GetPerformanceMainThread() const {
     }
   }
   return nullptr;
+}
+
+void nsPresContext::DoUpdateHiddenByContentVisibilityForAnimations() {
+  MOZ_ASSERT(NeedsToUpdateHiddenByContentVisibilityForAnimations());
+  mNeedsToUpdateHiddenByContentVisibilityForAnimations = false;
+  mDocument->UpdateHiddenByContentVisibilityForAnimations();
+  TimelineManager()->UpdateHiddenByContentVisibilityForAnimations();
 }
 
 #ifdef DEBUG

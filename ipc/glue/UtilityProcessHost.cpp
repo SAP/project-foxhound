@@ -28,6 +28,20 @@
 #  include "mozilla/WinDllServices.h"
 #endif  // defined(XP_WIN)
 
+#if defined(MOZ_WMF_CDM) && defined(MOZ_SANDBOX) && !defined(MOZ_ASAN)
+#  define MOZ_WMF_CDM_LPAC_SANDBOX true
+#endif
+
+#ifdef MOZ_WMF_CDM_LPAC_SANDBOX
+#  include "GMPServiceParent.h"
+#  include "mozilla/dom/KeySystemNames.h"
+#  include "mozilla/GeckoArgs.h"
+#  include "mozilla/MFMediaEngineUtils.h"
+#  include "mozilla/StaticPrefs_media.h"
+#  include "nsIFile.h"
+#  include "sandboxBroker.h"
+#endif
+
 #include "ProfilerParent.h"
 #include "mozilla/PProfilerChild.h"
 
@@ -35,6 +49,12 @@ namespace mozilla::ipc {
 
 LazyLogModule gUtilityProcessLog("utilityproc");
 #define LOGD(...) MOZ_LOG(gUtilityProcessLog, LogLevel::Debug, (__VA_ARGS__))
+
+#ifdef MOZ_WMF_CDM_LPAC_SANDBOX
+#  define WMF_LOG(msg, ...)                     \
+    MOZ_LOG(gMFMediaEngineLog, LogLevel::Debug, \
+            ("UtilityProcessHost=%p, " msg, this, ##__VA_ARGS__))
+#endif
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 bool UtilityProcessHost::sLaunchWithMacSandbox = false;
@@ -89,6 +109,10 @@ bool UtilityProcessHost::Launch(StringVector aExtraOpts) {
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   mSandboxLevel = Preferences::GetInt("security.sandbox.utility.level");
+#endif
+
+#ifdef MOZ_WMF_CDM_LPAC_SANDBOX
+  EnsureWidevineL1PathForSandbox(aExtraOpts);
 #endif
 
   mLaunchPhase = LaunchPhase::Waiting;
@@ -334,6 +358,57 @@ bool UtilityProcessHost::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
 MacSandboxType UtilityProcessHost::GetMacSandboxType() {
   return MacSandboxType_Utility;
 }
+#endif
+
+#ifdef MOZ_WMF_CDM_LPAC_SANDBOX
+void UtilityProcessHost::EnsureWidevineL1PathForSandbox(
+    StringVector& aExtraOpts) {
+  if (mSandbox != SandboxingKind::MF_MEDIA_ENGINE_CDM) {
+    return;
+  }
+
+  RefPtr<mozilla::gmp::GeckoMediaPluginServiceParent> gmps =
+      mozilla::gmp::GeckoMediaPluginServiceParent::GetSingleton();
+  if (NS_WARN_IF(!gmps)) {
+    WMF_LOG("Failed to get GeckoMediaPluginServiceParent!");
+    return;
+  }
+
+  if (!StaticPrefs::media_eme_widevine_experiment_enabled()) {
+    return;
+  }
+
+  // If Widevine L1 is installed after the MFCDM process starts, we will set it
+  // path later via MFCDMService::UpdateWideivineL1Path().
+  nsString widevineL1Path;
+  nsCOMPtr<nsIFile> pluginFile;
+  if (NS_WARN_IF(NS_FAILED(gmps->FindPluginDirectoryForAPI(
+          nsCString(kWidevineExperimentAPIName),
+          {nsCString(kWidevineExperimentKeySystemName)},
+          getter_AddRefs(pluginFile))))) {
+    WMF_LOG("Widevine L1 is not installed yet");
+    return;
+  }
+
+  if (!pluginFile) {
+    WMF_LOG("No plugin file found!");
+    return;
+  }
+
+  if (NS_WARN_IF(NS_FAILED(pluginFile->GetTarget(widevineL1Path)))) {
+    WMF_LOG("Failed to get L1 path!");
+    return;
+  }
+
+  WMF_LOG("Set Widevine L1 path=%s",
+          NS_ConvertUTF16toUTF8(widevineL1Path).get());
+  geckoargs::sPluginPath.Put(NS_ConvertUTF16toUTF8(widevineL1Path).get(),
+                             aExtraOpts);
+  SandboxBroker::EnsureLpacPermsissionsOnDir(widevineL1Path);
+}
+
+#  undef WMF_LOG
+
 #endif
 
 }  // namespace mozilla::ipc

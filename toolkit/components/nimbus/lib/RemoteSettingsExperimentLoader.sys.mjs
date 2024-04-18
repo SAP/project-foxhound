@@ -195,6 +195,10 @@ export class _RemoteSettingsExperimentLoader {
       console.error(e);
     }
 
+    recipes?.sort(
+      (a, b) => new Date(a.publishedDate ?? 0) - new Date(b.publishedDate ?? 0)
+    );
+
     let recipeValidator;
 
     if (validationEnabled) {
@@ -230,6 +234,8 @@ export class _RemoteSettingsExperimentLoader {
     Services.obs.notifyObservers(null, "nimbus:enrollments-updated");
 
     this._updating = false;
+
+    this.recordIsReady();
   }
 
   async optInToExperiment({
@@ -366,6 +372,14 @@ export class _RemoteSettingsExperimentLoader {
       this.intervalInSeconds
     );
     lazy.log.debug("Registered update timer");
+  }
+
+  recordIsReady() {
+    const eventCount =
+      lazy.NimbusFeatures.nimbusIsReady.getVariable("eventCount") ?? 1;
+    for (let i = 0; i < eventCount; i++) {
+      Glean.nimbusEvents.isReady.record();
+    }
   }
 }
 

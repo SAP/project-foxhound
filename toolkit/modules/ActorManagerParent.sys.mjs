@@ -355,7 +355,6 @@ let JSWINDOWACTORS = {
     child: {
       esModuleURI: "resource://gre/modules/LoginManagerChild.sys.mjs",
       events: {
-        DOMDocFetchSuccess: {},
         DOMFormBeforeSubmit: {},
         DOMFormHasPassword: {},
         DOMFormHasPossibleUsername: {},
@@ -630,22 +629,6 @@ if (!Services.prefs.getBoolPref("browser.pagedata.enabled", false)) {
 }
 
 if (AppConstants.platform != "android") {
-  // For GeckoView support see bug 1776829.
-  JSWINDOWACTORS.ClipboardReadPaste = {
-    parent: {
-      esModuleURI: "resource://gre/actors/ClipboardReadPasteParent.sys.mjs",
-    },
-
-    child: {
-      esModuleURI: "resource://gre/actors/ClipboardReadPasteChild.sys.mjs",
-      events: {
-        MozClipboardReadPaste: {},
-      },
-    },
-
-    allFrames: true,
-  };
-
   // Note that GeckoView has another implementation in mobile/android/actors.
   JSWINDOWACTORS.Select = {
     parent: {

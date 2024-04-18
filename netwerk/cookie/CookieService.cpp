@@ -119,6 +119,7 @@ namespace net {
 
 static StaticRefPtr<CookieService> gCookieService;
 
+constexpr auto CONSOLE_CHIPS_CATEGORY = "cookiesCHIPS"_ns;
 constexpr auto CONSOLE_SAMESITE_CATEGORY = "cookieSameSite"_ns;
 constexpr auto CONSOLE_OVERSIZE_CATEGORY = "cookiesOversize"_ns;
 constexpr auto CONSOLE_REJECTION_CATEGORY = "cookiesRejection"_ns;
@@ -439,8 +440,8 @@ CookieService::GetCookieStringFromDocument(Document* aDocument,
       continue;
     }
 
-    if (thirdParty &&
-        !CookieCommons::ShouldIncludeCrossSiteCookieForDocument(cookie)) {
+    if (thirdParty && !CookieCommons::ShouldIncludeCrossSiteCookieForDocument(
+                          cookie, aDocument)) {
       continue;
     }
 
@@ -572,8 +573,8 @@ CookieService::SetCookieStringFromDocument(Document* aDocument,
     }
   }
 
-  if (thirdParty &&
-      !CookieCommons::ShouldIncludeCrossSiteCookieForDocument(cookie)) {
+  if (thirdParty && !CookieCommons::ShouldIncludeCrossSiteCookieForDocument(
+                        cookie, aDocument)) {
     return NS_OK;
   }
 
@@ -686,6 +687,12 @@ CookieService::SetCookieStringFromHttp(nsIURI* aHostURI,
                                          &isForeignAndNotAddon);
   }
 
+  bool mustBePartitioned =
+      isForeignAndNotAddon &&
+      cookieJarSettings->GetCookieBehavior() ==
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN &&
+      !result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted);
+
   nsCString cookieHeader(aCookieHeader);
 
   bool moreCookieToRead = true;
@@ -695,9 +702,10 @@ CookieService::SetCookieStringFromHttp(nsIURI* aHostURI,
     CookieStruct cookieData;
     bool canSetCookie = false;
 
-    moreCookieToRead = CanSetCookie(
-        aHostURI, baseDomain, cookieData, requireHostMatch, cookieStatus,
-        cookieHeader, true, isForeignAndNotAddon, crc, canSetCookie);
+    moreCookieToRead =
+        CanSetCookie(aHostURI, baseDomain, cookieData, requireHostMatch,
+                     cookieStatus, cookieHeader, true, isForeignAndNotAddon,
+                     mustBePartitioned, crc, canSetCookie);
 
     if (!canSetCookie) {
       continue;
@@ -853,7 +861,7 @@ CookieService::AddNative(const nsACString& aHost, const nsACString& aPath,
   CookieStruct cookieData(nsCString(aName), nsCString(aValue), nsCString(aHost),
                           nsCString(aPath), aExpiry, currentTimeInUsec,
                           Cookie::GenerateUniqueCreationTime(currentTimeInUsec),
-                          aIsHttpOnly, aIsSession, aIsSecure, aSameSite,
+                          aIsHttpOnly, aIsSession, aIsSecure, false, aSameSite,
                           aSameSite, aSchemeMap);
 
   RefPtr<Cookie> cookie = Cookie::Create(cookieData, key.mOriginAttributes);
@@ -1126,13 +1134,28 @@ static void RecordUnicodeTelemetry(const CookieStruct& cookieData) {
   Telemetry::AccumulateCategorical(label);
 }
 
+static void RecordPartitionedTelemetry(const CookieStruct& aCookieData,
+                                       bool aIsForeign) {
+  mozilla::glean::networking::set_cookie.Add(1);
+  if (aCookieData.isPartitioned()) {
+    mozilla::glean::networking::set_cookie_partitioned.AddToNumerator(1);
+  }
+  if (aIsForeign) {
+    mozilla::glean::networking::set_cookie_foreign.AddToNumerator(1);
+  }
+  if (aIsForeign && aCookieData.isPartitioned()) {
+    mozilla::glean::networking::set_cookie_foreign_partitioned.AddToNumerator(
+        1);
+  }
+}
+
 // processes a single cookie, and returns true if there are more cookies
 // to be processed
 bool CookieService::CanSetCookie(
     nsIURI* aHostURI, const nsACString& aBaseDomain, CookieStruct& aCookieData,
     bool aRequireHostMatch, CookieStatus aStatus, nsCString& aCookieHeader,
-    bool aFromHttp, bool aIsForeignAndNotAddon, nsIConsoleReportCollector* aCRC,
-    bool& aSetCookie) {
+    bool aFromHttp, bool aIsForeignAndNotAddon, bool aPartitionedOnly,
+    nsIConsoleReportCollector* aCRC, bool& aSetCookie) {
   MOZ_ASSERT(aHostURI);
 
   aSetCookie = false;
@@ -1198,6 +1221,12 @@ bool CookieService::CanSetCookie(
   }
 
   RecordUnicodeTelemetry(aCookieData);
+
+  // We count SetCookie operations in the parent process only for HTTP set
+  // cookies to prevent double counting.
+  if (XRE_IsParentProcess() || !aFromHttp) {
+    RecordPartitionedTelemetry(aCookieData, aIsForeignAndNotAddon);
+  }
 
   if (!CookieCommons::CheckName(aCookieData)) {
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
@@ -1315,6 +1344,31 @@ bool CookieService::CanSetCookie(
             NS_ConvertUTF8toUTF16(aCookieData.name()),
         });
     return newCookie;
+  }
+
+  // If the cookie does not have the partitioned attribute,
+  // but is foreign we should give the developer a message.
+  // If CHIPS isn't required yet, we will warn the console
+  // that we have upcoming changes. Otherwise we give a rejection message.
+  if (aPartitionedOnly && !aCookieData.isPartitioned() &&
+      aIsForeignAndNotAddon) {
+    if (StaticPrefs::network_cookie_cookieBehavior_optInPartitioning()) {
+      COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
+                        "foreign cookies must be partitioned");
+      CookieLogging::LogMessageToConsole(
+          aCRC, aHostURI, nsIScriptError::warningFlag, CONSOLE_CHIPS_CATEGORY,
+          "CookieForeignNoPartitionedError"_ns,
+          AutoTArray<nsString, 1>{
+              NS_ConvertUTF8toUTF16(aCookieData.name()),
+          });
+      return newCookie;
+    }
+    CookieLogging::LogMessageToConsole(
+        aCRC, aHostURI, nsIScriptError::warningFlag, CONSOLE_CHIPS_CATEGORY,
+        "CookieForeignNoPartitionedWarning"_ns,
+        AutoTArray<nsString, 1>{
+            NS_ConvertUTF8toUTF16(aCookieData.name()),
+        });
   }
 
   aSetCookie = true;
@@ -1505,6 +1559,7 @@ bool CookieService::ParseAttributes(nsIConsoleReportCollector* aCRC,
   static const char kSameSiteLax[] = "lax";
   static const char kSameSiteNone[] = "none";
   static const char kSameSiteStrict[] = "strict";
+  static const char kPartitioned[] = "partitioned";
 
   nsACString::const_char_iterator cookieStart;
   aCookieHeader.BeginReading(cookieStart);
@@ -1557,6 +1612,10 @@ bool CookieService::ParseAttributes(nsIConsoleReportCollector* aCRC,
       // ignore any tokenValue for isSecure; just set the boolean
     } else if (tokenString.LowerCaseEqualsLiteral(kSecure)) {
       aCookieData.isSecure() = true;
+
+      // ignore any tokenValue for isPartitioned; just set the boolean
+    } else if (tokenString.LowerCaseEqualsLiteral(kPartitioned)) {
+      aCookieData.isPartitioned() = true;
 
       // ignore any tokenValue for isHttpOnly (see bug 178993);
       // just set the boolean

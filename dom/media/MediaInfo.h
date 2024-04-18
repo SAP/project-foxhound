@@ -329,15 +329,16 @@ class TrackInfo {
 // String version of track type.
 const char* TrackTypeToStr(TrackInfo::TrackType aTrack);
 
+enum class VideoRotation {
+  kDegree_0 = 0,
+  kDegree_90 = 90,
+  kDegree_180 = 180,
+  kDegree_270 = 270,
+};
+
 // Stores info relevant to presenting media frames.
 class VideoInfo : public TrackInfo {
  public:
-  enum Rotation {
-    kDegree_0 = 0,
-    kDegree_90 = 90,
-    kDegree_180 = 180,
-    kDegree_270 = 270,
-  };
   VideoInfo() : VideoInfo(-1, -1) {}
 
   VideoInfo(int32_t aWidth, int32_t aHeight)
@@ -350,7 +351,7 @@ class VideoInfo : public TrackInfo {
         mImage(aSize),
         mCodecSpecificConfig(new MediaByteBuffer),
         mExtraData(new MediaByteBuffer),
-        mRotation(kDegree_0) {}
+        mRotation(VideoRotation::kDegree_0) {}
 
   VideoInfo(const VideoInfo& aOther) = default;
 
@@ -409,18 +410,93 @@ class VideoInfo : public TrackInfo {
     return imageRect;
   }
 
-  Rotation ToSupportedRotation(int32_t aDegree) const {
+  VideoRotation ToSupportedRotation(int32_t aDegree) const {
     switch (aDegree) {
       case 90:
-        return kDegree_90;
+        return VideoRotation::kDegree_90;
       case 180:
-        return kDegree_180;
+        return VideoRotation::kDegree_180;
       case 270:
-        return kDegree_270;
+        return VideoRotation::kDegree_270;
       default:
         NS_WARNING_ASSERTION(aDegree == 0, "Invalid rotation degree, ignored");
-        return kDegree_0;
+        return VideoRotation::kDegree_0;
     }
+  }
+
+  nsString ToString() const {
+    std::array YUVColorSpaceStrings = {"BT601", "BT709", "BT2020", "Identity",
+                                       "Default"};
+
+    std::array ColorDepthStrings = {
+        "COLOR_8",
+        "COLOR_10",
+        "COLOR_12",
+        "COLOR_16",
+    };
+
+    std::array TransferFunctionStrings = {
+        "BT709",
+        "SRGB",
+        "PQ",
+        "HLG",
+    };
+
+    std::array ColorRangeStrings = {
+        "LIMITED",
+        "FULL",
+    };
+
+    std::array ColorPrimariesStrings = {"Display",
+                                        "UNKNOWN"
+                                        "SRGB",
+                                        "DISPLAY_P3",
+                                        "BT601_525",
+                                        "BT709",
+                                        "BT601_625"
+                                        "BT709",
+                                        "BT2020"};
+    nsString rv;
+    rv.AppendLiteral(u"VideoInfo: ");
+    rv.AppendPrintf("display size: %dx%d ", mDisplay.Width(),
+                    mDisplay.Height());
+    rv.AppendPrintf("stereo mode: %d", static_cast<int>(mStereoMode));
+    rv.AppendPrintf("image size: %dx%d ", mImage.Width(), mImage.Height());
+    if (mCodecSpecificConfig) {
+      rv.AppendPrintf("codec specific config: %zu bytes",
+                      mCodecSpecificConfig->Length());
+    }
+    if (mExtraData) {
+      rv.AppendPrintf("extra data: %zu bytes", mExtraData->Length());
+    }
+    rv.AppendPrintf("rotation: %d", static_cast<int>(mRotation));
+    rv.AppendPrintf("colors: %s", ColorDepthStrings[static_cast<int>(mColorDepth)]);
+    if (mColorSpace) {
+      rv.AppendPrintf(
+          "YUV colorspace: %s ",
+          YUVColorSpaceStrings[static_cast<int>(mColorSpace.value())]);
+    }
+    if (mColorPrimaries) {
+      rv.AppendPrintf(
+          "color primaries: %s ",
+          ColorPrimariesStrings[static_cast<int>(mColorPrimaries.value())]);
+    }
+    if (mTransferFunction) {
+      rv.AppendPrintf(
+          "transfer function %s ",
+          TransferFunctionStrings[static_cast<int>(mTransferFunction.value())]);
+    }
+    rv.AppendPrintf("color range: %s", ColorRangeStrings[static_cast<int>(mColorRange)]);
+    if (mImageRect) {
+      rv.AppendPrintf("image rect: %dx%d", mImageRect->Width(),
+                      mImageRect->Height());
+    }
+    rv.AppendPrintf("alpha present: %s", mAlphaPresent ? "true" : "false");
+    if (mFrameRate) {
+      rv.AppendPrintf("frame rate: %dHz", mFrameRate.value());
+    }
+
+    return rv;
   }
 
   // Size in pixels at which the video is rendered. This is after it has
@@ -438,7 +514,7 @@ class VideoInfo : public TrackInfo {
 
   // Describing how many degrees video frames should be rotated in clock-wise to
   // get correct view.
-  Rotation mRotation;
+  VideoRotation mRotation;
 
   // Should be 8, 10 or 12. Default value is 8.
   gfx::ColorDepth mColorDepth = gfx::ColorDepth::COLOR_8;

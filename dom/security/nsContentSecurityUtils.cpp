@@ -687,7 +687,7 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
   // Check the allowlist for the provided filename. getFilename is a helper
   // function
   nsAutoCString fileName;
-  uint32_t lineNumber = 0, columnNumber = 0;
+  uint32_t lineNumber = 0, columnNumber = 1;
   nsJSUtils::GetCallingLocation(cx, fileName, &lineNumber, &columnNumber);
   if (fileName.IsEmpty()) {
     fileName = "unknown-file"_ns;
@@ -1152,7 +1152,7 @@ void EnforceXFrameOptionsCheck(nsIChannel* aChannel,
                         u""_ns,  // no sourcefile
                         u""_ns,  // no scriptsample
                         0,       // no linenumber
-                        0,       // no columnnumber
+                        1,       // no columnnumber
                         nsIScriptError::warningFlag,
                         "IgnoringSrcBecauseOfDirective"_ns, innerWindowID,
                         privateWindow);
@@ -1308,6 +1308,7 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
   MOZ_ASSERT(!foundScriptSrc ||
                  StringBeginsWith(aboutSpec, "about:preferences"_ns) ||
                  StringBeginsWith(aboutSpec, "about:downloads"_ns) ||
+                 StringBeginsWith(aboutSpec, "about:asrouter"_ns) ||
                  StringBeginsWith(aboutSpec, "about:newtab"_ns) ||
                  StringBeginsWith(aboutSpec, "about:logins"_ns) ||
                  StringBeginsWith(aboutSpec, "about:compat"_ns) ||
@@ -1626,7 +1627,6 @@ long nsContentSecurityUtils::ClassifyDownload(
   nsMixedContentBlocker::ShouldLoad(false,  //  aHadInsecureImageRedirect
                                     contentLocation,   //  aContentLocation,
                                     secCheckLoadInfo,  //  aLoadinfo
-                                    aMimeTypeGuess,    //  aMimeGuess,
                                     false,             //  aReportError
                                     &decission         // aDecision
   );

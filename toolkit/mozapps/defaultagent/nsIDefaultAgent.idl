@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsICommandLine.idl"
+ #include "nsISupports.idl"
 
 [scriptable, uuid(edc38cb5-b6f6-4aeb-bd45-7be8e00fc364)]
 interface nsIDefaultAgent : nsISupports
@@ -66,6 +66,59 @@ interface nsIDefaultAgent : nsISupports
   void doTask(in AString aUniqueToken, in boolean aForce);
 
   /**
+  * Checks that the main app ran recently.
+  *
+  * @return {boolean} true if the app ran recently.
+  */
+  boolean appRanRecently();
+
+  /**
+  * Returns a string for the default browser if known, binned to known browsers.
+  *
+  * @return {AString}
+  *         The current default browser.
+  */
+  AString getDefaultBrowser();
+
+  /**
+  * Gets and replaces the previously found default browser from the registry.
+  *
+  * @param {AString} aCurrentBrowser
+  *        The current known browser to save to the registry.
+  * @return {AString}
+  *         The previous known browser from the registry.
+  */
+  AString getReplacePreviousDefaultBrowser(in AString aCurrentBrowser);
+
+  /**
+  * Returns a string for the default PDF handler if known, binned to known
+  * PDF handlers.
+  *
+  * @return {AString}
+  *         The previous default PDF handler.
+  */
+  AString getDefaultPdfHandler();
+
+  /**
+  * Sends a Default Agent telemetry ping.
+  *
+  * @param {AString} aCurrentBrowser
+  *        The current known browser.
+  * @param {AString} aPreviousBrowser
+  *        The previous known browser.
+  * @param {AString} aPdfHandler
+  *        The current known PDF handler.
+  * @param {AString} aNotificationShown
+  *        If the notification was or wasn't shown. See
+  *        `toolkit/mozapps/defaultagent/Notification.h` for valid values.
+  * @param {AString} aNotificationAction
+  *        The notification action taken by the user. See
+  *        `toolkit/mozapps/defaultagent/Notification.h` for valid values.
+  *
+  */
+  void sendPing(in AString aCurrentBrowser, in AString aPreviousBrowser, in AString aPdfHandler, in AString aNotificationShown, in AString aNotificationAction);
+
+  /**
   * Set the default browser and optionally additional file extensions via the
   * UserChoice registry keys.
   *
@@ -77,6 +130,21 @@ interface nsIDefaultAgent : nsISupports
   *        the root of a ProgID, which will be suffixed with `-{aAumid}`.
   */
   void setDefaultBrowserUserChoice(in AString aAumid, in Array<AString> aExtraFileExtensions);
+
+  /**
+  * Set the default browser and optionally additional file extensions via the
+  * UserChoice registry keys, asynchronously. Does the actual work on a
+  * background thread.
+  *
+  * @param {AString} aAumid
+  *        Suffix to be appended to ProgIDs when registering system defaults.
+  * @param {Array<AString>} aExtraFileExtensions
+  *        Additional optional file extensions to register specified as argument
+  *        pairs: the first element is the file extension, the second element is
+  *        the root of a ProgID, which will be suffixed with `-{aAumid}`.
+  */
+  [implicit_jscontext]
+  Promise setDefaultBrowserUserChoiceAsync(in AString aAumid, in Array<AString> aExtraFileExtensions);
 
   /**
   * Sets file extensions via the UserChoice registry keys.

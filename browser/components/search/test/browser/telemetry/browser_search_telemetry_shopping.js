@@ -56,10 +56,7 @@ add_setup(async function () {
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.search.log", true],
-      ["browser.search.serpEventTelemetry.enabled", true],
-    ],
+    set: [["browser.search.serpEventTelemetry.enabled", true]],
   });
 
   registerCleanupFunction(async () => {
@@ -74,8 +71,9 @@ async function loadSerpAndClickShoppingTab(page) {
     gBrowser,
     getSERPUrl(page)
   );
+  await waitForPageWithAdImpressions();
 
-  assertImpressionEvents([
+  assertSERPTelemetry([
     {
       impression: {
         provider: "example",
@@ -86,15 +84,22 @@ async function loadSerpAndClickShoppingTab(page) {
         is_private: "false",
         shopping_tab_displayed: "true",
       },
+      adImpressions: [
+        {
+          component: SearchSERPTelemetryUtils.COMPONENTS.SHOPPING_TAB,
+          ads_loaded: "1",
+          ads_visible: "1",
+          ads_hidden: "0",
+        },
+      ],
     },
   ]);
-  await waitForPageWithAdImpressions();
 
   let pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
   BrowserTestUtils.synthesizeMouseAtCenter("#shopping", {}, tab.linkedBrowser);
   await pageLoadPromise;
 
-  assertImpressionEvents([
+  assertSERPTelemetry([
     {
       impression: {
         provider: "example",
@@ -109,6 +114,14 @@ async function loadSerpAndClickShoppingTab(page) {
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
           target: SearchSERPTelemetryUtils.COMPONENTS.SHOPPING_TAB,
+        },
+      ],
+      adImpressions: [
+        {
+          component: SearchSERPTelemetryUtils.COMPONENTS.SHOPPING_TAB,
+          ads_loaded: "1",
+          ads_visible: "1",
+          ads_hidden: "0",
         },
       ],
     },

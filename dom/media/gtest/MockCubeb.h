@@ -10,6 +10,7 @@
 #include "AudioVerifier.h"
 #include "MediaEventSource.h"
 #include "mozilla/DataMutex.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/ThreadSafeWeakPtr.h"
 #include "nsTArray.h"
 
@@ -181,7 +182,7 @@ class MockCubebStream {
 
   uint32_t InputChannels() const;
   uint32_t OutputChannels() const;
-  uint32_t InputSampleRate() const;
+  uint32_t SampleRate() const;
   uint32_t InputFrequency() const;
 
   void SetDriftFactor(float aDriftFactor);
@@ -208,7 +209,9 @@ class MockCubebStream {
   MediaEventSource<nsCString>& NameSetEvent();
   MediaEventSource<cubeb_state>& StateEvent();
   MediaEventSource<uint32_t>& FramesProcessedEvent();
+  // Notified when frames are processed after first non-silent output
   MediaEventSource<uint32_t>& FramesVerifiedEvent();
+  // Notified when the stream is Stop()ed
   MediaEventSource<std::tuple<uint64_t, float, uint32_t>>&
   OutputVerificationEvent();
   MediaEventSource<void>& ErrorForcedEvent();

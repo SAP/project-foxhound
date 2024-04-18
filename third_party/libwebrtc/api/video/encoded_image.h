@@ -79,17 +79,22 @@ class RTC_EXPORT EncodedImage {
   EncodedImage& operator=(EncodedImage&&);
   EncodedImage& operator=(const EncodedImage&);
 
-  // TODO(bugs.webrtc.org/9378): Change style to timestamp(), set_timestamp(),
-  // for consistency with the VideoFrame class. Set frame timestamp (90kHz).
-  void SetTimestamp(uint32_t timestamp) { timestamp_rtp_ = timestamp; }
+  // Frame capture time in RTP timestamp representation (90kHz).
+  void SetRtpTimestamp(uint32_t timestamp) { timestamp_rtp_ = timestamp; }
+  uint32_t RtpTimestamp() const { return timestamp_rtp_; }
 
-  // Get frame timestamp (90kHz).
-  uint32_t Timestamp() const { return timestamp_rtp_; }
+  // TODO(bugs.webrtc.org/9378): Delete two functions below after 2023-10-12
+  [[deprecated]] void SetTimestamp(uint32_t timestamp) {
+    SetRtpTimestamp(timestamp);
+  }
+  [[deprecated]] uint32_t Timestamp() const { return RtpTimestamp(); }
 
   void SetEncodeTime(int64_t encode_start_ms, int64_t encode_finish_ms);
 
+  // Frame capture time in local time.
   webrtc::Timestamp CaptureTime() const;
 
+  // Frame capture time in ntp epoch time, i.e. time since 1st Jan 1900
   int64_t NtpTimeMs() const { return ntp_time_ms_; }
 
   // Every simulcast layer (= encoding) has its own encoder and RTP stream.
@@ -136,6 +141,14 @@ class RTC_EXPORT EncodedImage {
   }
   void SetColorSpace(const absl::optional<webrtc::ColorSpace>& color_space) {
     color_space_ = color_space;
+  }
+
+  absl::optional<VideoPlayoutDelay> PlayoutDelay() const {
+    return playout_delay_;
+  }
+
+  void SetPlayoutDelay(absl::optional<VideoPlayoutDelay> playout_delay) {
+    playout_delay_ = playout_delay;
   }
 
   // These methods along with the private member video_frame_tracking_id_ are
@@ -193,6 +206,14 @@ class RTC_EXPORT EncodedImage {
     at_target_quality_ = at_target_quality;
   }
 
+  webrtc::VideoFrameType FrameType() const { return _frameType; }
+
+  void SetFrameType(webrtc::VideoFrameType frame_type) {
+    _frameType = frame_type;
+  }
+  VideoContentType contentType() const { return content_type_; }
+  VideoRotation rotation() const { return rotation_; }
+
   uint32_t _encodedWidth = 0;
   uint32_t _encodedHeight = 0;
   // NTP time of the capture time in local timebase in milliseconds.
@@ -203,11 +224,6 @@ class RTC_EXPORT EncodedImage {
   VideoRotation rotation_ = kVideoRotation_0;
   VideoContentType content_type_ = VideoContentType::UNSPECIFIED;
   int qp_ = -1;  // Quantizer value.
-
-  // When an application indicates non-zero values here, it is taken as an
-  // indication that all future frames will be constrained with those limits
-  // until the application indicates a change again.
-  VideoPlayoutDelay playout_delay_;
 
   struct Timing {
     uint8_t flags = VideoSendTiming::kInvalid;
@@ -220,9 +236,15 @@ class RTC_EXPORT EncodedImage {
     int64_t receive_start_ms = 0;
     int64_t receive_finish_ms = 0;
   } timing_;
+  EncodedImage::Timing video_timing() const { return timing_; }
+  EncodedImage::Timing* video_timing_mutable() { return &timing_; }
 
  private:
   size_t capacity() const { return encoded_data_ ? encoded_data_->size() : 0; }
+
+  // When set, indicates that all future frames will be constrained with those
+  // limits until the application indicates a change again.
+  absl::optional<VideoPlayoutDelay> playout_delay_;
 
   rtc::scoped_refptr<EncodedImageBufferInterface> encoded_data_;
   size_t size_ = 0;  // Size of encoded frame data.

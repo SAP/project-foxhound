@@ -16,14 +16,23 @@ import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.TranslationsController
 import org.mozilla.geckoview.TranslationsController.Language
+import org.mozilla.geckoview.TranslationsController.RuntimeTranslation
+import org.mozilla.geckoview.TranslationsController.RuntimeTranslation.ALL
 import org.mozilla.geckoview.TranslationsController.RuntimeTranslation.ALWAYS
+import org.mozilla.geckoview.TranslationsController.RuntimeTranslation.DELETE
 import org.mozilla.geckoview.TranslationsController.RuntimeTranslation.DOWNLOAD
+import org.mozilla.geckoview.TranslationsController.RuntimeTranslation.LANGUAGE
 import org.mozilla.geckoview.TranslationsController.RuntimeTranslation.ModelManagementOptions
 import org.mozilla.geckoview.TranslationsController.RuntimeTranslation.NEVER
 import org.mozilla.geckoview.TranslationsController.RuntimeTranslation.OFFER
 import org.mozilla.geckoview.TranslationsController.SessionTranslation.Delegate
 import org.mozilla.geckoview.TranslationsController.SessionTranslation.TranslationOptions
 import org.mozilla.geckoview.TranslationsController.SessionTranslation.TranslationState
+import org.mozilla.geckoview.TranslationsController.TranslationsException
+import org.mozilla.geckoview.TranslationsController.TranslationsException.ERROR_MODEL_COULD_NOT_DELETE
+import org.mozilla.geckoview.TranslationsController.TranslationsException.ERROR_MODEL_COULD_NOT_DOWNLOAD
+import org.mozilla.geckoview.TranslationsController.TranslationsException.ERROR_MODEL_DOWNLOAD_REQUIRED
+import org.mozilla.geckoview.TranslationsController.TranslationsException.ERROR_MODEL_LANGUAGE_REQUIRED
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 
 @RunWith(AndroidJUnit4::class)
@@ -37,6 +46,7 @@ class TranslationsTest : BaseSessionTest() {
                 "browser.translations.automaticallyPopup" to true,
                 "intl.accept_languages" to "en",
                 "browser.translations.geckoview.enableAllTestMocks" to true,
+                "browser.translations.simulateUnsupportedEngine" to false,
             ),
         )
     }
@@ -71,14 +81,18 @@ class TranslationsTest : BaseSessionTest() {
         var expectedTranslateEvent = JSONObject(
             """
             {
-            "detectedLanguages": {
-              "userLangTag": "en",
-              "isDocLangTagSupported": true,
-              "docLangTag": "es"
-            },
-            "requestedTranslationPair": null,
-            "error": null,
-            "isEngineReady": false
+            "actor":{
+                "languageState":{
+                    "detectedLanguages": {
+                      "userLangTag": "en",
+                      "isDocLangTagSupported": true,
+                      "docLangTag": "es"
+                    },
+                    "requestedTranslationPair": null,
+                    "error": null,
+                    "isEngineReady": false
+                    }
+                }
             }
             """.trimIndent(),
         )
@@ -135,12 +149,62 @@ class TranslationsTest : BaseSessionTest() {
     fun simpleTranslateTest() {
         mainSession.loadTestPath(TRANSLATIONS_EN)
         mainSession.waitForPageStop()
+        // No options specified should just perform default expectations
         val translate = sessionRule.session.sessionTranslation!!.translate("en", "es", null)
         try {
             sessionRule.waitForResult(translate)
-            assertTrue("Translate should complete", true)
+            assertTrue("Translate should complete.", true)
         } catch (e: Exception) {
             assertTrue("Should not have an exception while translating.", false)
+        }
+
+        // Options should work as expected
+        var options = TranslationOptions.Builder().downloadModel(true).build()
+        val translateOptions = sessionRule.session.sessionTranslation!!.translate("en", "es", options)
+        try {
+            sessionRule.waitForResult(translateOptions)
+            assertTrue("Translate should complete with options.", true)
+        } catch (e: Exception) {
+            assertTrue("Should not have an exception while translating with options.", false)
+        }
+
+        // Language tags should be fault tolerant of minor variations
+        val longLanguageTag = sessionRule.session.sessionTranslation!!.translate("EN", "ES", null)
+        try {
+            sessionRule.waitForResult(longLanguageTag)
+            assertTrue("Translate should complete with longer language tag.", true)
+        } catch (e: Exception) {
+            assertTrue("Should not have an exception while translating with a longer language tag.", false)
+        }
+    }
+
+    @Test
+    fun simpleTranslateFailureTest() {
+        // Note: Test endpoint is using a mocked response for checking sizes in CI
+        mainSession.loadTestPath(TRANSLATIONS_EN)
+        mainSession.waitForPageStop()
+
+        // In Android Studio tests, it is checking for real models, so delete to ensure clear test framework.
+        if (!sessionRule.env.isAutomation) {
+            val allDeleteAttempt = ModelManagementOptions.Builder()
+                .operation(DELETE)
+                .operationLevel(ALL)
+                .build()
+            sessionRule.waitForResult(RuntimeTranslation.manageLanguageModel(allDeleteAttempt))
+        }
+
+        var options = TranslationOptions.Builder().downloadModel(false).build()
+        val translate = sessionRule.session.sessionTranslation!!.translate("en", "es", options)
+        try {
+            sessionRule.waitForResult(translate)
+            assertTrue("Translate should not complete", false)
+        } catch (e: RuntimeException) {
+            // Wait call causes a runtime exception too.
+            val te = e.cause as TranslationsException
+            assertTrue(
+                "Correctly rejected performing a download for a translation.",
+                te.code == ERROR_MODEL_DOWNLOAD_REQUIRED,
+            )
         }
     }
 
@@ -181,6 +245,21 @@ class TranslationsTest : BaseSessionTest() {
         try {
             sessionRule.waitForResult(translate)
             assertTrue("Should be able to translate.", true)
+        } catch (e: Exception) {
+            assertTrue("Should not have an exception.", false)
+        }
+    }
+
+    @Test
+    fun checkPairDownloadSizeTest() {
+        // Note: Test endpoint is using a mocked response when checking sizes in CI
+        val size = RuntimeTranslation.checkPairDownloadSize("es", "en")
+        try {
+            val result = sessionRule.waitForResult(size)
+            assertTrue("Should return a download size.", true)
+            if (sessionRule.env.isAutomation) {
+                assertTrue("Received mocked value of 1234567.", result == 1234567L)
+            }
         } catch (e: Exception) {
             assertTrue("Should not have an exception.", false)
         }
@@ -406,6 +485,38 @@ class TranslationsTest : BaseSessionTest() {
     }
 
     @Test
+    fun testNeverTranslateSpecificSite() {
+        mainSession.loadTestPath(TRANSLATIONS_ES)
+        mainSession.waitForPageStop()
+
+        // Get never translate list using Runtime API (if any) and clear never translate settings
+        var listOfSitesNeverToTranslate = sessionRule.waitForResult(RuntimeTranslation.getNeverTranslateSiteList())
+        for (site in listOfSitesNeverToTranslate) {
+            sessionRule.waitForResult(RuntimeTranslation.setNeverTranslateSpecifiedSite(false, site))
+        }
+
+        // Get never translate list using Runtime API
+        listOfSitesNeverToTranslate = sessionRule.waitForResult(RuntimeTranslation.getNeverTranslateSiteList())
+        assertTrue("Expect there to be no never translate sites set.", listOfSitesNeverToTranslate.isEmpty())
+
+        // Set site using Session API and confirm set
+        sessionRule.waitForResult(sessionRule.session.sessionTranslation!!.setNeverTranslateSiteSetting(true))
+        var sessionNeverTranslateSetting = sessionRule.waitForResult(sessionRule.session.sessionTranslation!!.neverTranslateSiteSetting)
+        assertTrue("Expect never translate to be true after setting using session API.", sessionNeverTranslateSetting)
+
+        // Get list again using Runtime API
+        listOfSitesNeverToTranslate = sessionRule.waitForResult(RuntimeTranslation.getNeverTranslateSiteList())
+        assertTrue("Expect there to be one site in the list after setting.", listOfSitesNeverToTranslate.size == 1)
+
+        // Unset using Runtime API
+        sessionRule.waitForResult(RuntimeTranslation.setNeverTranslateSpecifiedSite(false, listOfSitesNeverToTranslate[0]))
+
+        // Check unset again using Session API
+        sessionNeverTranslateSetting = sessionRule.waitForResult(sessionRule.session.sessionTranslation!!.neverTranslateSiteSetting)
+        assertTrue("Expect never translate to be false after unsetting using runtime API.", !sessionNeverTranslateSetting)
+    }
+
+    @Test
     fun testBCP47PrefSetting() {
         // Only test when running locally in Android Studio (not ./mach geckoview-junit)
         // Remote settings and translations behaves the same as production when ran from Android Studio.
@@ -453,6 +564,61 @@ class TranslationsTest : BaseSessionTest() {
                     OFFER,
                 ),
             )
+        }
+    }
+
+    @Test
+    fun testManageLanguageModelErrors() {
+        val missingLanguage = ModelManagementOptions.Builder()
+            .operation(DOWNLOAD)
+            .operationLevel(LANGUAGE)
+            .build()
+        try {
+            sessionRule.waitForResult(RuntimeTranslation.manageLanguageModel(missingLanguage))
+            assertTrue("Should not complete requests on an incompatible state.", false)
+        } catch (e: RuntimeException) {
+            // Wait call causes a runtime exception too.
+            val te = e.cause as TranslationsException
+            assertTrue(
+                "Correctly rejected an incompatible state with missing language.",
+                te.code == ERROR_MODEL_LANGUAGE_REQUIRED,
+            )
+        }
+
+        // In the Android Studio test runner, these should be skipped because Remote Settings is
+        // active. However, in CI, these will fail as expected because no download service is available.
+        if (sessionRule.env.isAutomation) {
+            val allDownloadAttempt = ModelManagementOptions.Builder()
+                .operation(DOWNLOAD)
+                .operationLevel(ALL)
+                .build()
+            try {
+                sessionRule.waitForResult(RuntimeTranslation.manageLanguageModel(allDownloadAttempt))
+                assertTrue("Should not complete downloads in automation.", false)
+            } catch (e: RuntimeException) {
+                // Wait call causes a runtime exception too.
+                val te = e.cause as TranslationsException
+                assertTrue(
+                    "Correctly could not download on automated test harness.",
+                    te.code == ERROR_MODEL_COULD_NOT_DOWNLOAD,
+                )
+            }
+
+            val allDeleteAttempt = ModelManagementOptions.Builder()
+                .operation(DELETE)
+                .operationLevel(ALL)
+                .build()
+            try {
+                sessionRule.waitForResult(RuntimeTranslation.manageLanguageModel(allDeleteAttempt))
+                assertTrue("Should not complete deletes in automation.", false)
+            } catch (e: RuntimeException) {
+                // Wait call causes a runtime exception too.
+                val te = e.cause as TranslationsException
+                assertTrue(
+                    "Correctly could not delete on automated test harness.",
+                    te.code == ERROR_MODEL_COULD_NOT_DELETE,
+                )
+            }
         }
     }
 }

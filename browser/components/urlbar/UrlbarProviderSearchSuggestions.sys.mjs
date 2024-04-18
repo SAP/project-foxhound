@@ -508,7 +508,7 @@ class ProviderSearchSuggestions extends UrlbarProvider {
           trending: entry.trending,
           description: entry.description || undefined,
           query: [searchString.trim(), UrlbarUtils.HIGHLIGHT.NONE],
-          icon: !entry.value ? engine.iconURI?.spec : entry.icon,
+          icon: !entry.value ? engine.getIconURL() : entry.icon,
         };
 
         if (entry.trending) {
@@ -652,6 +652,11 @@ function makeFormHistoryResult(queryContext, engine, entry) {
       engine: engine.name,
       suggestion: [entry.value, UrlbarUtils.HIGHLIGHT.SUGGESTED],
       lowerCaseSuggestion: entry.value.toLocaleLowerCase(),
+      isBlockable: true,
+      blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+      helpUrl:
+        Services.urlFormatter.formatURLPref("app.support.baseURL") +
+        "awesome-bar-result-menu",
     })
   );
 }

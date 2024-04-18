@@ -126,6 +126,7 @@
 #include "mozilla/dom/SessionHistoryEntry.h"
 #include "mozilla/dom/SessionStorageManager.h"
 #include "mozilla/dom/StorageIPC.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/URLClassifierParent.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/ipc/SharedMap.h"
@@ -233,7 +234,6 @@
 #include "nsMemoryReporterManager.h"
 #include "nsOpenURIInFrameParams.h"
 #include "nsPIWindowWatcher.h"
-#include "nsPluginHost.h"
 #include "nsPluginTags.h"
 #include "nsQueryObject.h"
 #include "nsReadableUtils.h"
@@ -1445,6 +1445,14 @@ already_AddRefed<RemoteBrowser> ContentParent::CreateBrowser(
       "BrowsingContext must not have BrowserParent, or have previous "
       "BrowserParent cleared");
 
+  // Don't bother creating new content browsers after entering shutdown. This
+  // could lead to starting a new content process, which may significantly delay
+  // shutdown, and the content is unlikely to be displayed.
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+    NS_WARNING("Ignoring remote browser creation request during shutdown");
+    return nullptr;
+  }
+
   nsAutoCString remoteType(aRemoteType);
   if (remoteType.IsEmpty()) {
     remoteType = DEFAULT_REMOTE_TYPE;
@@ -2485,7 +2493,11 @@ void ContentParent::NotifyTabDestroyed(const TabId& aTabId,
 }
 
 TestShellParent* ContentParent::CreateTestShell() {
-  return static_cast<TestShellParent*>(SendPTestShellConstructor());
+  RefPtr<TestShellParent> actor = new TestShellParent();
+  if (!SendPTestShellConstructor(actor)) {
+    return nullptr;
+  }
+  return actor;
 }
 
 bool ContentParent::DestroyTestShell(TestShellParent* aTestShell) {
@@ -3382,19 +3394,6 @@ int32_t ContentParent::Pid() const {
   return ReleaseAssertedCast<int32_t>(pid);
 }
 
-mozilla::ipc::IPCResult ContentParent::RecvGetGfxVars(
-    nsTArray<GfxVarUpdate>* aVars) {
-  // Ensure gfxVars is initialized (for xpcshell tests).
-  gfxVars::Initialize();
-
-  *aVars = gfxVars::FetchNonDefaultVars();
-
-  // Now that content has initialized gfxVars, we can start listening for
-  // updates.
-  gfxVars::AddReceiver(this);
-  return IPC_OK();
-}
-
 void ContentParent::OnCompositorUnexpectedShutdown() {
   GPUProcessManager* gpm = GPUProcessManager::Get();
 
@@ -3467,7 +3466,9 @@ mozilla::ipc::IPCResult ContentParent::RecvSetClipboard(
   // aRequestingPrincipal is allowed to be nullptr here.
 
   if (!ValidatePrincipal(aTransferable.requestingPrincipal(),
-                         {ValidatePrincipalOptions::AllowNullPtr})) {
+                         {ValidatePrincipalOptions::AllowNullPtr,
+                          ValidatePrincipalOptions::AllowExpanded,
+                          ValidatePrincipalOptions::AllowSystem})) {
     LogAndAssertFailedPrincipalValidationInfo(
         aTransferable.requestingPrincipal(), __func__);
   }
@@ -3625,7 +3626,28 @@ NS_IMPL_ISUPPORTS(ClipboardGetCallback, nsIAsyncClipboardGetCallback)
 
 mozilla::ipc::IPCResult ContentParent::RecvGetClipboardAsync(
     nsTArray<nsCString>&& aTypes, const int32_t& aWhichClipboard,
+    const MaybeDiscarded<WindowContext>& aRequestingWindowContext,
+    mozilla::NotNull<nsIPrincipal*> aRequestingPrincipal,
     GetClipboardAsyncResolver&& aResolver) {
+  if (!ValidatePrincipal(aRequestingPrincipal,
+                         {ValidatePrincipalOptions::AllowSystem,
+                          ValidatePrincipalOptions::AllowExpanded})) {
+    LogAndAssertFailedPrincipalValidationInfo(aRequestingPrincipal, __func__);
+  }
+
+  // If the requesting context has been discarded, cancel the paste.
+  if (aRequestingWindowContext.IsDiscarded()) {
+    aResolver(NS_ERROR_NOT_AVAILABLE);
+    return IPC_OK();
+  }
+
+  RefPtr<WindowGlobalParent> requestingWindow =
+      aRequestingWindowContext.get_canonical();
+  if (requestingWindow && requestingWindow->GetContentParent() != this) {
+    return IPC_FAIL(
+        this, "attempt to paste into WindowContext loaded in another process");
+  }
+
   nsresult rv;
   // Retrieve clipboard
   nsCOMPtr<nsIClipboard> clipboard(do_GetService(kCClipboardCID, &rv));
@@ -3635,7 +3657,8 @@ mozilla::ipc::IPCResult ContentParent::RecvGetClipboardAsync(
   }
 
   auto callback = MakeRefPtr<ClipboardGetCallback>(this, std::move(aResolver));
-  rv = clipboard->AsyncGetData(aTypes, aWhichClipboard, callback);
+  rv = clipboard->AsyncGetData(aTypes, aWhichClipboard, requestingWindow,
+                               aRequestingPrincipal, callback);
   if (NS_FAILED(rv)) {
     callback->OnError(rv);
     return IPC_OK();
@@ -4234,7 +4257,7 @@ static bool CloneIsLegal(ContentParent* aCp, CanonicalBrowsingContext& aSource,
     return false;
   }
 
-  auto* targetEmbedder = aSource.GetParentWindowContext();
+  auto* targetEmbedder = aTarget.GetParentWindowContext();
   if (NS_WARN_IF(!targetEmbedder) ||
       NS_WARN_IF(targetEmbedder->GetContentParent() != aCp)) {
     return false;
@@ -4654,15 +4677,6 @@ bool ContentParent::CycleCollectWithLogs(
       this, aDumpAllTraces, aSink, aCallback);
 }
 
-PTestShellParent* ContentParent::AllocPTestShellParent() {
-  return new TestShellParent();
-}
-
-bool ContentParent::DeallocPTestShellParent(PTestShellParent* shell) {
-  delete shell;
-  return true;
-}
-
 PScriptCacheParent* ContentParent::AllocPScriptCacheParent(
     const FileDescOrError& cacheFile, const bool& wantCacheData) {
   return new loader::ScriptCacheParent(wantCacheData);
@@ -4762,17 +4776,13 @@ bool ContentParent::DeallocPBenchmarkStorageParent(
 }
 
 #ifdef MOZ_WEBSPEECH
-PSpeechSynthesisParent* ContentParent::AllocPSpeechSynthesisParent() {
+already_AddRefed<PSpeechSynthesisParent>
+ContentParent::AllocPSpeechSynthesisParent() {
   if (!StaticPrefs::media_webspeech_synth_enabled()) {
     return nullptr;
   }
-  return new mozilla::dom::SpeechSynthesisParent();
-}
-
-bool ContentParent::DeallocPSpeechSynthesisParent(
-    PSpeechSynthesisParent* aActor) {
-  delete aActor;
-  return true;
+  RefPtr<SpeechSynthesisParent> actor = new SpeechSynthesisParent();
+  return actor.forget();
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvPSpeechSynthesisConstructor(
@@ -5146,7 +5156,9 @@ mozilla::ipc::IPCResult ContentParent::RecvScriptErrorInternal(
     }
 
     JS::Rooted<JSObject*> stackObj(cx, &stack.toObject());
-    MOZ_ASSERT(JS::IsUnwrappedSavedFrame(stackObj));
+    if (!JS::IsUnwrappedSavedFrame(stackObj)) {
+      return IPC_FAIL(this, "Unexpected object");
+    }
 
     JS::Rooted<JSObject*> stackGlobal(cx, JS::GetNonCCWObjectGlobal(stackObj));
     msg = new nsScriptErrorWithStack(JS::NothingHandleValue, stackObj,
@@ -5497,16 +5509,10 @@ bool ContentParent::DeallocPContentPermissionRequestParent(
   return true;
 }
 
-PWebBrowserPersistDocumentParent*
+already_AddRefed<PWebBrowserPersistDocumentParent>
 ContentParent::AllocPWebBrowserPersistDocumentParent(
     PBrowserParent* aBrowser, const MaybeDiscarded<BrowsingContext>& aContext) {
-  return new WebBrowserPersistDocumentParent();
-}
-
-bool ContentParent::DeallocPWebBrowserPersistDocumentParent(
-    PWebBrowserPersistDocumentParent* aActor) {
-  delete aActor;
-  return true;
+  return MakeAndAddRef<WebBrowserPersistDocumentParent>();
 }
 
 mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
@@ -5514,6 +5520,7 @@ mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
     const uint32_t& aChromeFlags, const bool& aCalledFromJS,
     const bool& aForPrinting, const bool& aForWindowDotPrint,
     nsIURI* aURIToLoad, const nsACString& aFeatures,
+    const UserActivation::Modifiers& aModifiers,
     BrowserParent* aNextRemoteBrowser, const nsAString& aName,
     nsresult& aResult, nsCOMPtr<nsIRemoteTab>& aNewRemoteTab,
     bool* aWindowIsNew, int32_t& aOpenLocation,
@@ -5602,9 +5609,10 @@ mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
   }
 
   aOpenLocation = nsWindowWatcher::GetWindowOpenLocation(
-      outerWin, aChromeFlags, aCalledFromJS, aForPrinting);
+      outerWin, aChromeFlags, aModifiers, aCalledFromJS, aForPrinting);
 
   MOZ_ASSERT(aOpenLocation == nsIBrowserDOMWindow::OPEN_NEWTAB ||
+             aOpenLocation == nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND ||
              aOpenLocation == nsIBrowserDOMWindow::OPEN_NEWWINDOW ||
              aOpenLocation == nsIBrowserDOMWindow::OPEN_PRINT_BROWSER);
 
@@ -5614,6 +5622,7 @@ mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
   }
 
   if (aOpenLocation == nsIBrowserDOMWindow::OPEN_NEWTAB ||
+      aOpenLocation == nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND ||
       aOpenLocation == nsIBrowserDOMWindow::OPEN_PRINT_BROWSER) {
     RefPtr<Element> openerElement = do_QueryObject(frame);
 
@@ -5672,8 +5681,8 @@ mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
   features.Tokenize(aFeatures);
 
   aResult = pwwatch->OpenWindowWithRemoteTab(
-      thisBrowserHost, features, aCalledFromJS, aParent.FullZoom(), openInfo,
-      getter_AddRefs(aNewRemoteTab));
+      thisBrowserHost, features, aModifiers, aCalledFromJS, aParent.FullZoom(),
+      openInfo, getter_AddRefs(aNewRemoteTab));
   if (NS_WARN_IF(NS_FAILED(aResult))) {
     return IPC_OK();
   }
@@ -5738,9 +5747,9 @@ mozilla::ipc::IPCResult ContentParent::RecvCreateWindow(
     PBrowserParent* aNewTab, const uint32_t& aChromeFlags,
     const bool& aCalledFromJS, const bool& aForPrinting,
     const bool& aForPrintPreview, nsIURI* aURIToLoad,
-    const nsACString& aFeatures, nsIPrincipal* aTriggeringPrincipal,
-    nsIContentSecurityPolicy* aCsp, nsIReferrerInfo* aReferrerInfo,
-    const OriginAttributes& aOriginAttributes,
+    const nsACString& aFeatures, const UserActivation::Modifiers& aModifiers,
+    nsIPrincipal* aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
+    nsIReferrerInfo* aReferrerInfo, const OriginAttributes& aOriginAttributes,
     CreateWindowResolver&& aResolve) {
   if (!aTriggeringPrincipal) {
     return IPC_FAIL(this, "No principal");
@@ -5823,7 +5832,7 @@ mozilla::ipc::IPCResult ContentParent::RecvCreateWindow(
   int32_t openLocation = nsIBrowserDOMWindow::OPEN_NEWWINDOW;
   mozilla::ipc::IPCResult ipcResult = CommonCreateWindow(
       aThisTab, *parent, newBCOpenerId != 0, aChromeFlags, aCalledFromJS,
-      aForPrinting, aForPrintPreview, aURIToLoad, aFeatures, newTab,
+      aForPrinting, aForPrintPreview, aURIToLoad, aFeatures, aModifiers, newTab,
       VoidString(), rv, newRemoteTab, &cwi.windowOpened(), openLocation,
       aTriggeringPrincipal, aReferrerInfo, /* aLoadUri = */ false, aCsp,
       aOriginAttributes);
@@ -5840,8 +5849,9 @@ mozilla::ipc::IPCResult ContentParent::RecvCreateWindow(
 
   // This used to happen in the child - there may now be a better place to
   // do this work.
-  MOZ_ALWAYS_SUCCEEDS(
-      newBC->SetHasSiblings(openLocation == nsIBrowserDOMWindow::OPEN_NEWTAB));
+  MOZ_ALWAYS_SUCCEEDS(newBC->SetHasSiblings(
+      openLocation == nsIBrowserDOMWindow::OPEN_NEWTAB ||
+      openLocation == nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND));
 
   newTab->SwapFrameScriptsFrom(cwi.frameScripts());
   newTab->MaybeShowFrame();
@@ -5859,9 +5869,10 @@ mozilla::ipc::IPCResult ContentParent::RecvCreateWindow(
 mozilla::ipc::IPCResult ContentParent::RecvCreateWindowInDifferentProcess(
     PBrowserParent* aThisTab, const MaybeDiscarded<BrowsingContext>& aParent,
     const uint32_t& aChromeFlags, const bool& aCalledFromJS, nsIURI* aURIToLoad,
-    const nsACString& aFeatures, const nsAString& aName,
-    nsIPrincipal* aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
-    nsIReferrerInfo* aReferrerInfo, const OriginAttributes& aOriginAttributes) {
+    const nsACString& aFeatures, const UserActivation::Modifiers& aModifiers,
+    const nsAString& aName, nsIPrincipal* aTriggeringPrincipal,
+    nsIContentSecurityPolicy* aCsp, nsIReferrerInfo* aReferrerInfo,
+    const OriginAttributes& aOriginAttributes) {
   MOZ_DIAGNOSTIC_ASSERT(!nsContentUtils::IsSpecialName(aName));
 
   // Don't continue to try to create a new window if we've been fully discarded.
@@ -5903,7 +5914,7 @@ mozilla::ipc::IPCResult ContentParent::RecvCreateWindowInDifferentProcess(
   mozilla::ipc::IPCResult ipcResult = CommonCreateWindow(
       aThisTab, *parent, /* aSetOpener = */ false, aChromeFlags, aCalledFromJS,
       /* aForPrinting = */ false,
-      /* aForPrintPreview = */ false, aURIToLoad, aFeatures,
+      /* aForPrintPreview = */ false, aURIToLoad, aFeatures, aModifiers,
       /* aNextRemoteBrowser = */ nullptr, aName, rv, newRemoteTab, &windowIsNew,
       openLocation, aTriggeringPrincipal, aReferrerInfo,
       /* aLoadUri = */ true, aCsp, aOriginAttributes);
@@ -5930,19 +5941,6 @@ mozilla::ipc::IPCResult ContentParent::RecvShutdownPerfStats(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ContentParent::RecvGetGraphicsDeviceInitData(
-    ContentDeviceData* aOut) {
-  gfxPlatform::GetPlatform()->BuildContentDeviceData(aOut);
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult ContentParent::RecvGetOutputColorProfileData(
-    nsTArray<uint8_t>* aOutputColorProfileData) {
-  (*aOutputColorProfileData) =
-      gfxPlatform::GetPlatform()->GetPlatformCMSOutputProfileData();
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult ContentParent::RecvGetFontListShmBlock(
     const uint32_t& aGeneration, const uint32_t& aIndex,
     base::SharedMemoryHandle* aOut) {
@@ -5962,11 +5960,13 @@ mozilla::ipc::IPCResult ContentParent::RecvInitializeFamily(
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvSetCharacterMap(
-    const uint32_t& aGeneration, const mozilla::fontlist::Pointer& aFacePtr,
+    const uint32_t& aGeneration, const uint32_t& aFamilyIndex,
+    const bool& aAlias, const uint32_t& aFaceIndex,
     const gfxSparseBitSet& aMap) {
   auto* fontList = gfxPlatformFontList::PlatformFontList();
   MOZ_RELEASE_ASSERT(fontList, "gfxPlatformFontList not initialized?");
-  fontList->SetCharacterMap(aGeneration, aFacePtr, aMap);
+  fontList->SetCharacterMap(aGeneration, aFamilyIndex, aAlias, aFaceIndex,
+                            aMap);
   return IPC_OK();
 }
 
@@ -5979,10 +5979,10 @@ mozilla::ipc::IPCResult ContentParent::RecvInitOtherFamilyNames(
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvSetupFamilyCharMap(
-    const uint32_t& aGeneration, const mozilla::fontlist::Pointer& aFamilyPtr) {
+    const uint32_t& aGeneration, const uint32_t& aIndex, const bool& aAlias) {
   auto* fontList = gfxPlatformFontList::PlatformFontList();
   MOZ_RELEASE_ASSERT(fontList, "gfxPlatformFontList not initialized?");
-  fontList->SetupFamilyCharMap(aGeneration, aFamilyPtr);
+  fontList->SetupFamilyCharMap(aGeneration, aIndex, aAlias);
   return IPC_OK();
 }
 
@@ -6797,7 +6797,7 @@ mozilla::ipc::IPCResult ContentParent::RecvCompleteAllowAccessFor(
     return IPC_OK();
   }
 
-  StorageAccessAPIHelper::CompleteAllowAccessFor(
+  StorageAccessAPIHelper::CompleteAllowAccessForOnParentProcess(
       aParentContext.get_canonical(), aTopLevelWindowId, aTrackingPrincipal,
       aTrackingOrigin, aCookieBehavior, aReason, nullptr)
       ->Then(GetCurrentSerialEventTarget(), __func__,

@@ -233,16 +233,7 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    * @param aFormData the form data object
    */
   // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult ConstructEntryList(FormData* aFormData);
-
-  /**
-   * Whether the submission of this form has been ever prevented because of
-   * being invalid.
-   *
-   * @return Whether the submission of this form has been prevented because of
-   * being invalid.
-   */
-  bool HasEverTriedInvalidSubmit() const { return mEverTriedInvalidSubmit; }
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult ConstructEntryList(FormData*);
 
   /**
    * Implements form[name]. Returns form controls in this form with the correct
@@ -596,7 +587,7 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
   /**
    * Fire an event when the form is removed from the DOM tree. This is now only
-   * used by the password manager.
+   * used by the password manager and formautofill.
    */
   void MaybeFireFormRemoved();
 

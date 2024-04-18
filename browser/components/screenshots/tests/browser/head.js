@@ -12,7 +12,7 @@ const { UrlbarTestUtils } = ChromeUtils.importESModule(
 
 const TEST_ROOT = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
-  "http://example.com"
+  "https://example.com"
 );
 
 const TEST_PAGE = TEST_ROOT + "test-page.html";
@@ -24,7 +24,7 @@ const { MAX_CAPTURE_DIMENSION, MAX_CAPTURE_AREA } = ChromeUtils.importESModule(
 );
 
 const gScreenshotUISelectors = {
-  panelButtons: "#screenshotsPagePanel",
+  panel: "#screenshotsPagePanel",
   fullPageButton: "button.full-page",
   visiblePageButton: "button.visible-page",
   copyButton: "button.#copy",
@@ -36,13 +36,14 @@ const MouseEvents = {
     {},
     {
       get: (target, name) =>
-        async function (x, y, selector = ":root") {
+        async function (x, y, options = {}) {
           if (name === "click") {
-            this.down(x, y);
-            this.up(x, y);
+            this.down(x, y, options);
+            this.up(x, y, options);
           } else {
-            await safeSynthesizeMouseEventInContentPage(selector, x, y, {
+            await safeSynthesizeMouseEventInContentPage(":root", x, y, {
               type: "mouse" + name,
+              ...options,
             });
           }
         },
@@ -59,7 +60,11 @@ class ScreenshotsHelper {
   }
 
   get toolbarButton() {
-    return document.getElementById("screenshot-button");
+    return this.browser.ownerDocument.getElementById("screenshot-button");
+  }
+
+  get panel() {
+    return this.browser.ownerDocument.querySelector(this.selector.panel);
   }
 
   /**
@@ -68,30 +73,35 @@ class ScreenshotsHelper {
   triggerUIFromToolbar() {
     let button = this.toolbarButton;
     ok(
-      BrowserTestUtils.is_visible(button),
+      BrowserTestUtils.isVisible(button),
       "The screenshot toolbar button is visible"
     );
     button.click();
   }
 
+  async getPanelButton(selector) {
+    let panel = await this.waitForPanel();
+    let screenshotsButtons = panel.querySelector("screenshots-buttons");
+    ok(screenshotsButtons, "Found the screenshots-buttons");
+    let button = screenshotsButtons.shadowRoot.querySelector(selector);
+    ok(button, `Found ${selector} button`);
+    return button;
+  }
+
   async waitForPanel() {
-    let panel = this.browser.ownerDocument.querySelector(
-      "#screenshotsPagePanel"
-    );
+    let panel = this.panel;
     await BrowserTestUtils.waitForCondition(async () => {
       if (!panel) {
-        panel = this.browser.ownerDocument.querySelector(
-          "#screenshotsPagePanel"
-        );
+        panel = this.panel;
       }
-      return panel?.state === "open" && BrowserTestUtils.is_visible(panel);
+      return panel && BrowserTestUtils.isVisible(panel);
     });
     return panel;
   }
 
   async waitForOverlay() {
     const panel = await this.waitForPanel();
-    ok(BrowserTestUtils.is_visible(panel), "Panel buttons are visible");
+    ok(BrowserTestUtils.isVisible(panel), "Panel buttons are visible");
 
     await BrowserTestUtils.waitForCondition(async () => {
       let init = await this.isOverlayInitialized();
@@ -100,22 +110,30 @@ class ScreenshotsHelper {
     info("Overlay is visible");
   }
 
-  async waitForOverlayClosed() {
-    let panel = this.browser.ownerDocument.querySelector(
-      "#screenshotsPagePanel"
-    );
+  async waitForPanelClosed() {
+    let panel = this.panel;
     if (!panel) {
-      panel = await this.waitForPanel();
+      info("waitForPanelClosed: Panel doesnt exist");
+      return;
     }
+    if (panel.hidden) {
+      info("waitForPanelClosed: panel is already hidden");
+      return;
+    }
+    info("waitForPanelClosed: waiting for the panel to become hidden");
     await BrowserTestUtils.waitForMutationCondition(
       panel,
       { attributes: true },
       () => {
-        return BrowserTestUtils.is_hidden(panel);
+        return BrowserTestUtils.isHidden(panel);
       }
     );
-    ok(BrowserTestUtils.is_hidden(panel), "Panel buttons are hidden");
+    ok(BrowserTestUtils.isHidden(panel), "Panel buttons are hidden");
+    info("waitForPanelClosed, panel is hidden: " + panel.hidden);
+  }
 
+  async waitForOverlayClosed() {
+    await this.waitForPanelClosed();
     await BrowserTestUtils.waitForCondition(async () => {
       let init = !(await this.isOverlayInitialized());
       info("Is overlay initialized: " + !init);
@@ -145,16 +163,35 @@ class ScreenshotsHelper {
   async waitForStateChange(newState) {
     return BrowserTestUtils.waitForCondition(async () => {
       let state = await this.getOverlayState();
-      return state === newState;
+      return state === newState ? state : "";
     }, `Waiting for state change to ${newState}`);
   }
 
-  async getHoverElementRect() {
+  async assertStateChange(newState) {
+    let currentState = await this.waitForStateChange(newState);
+
+    is(
+      currentState,
+      newState,
+      `The current state is ${currentState}, expected ${newState}`
+    );
+  }
+
+  getHoverElementRect() {
     return ContentTask.spawn(this.browser, null, async () => {
       let screenshotsChild = content.windowGlobalChild.getActor(
         "ScreenshotsComponent"
       );
       return screenshotsChild.overlay.hoverElementRegion.dimensions;
+    });
+  }
+
+  isHoverElementRegionValid() {
+    return ContentTask.spawn(this.browser, null, async () => {
+      let screenshotsChild = content.windowGlobalChild.getActor(
+        "ScreenshotsComponent"
+      );
+      return screenshotsChild.overlay.hoverElementRegion.isRegionValid;
     });
   }
 
@@ -175,7 +212,6 @@ class ScreenshotsHelper {
         );
 
         let dimensions = screenshotsChild.overlay.selectionRegion.dimensions;
-        // return dimensions.boxWidth;
         await ContentTaskUtils.waitForCondition(() => {
           dimensions = screenshotsChild.overlay.selectionRegion.dimensions;
           return dimensions.width !== currWidth;
@@ -211,13 +247,7 @@ class ScreenshotsHelper {
     endY,
     expectedStartingState = "crosshairs"
   ) {
-    await this.waitForStateChange(expectedStartingState);
-    let state = await this.getOverlayState();
-    Assert.equal(
-      state,
-      expectedStartingState,
-      `The overlay is in the ${state} state`
-    );
+    await this.assertStateChange(expectedStartingState);
 
     mouse.down(startX, startY);
 
@@ -237,9 +267,7 @@ class ScreenshotsHelper {
 
     mouse.up(endX, endY);
 
-    await this.waitForStateChange("selected");
-    state = await this.getOverlayState();
-    Assert.equal(state, "selected", "The overlay is in the selected state");
+    await this.assertStateChange("selected");
 
     this.endX = endX;
     this.endY = endY;
@@ -257,15 +285,6 @@ class ScreenshotsHelper {
       }, `Waiting for window to scroll to ${xPos}, ${yPos}`);
     });
     await promise;
-  }
-
-  getWindowPosition() {
-    return ContentTask.spawn(this.browser, [], () => {
-      return {
-        scrollX: content.window.scrollX,
-        scrollY: content.window.scrollY,
-      };
-    });
   }
 
   async waitForScrollTo(x, y) {
@@ -341,11 +360,35 @@ class ScreenshotsHelper {
     mouse.click(x, y);
   }
 
-  async clickTestPageElement() {
-    let rect = await ContentTask.spawn(this.browser, [], async () => {
+  async clickPreviewCancelButton() {
+    let { centerX: x, centerY: y } = await ContentTask.spawn(
+      this.browser,
+      null,
+      async () => {
+        let screenshotsChild = content.windowGlobalChild.getActor(
+          "ScreenshotsComponent"
+        );
+        let { left, top, width, height } =
+          screenshotsChild.overlay.previewCancelButton.getBoundingClientRect();
+        let centerX = left + width / 2;
+        let centerY = top + height / 2;
+        return { centerX, centerY };
+      }
+    );
+
+    info(`clicking cancel button at ${x}, ${y}`);
+    mouse.click(x, y);
+  }
+
+  getTestPageElementRect() {
+    return ContentTask.spawn(this.browser, [], async () => {
       let ele = content.document.getElementById("testPageElement");
       return ele.getBoundingClientRect();
     });
+  }
+
+  async clickTestPageElement() {
+    let rect = await this.getTestPageElementRect();
 
     let x = Math.floor(rect.x + rect.width / 2);
     let y = Math.floor(rect.y + rect.height / 2);
@@ -353,9 +396,9 @@ class ScreenshotsHelper {
     mouse.move(x, y);
     await this.waitForHoverElementRect();
     mouse.down(x, y);
-    await this.waitForStateChange("draggingReady");
+    await this.assertStateChange("draggingReady");
     mouse.up(x, y);
-    await this.waitForStateChange("selected");
+    await this.assertStateChange("selected");
   }
 
   async zoomBrowser(zoom) {
@@ -379,21 +422,17 @@ class ScreenshotsHelper {
   }
 
   assertPanelVisible() {
-    let panel = this.browser.ownerDocument.querySelector(
-      "#screenshotsPagePanel"
-    );
+    info("assertPanelVisible, panel.hidden:" + this.panel?.hidden);
     Assert.ok(
-      BrowserTestUtils.is_visible(panel),
+      BrowserTestUtils.isVisible(this.panel),
       "Screenshots panel is visible"
     );
   }
 
   assertPanelNotVisible() {
-    let panel = this.browser.ownerDocument.querySelector(
-      "#screenshotsPagePanel"
-    );
+    info("assertPanelNotVisible, panel.hidden:" + this.panel?.hidden);
     Assert.ok(
-      BrowserTestUtils.is_hidden(panel),
+      !this.panel || BrowserTestUtils.isHidden(this.panel),
       "Screenshots panel is not visible"
     );
   }
@@ -438,10 +477,19 @@ class ScreenshotsHelper {
    *   clientWidth The visible width
    *   scrollHeight The scrollable height
    *   scrollWidth The scrollable width
+   *   scrollX The scroll x position
+   *   scrollY The scroll y position
    */
   getContentDimensions() {
     return SpecialPowers.spawn(this.browser, [], async function () {
-      let { innerWidth, innerHeight, scrollMaxX, scrollMaxY } = content.window;
+      let {
+        innerWidth,
+        innerHeight,
+        scrollMaxX,
+        scrollMaxY,
+        scrollX,
+        scrollY,
+      } = content.window;
       let width = innerWidth + scrollMaxX;
       let height = innerHeight + scrollMaxY;
 
@@ -462,6 +510,8 @@ class ScreenshotsHelper {
         clientWidth: innerWidth,
         scrollHeight: height,
         scrollWidth: width,
+        scrollX,
+        scrollY,
       };
     });
   }
@@ -661,7 +711,8 @@ async function safeSynthesizeMouseEventInContentPage(
 add_setup(async () => {
   CustomizableUI.addWidgetToArea(
     "screenshot-button",
-    CustomizableUI.AREA_NAVBAR
+    CustomizableUI.AREA_NAVBAR,
+    0
   );
   let screenshotBtn = document.getElementById("screenshot-button");
   Assert.ok(screenshotBtn, "The screenshots button was added to the nav bar");

@@ -335,8 +335,9 @@ nsComputedDOMStyle::nsComputedDOMStyle(dom::Element* aElement,
   MOZ_ASSERT(aDocument);
   // TODO(emilio, bug 548397, https://github.com/w3c/csswg-drafts/issues/2403):
   // Should use aElement->OwnerDoc() instead.
-  mDocumentWeak = do_GetWeakReference(aDocument);
+  mDocumentWeak = aDocument;
   mElement = aElement;
+  SetEnabledCallbacks(nsIMutationObserver::kParentChainChanged);
 }
 
 nsComputedDOMStyle::~nsComputedDOMStyle() {
@@ -881,8 +882,7 @@ bool nsComputedDOMStyle::NeedsToFlushStyle(nsCSSPropertyID aPropID) const {
 static bool IsNonReplacedInline(nsIFrame* aFrame) {
   // FIXME: this should be IsInlineInsideStyle() since width/height
   // doesn't apply to ruby boxes.
-  return aFrame->StyleDisplay()->IsInlineFlow() &&
-         !aFrame->IsFrameOfType(nsIFrame::eReplaced) &&
+  return aFrame->StyleDisplay()->IsInlineFlow() && !aFrame->IsReplaced() &&
          !aFrame->IsFieldSetFrame() && !aFrame->IsBlockFrame() &&
          !aFrame->IsScrollFrame() && !aFrame->IsColumnSetWrapperFrame();
 }
@@ -992,18 +992,14 @@ bool nsComputedDOMStyle::NeedsToFlushLayout(nsCSSPropertyID aPropID) const {
 
 void nsComputedDOMStyle::Flush(Document& aDocument, FlushType aFlushType) {
   MOZ_ASSERT(mElement->IsInComposedDoc());
+  MOZ_ASSERT(mDocumentWeak == &aDocument);
 
-#ifdef DEBUG
-  {
-    nsCOMPtr<Document> document = do_QueryReferent(mDocumentWeak);
-    MOZ_ASSERT(document == &aDocument);
-  }
-#endif
-
-  aDocument.FlushPendingNotifications(aFlushType);
   if (MOZ_UNLIKELY(&aDocument != mElement->OwnerDoc())) {
-    mElement->OwnerDoc()->FlushPendingNotifications(aFlushType);
+    aDocument.FlushPendingNotifications(aFlushType);
   }
+  // This performs the flush, and also guarantees that content-visibility:
+  // hidden elements get laid out, if needed.
+  mElement->GetPrimaryFrame(aFlushType);
 }
 
 nsIFrame* nsComputedDOMStyle::GetOuterFrame() const {
@@ -1026,7 +1022,7 @@ nsIFrame* nsComputedDOMStyle::GetOuterFrame() const {
 }
 
 void nsComputedDOMStyle::UpdateCurrentStyleSources(nsCSSPropertyID aPropID) {
-  nsCOMPtr<Document> document = do_QueryReferent(mDocumentWeak);
+  nsCOMPtr<Document> document(mDocumentWeak);
   if (!document) {
     ClearComputedStyle();
     return;

@@ -19,12 +19,9 @@
 #include "MP4Decoder.h"
 #include "MediaChangeMonitor.h"
 #include "MediaInfo.h"
-#include "OpusDecoder.h"
 #include "TheoraDecoder.h"
 #include "VPXDecoder.h"
 #include "VideoUtils.h"
-#include "VorbisDecoder.h"
-#include "WAVDecoder.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/RemoteDecodeUtils.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
@@ -553,13 +550,13 @@ void PDMFactory::CreateRddPDMs() {
 #ifdef MOZ_FFVPX
   if (StaticPrefs::media_ffvpx_enabled() &&
       StaticPrefs::media_rdd_ffvpx_enabled()) {
-    CreateAndStartupPDM<FFVPXRuntimeLinker>();
+    StartupPDM(FFVPXRuntimeLinker::CreateDecoder());
   }
 #endif
 #ifdef MOZ_FFMPEG
   if (StaticPrefs::media_ffmpeg_enabled() &&
       StaticPrefs::media_rdd_ffmpeg_enabled() &&
-      !CreateAndStartupPDM<FFmpegRuntimeLinker>()) {
+      !StartupPDM(FFmpegRuntimeLinker::CreateDecoder())) {
     mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
         FFmpegRuntimeLinker::LinkStatusCode());
   }
@@ -586,13 +583,13 @@ void PDMFactory::CreateUtilityPDMs() {
 #ifdef MOZ_FFVPX
     if (StaticPrefs::media_ffvpx_enabled() &&
         StaticPrefs::media_utility_ffvpx_enabled()) {
-      CreateAndStartupPDM<FFVPXRuntimeLinker>();
+      StartupPDM(FFVPXRuntimeLinker::CreateDecoder());
     }
 #endif
 #ifdef MOZ_FFMPEG
     if (StaticPrefs::media_ffmpeg_enabled() &&
         StaticPrefs::media_utility_ffmpeg_enabled() &&
-        !CreateAndStartupPDM<FFmpegRuntimeLinker>()) {
+        !StartupPDM(FFmpegRuntimeLinker::CreateDecoder())) {
       mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
           FFmpegRuntimeLinker::LinkStatusCode());
     }
@@ -672,12 +669,12 @@ void PDMFactory::CreateContentPDMs() {
 #endif
 #ifdef MOZ_FFVPX
     if (StaticPrefs::media_ffvpx_enabled()) {
-      CreateAndStartupPDM<FFVPXRuntimeLinker>();
+      StartupPDM(FFVPXRuntimeLinker::CreateDecoder());
     }
 #endif
 #ifdef MOZ_FFMPEG
     if (StaticPrefs::media_ffmpeg_enabled() &&
-        !CreateAndStartupPDM<FFmpegRuntimeLinker>()) {
+        !StartupPDM(FFmpegRuntimeLinker::CreateDecoder())) {
       mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
           FFmpegRuntimeLinker::LinkStatusCode());
     }
@@ -724,12 +721,12 @@ void PDMFactory::CreateDefaultPDMs() {
 #endif
 #ifdef MOZ_FFVPX
   if (StaticPrefs::media_ffvpx_enabled()) {
-    CreateAndStartupPDM<FFVPXRuntimeLinker>();
+    StartupPDM(FFVPXRuntimeLinker::CreateDecoder());
   }
 #endif
 #ifdef MOZ_FFMPEG
   if (StaticPrefs::media_ffmpeg_enabled() &&
-      !CreateAndStartupPDM<FFmpegRuntimeLinker>()) {
+      !StartupPDM(FFmpegRuntimeLinker::CreateDecoder())) {
     mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
         FFmpegRuntimeLinker::LinkStatusCode());
   }
@@ -801,7 +798,8 @@ void PDMFactory::SetCDMProxy(CDMProxy* aProxy) {
   if (IsPlayReadyKeySystemAndSupported(aProxy->KeySystem()) ||
       IsWidevineExperimentKeySystemAndSupported(aProxy->KeySystem()) ||
       (IsWidevineKeySystem(aProxy->KeySystem()) &&
-       aProxy->IsHardwareDecryptionSupported())) {
+       aProxy->IsHardwareDecryptionSupported()) ||
+      IsWMFClearKeySystemAndSupported(aProxy->KeySystem())) {
     mEMEPDM = RemoteDecoderModule::Create(
         RemoteDecodeIn::UtilityProcess_MFMediaEngineCDM);
     return;
@@ -881,16 +879,16 @@ DecodeSupportSet PDMFactory::SupportsMimeType(
     if (aMimeType.EqualsLiteral("audio/mpeg")) {
       return MCSInfo::GetDecodeSupportSet(MediaCodec::MP3, aSupported);
     }
-    if (OpusDataDecoder::IsOpus(aMimeType)) {
+    if (aMimeType.EqualsLiteral("audio/opus")) {
       return MCSInfo::GetDecodeSupportSet(MediaCodec::Opus, aSupported);
     }
-    if (VorbisDataDecoder::IsVorbis(aMimeType)) {
+    if (aMimeType.EqualsLiteral("audio/vorbis")) {
       return MCSInfo::GetDecodeSupportSet(MediaCodec::Vorbis, aSupported);
     }
     if (aMimeType.EqualsLiteral("audio/flac")) {
       return MCSInfo::GetDecodeSupportSet(MediaCodec::FLAC, aSupported);
     }
-    if (WaveDataDecoder::IsWave(aMimeType)) {
+    if (IsWaveMimetype(aMimeType)) {
       return MCSInfo::GetDecodeSupportSet(MediaCodec::Wave, aSupported);
     }
   }

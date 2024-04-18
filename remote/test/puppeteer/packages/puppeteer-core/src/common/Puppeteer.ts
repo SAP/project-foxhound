@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-import {Browser} from '../api/Browser.js';
+import type {Browser} from '../api/Browser.js';
 
+import {_connectToBrowser} from './BrowserConnector.js';
+import type {ConnectOptions} from './ConnectOptions.js';
 import {
-  BrowserConnectOptions,
-  _connectToCDPBrowser,
-} from './BrowserConnector.js';
-import {ConnectionTransport} from './ConnectionTransport.js';
-import {CustomQueryHandler, customQueryHandlers} from './CustomQueryHandler.js';
+  type CustomQueryHandler,
+  customQueryHandlers,
+} from './CustomQueryHandler.js';
 
 /**
  * Settings that are common to the Puppeteer class, regardless of environment.
@@ -30,20 +30,6 @@ import {CustomQueryHandler, customQueryHandlers} from './CustomQueryHandler.js';
  */
 export interface CommonPuppeteerSettings {
   isPuppeteerCore: boolean;
-}
-/**
- * @public
- */
-export interface ConnectOptions extends BrowserConnectOptions {
-  browserWSEndpoint?: string;
-  browserURL?: string;
-  transport?: ConnectionTransport;
-  /**
-   * Headers to use for the web socket connection.
-   * @remarks
-   * Only works in the Node.js environment.
-   */
-  headers?: Record<string, string>;
 }
 
 /**
@@ -142,6 +128,6 @@ export class Puppeteer {
    * @returns Promise which resolves to browser instance.
    */
   connect(options: ConnectOptions): Promise<Browser> {
-    return _connectToCDPBrowser(options);
+    return _connectToBrowser(options);
   }
 }

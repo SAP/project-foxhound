@@ -10,6 +10,7 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/SRILogHelper.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/AutoRestore.h"
@@ -64,6 +65,7 @@
 #include "mozilla/SharedStyleSheetCache.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Try.h"
 #include "ReferrerInfo.h"
 
@@ -277,7 +279,7 @@ SheetLoadData::SheetLoadData(
     IsAlternate aIsAlternate, MediaMatched aMediaMatches,
     StylePreloadKind aPreloadKind, nsICSSLoaderObserver* aObserver,
     nsIPrincipal* aTriggeringPrincipal, nsIReferrerInfo* aReferrerInfo,
-    const nsAString& aNonce)
+    const nsAString& aNonce, FetchPriority aFetchPriority)
     : mLoader(aLoader),
       mTitle(aTitle),
       mEncoding(nullptr),
@@ -304,6 +306,7 @@ SheetLoadData::SheetLoadData(
       mTriggeringPrincipal(aTriggeringPrincipal),
       mReferrerInfo(aReferrerInfo),
       mNonce(aNonce),
+      mFetchPriority{aFetchPriority},
       mGuessedEncoding(GetFallbackEncoding(*aLoader, aOwningNode, nullptr)),
       mCompatMode(aLoader->CompatMode(aPreloadKind)) {
   MOZ_ASSERT(!aOwningNode || dom::LinkStyle::FromNode(*aOwningNode),
@@ -343,6 +346,7 @@ SheetLoadData::SheetLoadData(css::Loader* aLoader, nsIURI* aURI,
       mTriggeringPrincipal(aTriggeringPrincipal),
       mReferrerInfo(aReferrerInfo),
       mNonce(u""_ns),
+      mFetchPriority(FetchPriority::Auto),
       mGuessedEncoding(GetFallbackEncoding(
           *aLoader, nullptr, aParentData ? aParentData->mEncoding : nullptr)),
       mCompatMode(aLoader->CompatMode(mPreloadKind)) {
@@ -358,7 +362,7 @@ SheetLoadData::SheetLoadData(
     UseSystemPrincipal aUseSystemPrincipal, StylePreloadKind aPreloadKind,
     const Encoding* aPreloadEncoding, nsICSSLoaderObserver* aObserver,
     nsIPrincipal* aTriggeringPrincipal, nsIReferrerInfo* aReferrerInfo,
-    const nsAString& aNonce)
+    const nsAString& aNonce, FetchPriority aFetchPriority)
     : mLoader(aLoader),
       mEncoding(nullptr),
       mURI(aURI),
@@ -384,6 +388,7 @@ SheetLoadData::SheetLoadData(
       mTriggeringPrincipal(aTriggeringPrincipal),
       mReferrerInfo(aReferrerInfo),
       mNonce(aNonce),
+      mFetchPriority(aFetchPriority),
       mGuessedEncoding(
           GetFallbackEncoding(*aLoader, nullptr, aPreloadEncoding)),
       mCompatMode(aLoader->CompatMode(aPreloadKind)) {
@@ -876,9 +881,9 @@ nsresult Loader::CheckContentPolicy(nsIPrincipal* aLoadingPrincipal,
   secCheckLoadInfo->SetCspNonce(aNonce);
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
-  nsresult rv = NS_CheckContentLoadPolicy(aTargetURI, secCheckLoadInfo,
-                                          "text/css"_ns, &shouldLoad,
-                                          nsContentUtils::GetContentPolicy());
+  nsresult rv =
+      NS_CheckContentLoadPolicy(aTargetURI, secCheckLoadInfo, &shouldLoad,
+                                nsContentUtils::GetContentPolicy());
   if (NS_FAILED(rv) || NS_CP_REJECTED(shouldLoad)) {
     // Asynchronously notify observers (e.g devtools) of CSP failure.
     nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
@@ -1272,8 +1277,9 @@ bool Loader::MaybeCoalesceLoadAndNotifyOpen(SheetLoadData& aLoadData,
     if (aSheetState == SheetState::Pending) {
       ++mPendingLoadCount;
     } else {
-      aLoadData.NotifyOpen(aPreloadKey, mDocument,
-                           aLoadData.IsLinkRelPreload());
+      aLoadData.NotifyOpen(
+          aPreloadKey, mDocument,
+          aLoadData.IsLinkRelPreload() /* TODO: why not `IsPreload()`?*/);
     }
   }
   return coalescedLoad;
@@ -1343,6 +1349,50 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
   aLoadData.NotifyOpen(preloadKey, mDocument, aLoadData.IsLinkRelPreload());
 
   return LoadSheetAsyncInternal(aLoadData, aEarlyHintPreloaderId, key);
+}
+
+void Loader::AdjustPriority(const SheetLoadData& aLoadData,
+                            nsIChannel* aChannel) {
+  if (!StaticPrefs::network_fetchpriority_enabled()) {
+    if (!aLoadData.ShouldDefer() && aLoadData.IsLinkRelPreload()) {
+      SheetLoadData::PrioritizeAsPreload(aChannel);
+    }
+
+    return;
+  }
+
+  nsCOMPtr<nsISupportsPriority> sp = do_QueryInterface(aChannel);
+
+  if (!sp) {
+    return;
+  }
+
+  // Adjusting priorites is specified as implementation-defined. To align with
+  // other browsers for potentially important cases, some adjustments are made
+  // according to
+  // <https://web.dev/articles/fetch-priority#browser_priority_and_fetchpriority>.
+  const int32_t supportsPriority = [&]() {
+    if (!aLoadData.mMediaMatched || aLoadData.mWasAlternate) {
+      return nsISupportsPriority::PRIORITY_LOW;
+    }
+    switch (aLoadData.mFetchPriority) {
+      case FetchPriority::Auto: {
+        return nsISupportsPriority::PRIORITY_HIGHEST;
+      }
+      case FetchPriority::High: {
+        return nsISupportsPriority::PRIORITY_HIGHEST;
+      }
+      case FetchPriority::Low: {
+        return nsISupportsPriority::PRIORITY_HIGH;
+      }
+    }
+
+    MOZ_ASSERT_UNREACHABLE();
+    return nsISupportsPriority::PRIORITY_HIGHEST;
+  }();
+
+  LogPriorityMapping(sCssLoaderLog, aLoadData.mFetchPriority, supportsPriority);
+  sp->SetPriority(supportsPriority);
 }
 
 nsresult Loader::LoadSheetAsyncInternal(SheetLoadData& aLoadData,
@@ -1419,11 +1469,13 @@ nsresult Loader::LoadSheetAsyncInternal(SheetLoadData& aLoadData,
     if (nsCOMPtr<nsIClassOfService> cos = do_QueryInterface(channel)) {
       cos->AddClassFlags(nsIClassOfService::Leader);
     }
+
     if (aLoadData.IsLinkRelPreload()) {
-      SheetLoadData::PrioritizeAsPreload(channel);
       SheetLoadData::AddLoadBackgroundFlag(channel);
     }
   }
+
+  AdjustPriority(aLoadData, channel);
 
   if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(channel)) {
     if (nsCOMPtr<nsIReferrerInfo> referrerInfo = aLoadData.ReferrerInfo()) {
@@ -1780,7 +1832,7 @@ Result<Loader::LoadSheetResult, nsresult> Loader::LoadInlineStyle(
   auto data = MakeRefPtr<SheetLoadData>(
       this, aInfo.mTitle, /* aURI = */ nullptr, sheet, SyncLoad::No,
       aInfo.mContent, isAlternate, matched, StylePreloadKind::None, aObserver,
-      principal, aInfo.mReferrerInfo, aInfo.mNonce);
+      principal, aInfo.mReferrerInfo, aInfo.mNonce, aInfo.mFetchPriority);
   MOZ_ASSERT(data->GetRequestingNode() == aInfo.mContent);
   if (isSheetFromCache) {
     MOZ_ASSERT(sheet->IsComplete());
@@ -1898,7 +1950,7 @@ Result<Loader::LoadSheetResult, nsresult> Loader::LoadStyleLink(
   auto data = MakeRefPtr<SheetLoadData>(
       this, aInfo.mTitle, aInfo.mURI, sheet, SyncLoad(syncLoad), aInfo.mContent,
       isAlternate, matched, StylePreloadKind::None, aObserver, principal,
-      aInfo.mReferrerInfo, aInfo.mNonce);
+      aInfo.mReferrerInfo, aInfo.mNonce, aInfo.mFetchPriority);
 
   MOZ_ASSERT(data->GetRequestingNode() == requestingNode);
 
@@ -2068,7 +2120,7 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheetSync(
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   return InternalLoadNonDocumentSheet(
       aURL, StylePreloadKind::None, aParsingMode, aUseSystemPrincipal, nullptr,
-      referrerInfo, nullptr, CORS_NONE, u""_ns, u""_ns, 0);
+      referrerInfo, nullptr, CORS_NONE, u""_ns, u""_ns, 0, FetchPriority::Auto);
 }
 
 Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheet(
@@ -2077,19 +2129,21 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheet(
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   return InternalLoadNonDocumentSheet(
       aURI, StylePreloadKind::None, aParsingMode, aUseSystemPrincipal, nullptr,
-      referrerInfo, aObserver, CORS_NONE, u""_ns, u""_ns, 0);
+      referrerInfo, aObserver, CORS_NONE, u""_ns, u""_ns, 0,
+      FetchPriority::Auto);
 }
 
 Result<RefPtr<StyleSheet>, nsresult> Loader::LoadSheet(
     nsIURI* aURL, StylePreloadKind aPreloadKind,
     const Encoding* aPreloadEncoding, nsIReferrerInfo* aReferrerInfo,
     nsICSSLoaderObserver* aObserver, uint64_t aEarlyHintPreloaderId,
-    CORSMode aCORSMode, const nsAString& aNonce, const nsAString& aIntegrity) {
+    CORSMode aCORSMode, const nsAString& aNonce, const nsAString& aIntegrity,
+    FetchPriority aFetchPriority) {
   LOG(("css::Loader::LoadSheet(aURL, aObserver) api call"));
   return InternalLoadNonDocumentSheet(
       aURL, aPreloadKind, eAuthorSheetFeatures, UseSystemPrincipal::No,
       aPreloadEncoding, aReferrerInfo, aObserver, aCORSMode, aNonce, aIntegrity,
-      aEarlyHintPreloaderId);
+      aEarlyHintPreloaderId, aFetchPriority);
 }
 
 Result<RefPtr<StyleSheet>, nsresult> Loader::InternalLoadNonDocumentSheet(
@@ -2097,7 +2151,7 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::InternalLoadNonDocumentSheet(
     UseSystemPrincipal aUseSystemPrincipal, const Encoding* aPreloadEncoding,
     nsIReferrerInfo* aReferrerInfo, nsICSSLoaderObserver* aObserver,
     CORSMode aCORSMode, const nsAString& aNonce, const nsAString& aIntegrity,
-    uint64_t aEarlyHintPreloaderId) {
+    uint64_t aEarlyHintPreloaderId, FetchPriority aFetchPriority) {
   MOZ_ASSERT(aURL, "Must have a URI to load");
   MOZ_ASSERT(aUseSystemPrincipal == UseSystemPrincipal::No || !aObserver,
              "Shouldn't load system-principal sheets async");
@@ -2128,7 +2182,8 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::InternalLoadNonDocumentSheet(
 
   auto data = MakeRefPtr<SheetLoadData>(
       this, aURL, sheet, SyncLoad(syncLoad), aUseSystemPrincipal, aPreloadKind,
-      aPreloadEncoding, aObserver, triggeringPrincipal, aReferrerInfo, aNonce);
+      aPreloadEncoding, aObserver, triggeringPrincipal, aReferrerInfo, aNonce,
+      aFetchPriority);
   MOZ_ASSERT(data->GetRequestingNode() == mDocument);
   if (state == SheetState::Complete) {
     LOG(("  Sheet already complete"));

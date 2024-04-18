@@ -11,6 +11,7 @@ import time
 from argparse import Namespace
 from contextlib import contextmanager
 from subprocess import PIPE, Popen
+from threading import Thread
 
 
 @contextmanager
@@ -59,6 +60,11 @@ class Http3Server(object):
     def echConfig(self):
         return self._echConfig
 
+    def read_streams(self, name, proc, pipe):
+        output = "stdout" if pipe == proc.stdout else "stderr"
+        for line in iter(pipe.readline, ""):
+            self._log.info("server: %s [%s] %s" % (name, output, line))
+
     def start(self):
         if not os.path.exists(self._http3ServerPath):
             raise Exception("Http3 server not found at %s" % self._http3ServerPath)
@@ -93,6 +99,19 @@ class Http3Server(object):
             # tell us it's started
             msg = process.stdout.readline()
             self._log.info("mozserve | http3 server msg: %s" % msg)
+            name = "http3server"
+            t1 = Thread(
+                target=self.read_streams,
+                args=(name, process, process.stdout),
+                daemon=True,
+            )
+            t1.start()
+            t2 = Thread(
+                target=self.read_streams,
+                args=(name, process, process.stderr),
+                daemon=True,
+            )
+            t2.start()
             if "server listening" in msg:
                 searchObj = re.search(
                     r"HTTP3 server listening on ports ([0-9]+), ([0-9]+), ([0-9]+), ([0-9]+) and ([0-9]+)."
@@ -107,6 +126,8 @@ class Http3Server(object):
                     self._ports["MOZHTTP3_PORT_PROXY"] = searchObj.group(4)
                     self._ports["MOZHTTP3_PORT_NO_RESPONSE"] = searchObj.group(5)
                     self._echConfig = searchObj.group(6)
+            else:
+                self._log.error("http3server failed to start?")
         except OSError as e:
             # This occurs if the subprocess couldn't be started
             self._log.error("Could not run the http3 server: %s" % (str(e)))
@@ -129,17 +150,6 @@ class Http3Server(object):
                         self._log.info("Killing proc")
                         proc.kill()
                         break
-
-            def dumpOutput(fd, label):
-                firstTime = True
-                for msg in fd:
-                    if firstTime:
-                        firstTime = False
-                        self._log.info("Process %s" % label)
-                    self._log.info(msg)
-
-            dumpOutput(proc.stdout, "stdout")
-            dumpOutput(proc.stderr, "stderr")
         self._http3ServerProc = {}
 
 

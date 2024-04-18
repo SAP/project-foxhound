@@ -35,10 +35,7 @@ add_setup(async function () {
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.search.log", true],
-      ["browser.search.serpEventTelemetry.enabled", true],
-    ],
+    set: [["browser.search.serpEventTelemetry.enabled", true]],
   });
 
   registerCleanupFunction(async () => {
@@ -77,7 +74,7 @@ add_task(async function test_track_ad_on_DOMContentLoaded() {
     }
   );
 
-  assertImpressionEvents([
+  assertSERPTelemetry([
     {
       impression: {
         provider: "slow-page-load",
@@ -88,6 +85,14 @@ add_task(async function test_track_ad_on_DOMContentLoaded() {
         is_private: "false",
         shopping_tab_displayed: "false",
       },
+      adImpressions: [
+        {
+          component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+          ads_loaded: "2",
+          ads_visible: "2",
+          ads_hidden: "0",
+        },
+      ],
     },
   ]);
 
@@ -101,6 +106,7 @@ add_task(async function test_track_ad_on_load_event() {
     gBrowser,
     getSERPUrl("slow_loading_page_with_ads_on_load_event.html")
   );
+  await waitForPageWithAdImpressions();
 
   await assertSearchSourcesTelemetry(
     {},
@@ -110,7 +116,7 @@ add_task(async function test_track_ad_on_load_event() {
     }
   );
 
-  assertImpressionEvents([
+  assertSERPTelemetry([
     {
       impression: {
         provider: "slow-page-load",
@@ -121,6 +127,14 @@ add_task(async function test_track_ad_on_load_event() {
         is_private: "false",
         shopping_tab_displayed: "false",
       },
+      adImpressions: [
+        {
+          component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+          ads_loaded: "2",
+          ads_visible: "2",
+          ads_hidden: "0",
+        },
+      ],
     },
   ]);
 

@@ -289,23 +289,8 @@ function ParamSubstitution(paramValue, searchTerms, engine) {
     }
 
     // moz: parameters are only available for default search engines.
-    if (name.startsWith("moz:") && engine.isAppProvided) {
-      // {moz:locale} is common.
-      if (name == lazy.SearchUtils.MOZ_PARAM.LOCALE) {
-        return Services.locale.requestedLocale;
-      }
-
-      // {moz:date}
-      if (name == lazy.SearchUtils.MOZ_PARAM.DATE) {
-        let date = new Date();
-        let pad = number => number.toString().padStart(2, "0");
-        return (
-          String(date.getFullYear()) +
-          pad(date.getMonth() + 1) +
-          pad(date.getDate()) +
-          pad(date.getHours())
-        );
-      }
+    if (engine.isAppProvided && name == lazy.SearchUtils.MOZ_PARAM.LOCALE) {
+      return Services.locale.requestedLocale;
     }
 
     // Handle the less common OpenSearch parameters we're confident about.
@@ -589,8 +574,6 @@ export class SearchEngine {
   _queryCharset = null;
   // The engine's raw SearchForm value (URL string pointing to a search form).
   #cachedSearchForm = null;
-  // Whether or not to send an attribution request to the server.
-  _sendAttributionRequest = false;
   // The order hint from the configuration (if any).
   _orderHint = null;
   // The telemetry id from the configuration (if any).
@@ -694,7 +677,7 @@ export class SearchEngine {
   }
 
   /**
-   * Add an icon to the icon map used by getIconURIBySize() and getIcons().
+   * Add an icon to the icon map used by getIconURL().
    *
    * @param {number} width
    *   Width of the icon.
@@ -718,7 +701,7 @@ export class SearchEngine {
   /**
    * Sets the .iconURI property of the engine. If both aWidth and aHeight are
    * provided an entry will be added to _iconMapObj that will enable accessing
-   * icon's data through getIcons() and getIconURIBySize() APIs.
+   * icon's data through getIconURL() APIs.
    *
    * @param {string} iconURL
    *   A URI string pointing to the engine's icon. Must have a http[s]
@@ -926,8 +909,6 @@ export class SearchEngine {
   _initWithDetails(details, configuration = {}) {
     this._orderHint = configuration.orderHint;
     this._name = details.name.trim();
-    this._sendAttributionRequest =
-      configuration.sendAttributionRequest ?? false;
 
     this._definedAliases = [];
     if (Array.isArray(details.keyword)) {
@@ -1027,6 +1008,10 @@ export class SearchEngine {
       this._urls.push(trending);
     }
 
+    if (configuration.clickUrl) {
+      this.clickUrl = configuration.clickUrl;
+    }
+
     if (details.encoding) {
       this._queryCharset = details.encoding;
     }
@@ -1053,7 +1038,8 @@ export class SearchEngine {
 
     return (
       existingSubmission.uri.equals(newSubmission.uri) &&
-      existingSubmission.postData == newSubmission.postData
+      existingSubmission.postData?.data.data ==
+        newSubmission.postData?.data.data
     );
   }
 
@@ -1293,13 +1279,6 @@ export class SearchEngine {
     }
   }
 
-  get iconURI() {
-    if (this._iconURI) {
-      return this._iconURI;
-    }
-    return null;
-  }
-
   get _iconURL() {
     if (!this._iconURI) {
       return "";
@@ -1400,10 +1379,6 @@ export class SearchEngine {
     }
 
     return ParamSubstitution(this._searchForm, "", this);
-  }
-
-  get sendAttributionRequest() {
-    return this._sendAttributionRequest;
   }
 
   get queryCharset() {
@@ -1650,60 +1625,33 @@ export class SearchEngine {
   }
 
   /**
-   * Returns a string with the URL to an engine's icon matching both width and
-   * height. Returns null if icon with specified dimensions is not found.
+   * Retrieves the icon URL for this search engine, if any.
    *
-   * @param {number} width
-   *   Width of the requested icon.
-   * @param {number} height
-   *   Height of the requested icon.
-   * @returns {string|null}
+   * @param {number} preferredWidth
+   *   Width of the requested icon. If not specified, it is assumed that
+   *   16x16 is desired.
+   * @returns {string|undefined}
    */
-  getIconURLBySize(width, height) {
-    if (width == 16 && height == 16) {
-      return this._iconURL;
+  getIconURL(preferredWidth) {
+    // XPCOM interfaces pass optional number parameters as 0 and can't be
+    // handled in the same way.
+    if (!preferredWidth) {
+      preferredWidth = 16;
+    }
+
+    if (preferredWidth == 16) {
+      return this._iconURL || undefined;
     }
 
     if (!this._iconMapObj) {
-      return null;
+      return undefined;
     }
 
-    let key = this._getIconKey(width, height);
+    let key = this._getIconKey(preferredWidth, preferredWidth);
     if (key in this._iconMapObj) {
       return this._iconMapObj[key];
     }
-    return null;
-  }
-
-  /**
-   * Gets an array of all available icons. Each entry is an object with
-   * width, height and url properties. width and height are numeric and
-   * represent the icon's dimensions. url is a string with the URL for
-   * the icon.
-   *
-   * @returns {Array<object>}
-   *   An array of objects with width/height/url parameters.
-   */
-  getIcons() {
-    let result = [];
-    if (this._iconURL) {
-      result.push({ width: 16, height: 16, url: this._iconURL });
-    }
-
-    if (!this._iconMapObj) {
-      return result;
-    }
-
-    for (let key of Object.keys(this._iconMapObj)) {
-      let iconSize = JSON.parse(key);
-      result.push({
-        width: iconSize.width,
-        height: iconSize.height,
-        url: this._iconMapObj[key],
-      });
-    }
-
-    return result;
+    return undefined;
   }
 
   /**

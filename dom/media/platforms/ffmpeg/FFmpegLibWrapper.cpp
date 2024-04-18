@@ -44,6 +44,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
       // Due to current AVCodecContext binary incompatibility we can only
       // support FFmpeg 57 at this stage.
       Unlink();
+      FFMPEGP_LOG("FFmpeg 57 is banned due to binary incompatibility");
       return LinkResult::CannotUseLibAV57;
     }
 #ifdef MOZ_FFMPEG
@@ -52,6 +53,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
       // Refuse any libavcodec version prior to 54.35.1.
       // (Unless media.libavcodec.allow-obsolete==true)
       Unlink();
+      FFMPEGP_LOG("libavcodec version prior to 54.35.1 is too old");
       return LinkResult::BlockedOldLibAVVersion;
     }
 #endif
@@ -115,25 +117,28 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
                       : LinkResult::UnknownFutureLibAVVersion;
   }
 
-#define AV_FUNC_OPTION_SILENT(func, ver)                              \
-  if ((ver)&version) {                                                \
-    if (!((func) = (decltype(func))PR_FindSymbol(                     \
-              ((ver)&AV_FUNC_AVUTIL_MASK) ? mAVUtilLib : mAVCodecLib, \
-              #func))) {                                              \
-    }                                                                 \
-  } else {                                                            \
-    (func) = (decltype(func))nullptr;                                 \
+  FFMPEGP_LOG("version: 0x%x, macro: %d, micro: %d, isFFMpeg: %s", version,
+              macro, micro, isFFMpeg ? "yes" : "no");
+
+#define AV_FUNC_OPTION_SILENT(func, ver)                                \
+  if ((ver) & version) {                                                \
+    if (!((func) = (decltype(func))PR_FindSymbol(                       \
+              ((ver) & AV_FUNC_AVUTIL_MASK) ? mAVUtilLib : mAVCodecLib, \
+              #func))) {                                                \
+    }                                                                   \
+  } else {                                                              \
+    (func) = (decltype(func))nullptr;                                   \
   }
 
-#define AV_FUNC_OPTION(func, ver)                           \
-  AV_FUNC_OPTION_SILENT(func, ver)                          \
-  if ((ver)&version && (func) == (decltype(func))nullptr) { \
-    FFMPEGP_LOG("Couldn't load function " #func);           \
+#define AV_FUNC_OPTION(func, ver)                             \
+  AV_FUNC_OPTION_SILENT(func, ver)                            \
+  if ((ver) & version && (func) == (decltype(func))nullptr) { \
+    FFMPEGP_LOG("Couldn't load function " #func);             \
   }
 
 #define AV_FUNC(func, ver)                              \
   AV_FUNC_OPTION(func, ver)                             \
-  if ((ver)&version && !(func)) {                       \
+  if ((ver) & version && !(func)) {                     \
     Unlink();                                           \
     return isFFMpeg ? LinkResult::MissingFFMpegFunction \
                     : LinkResult::MissingLibAVFunction; \
@@ -149,6 +154,8 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
                                      AV_FUNC_56 | AV_FUNC_57 | AV_FUNC_58)
   AV_FUNC(avcodec_find_decoder, AV_FUNC_AVCODEC_ALL)
   AV_FUNC(avcodec_find_decoder_by_name, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60)
+  AV_FUNC(avcodec_find_encoder, AV_FUNC_AVCODEC_ALL)
+  AV_FUNC(avcodec_find_encoder_by_name, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60)
   AV_FUNC(avcodec_flush_buffers, AV_FUNC_AVCODEC_ALL)
   AV_FUNC(avcodec_open2, AV_FUNC_AVCODEC_ALL)
   AV_FUNC(avcodec_register_all, AV_FUNC_53 | AV_FUNC_54 | AV_FUNC_55 |
@@ -162,9 +169,14 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
   AV_FUNC(avcodec_get_frame_defaults, (AV_FUNC_53 | AV_FUNC_54))
   AV_FUNC(avcodec_free_frame, AV_FUNC_54)
   AV_FUNC(avcodec_send_packet, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60)
+  AV_FUNC(avcodec_receive_packet, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60)
+  AV_FUNC(avcodec_send_frame, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60)
   AV_FUNC(avcodec_receive_frame, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60)
   AV_FUNC(avcodec_default_get_buffer2, (AV_FUNC_55 | AV_FUNC_56 | AV_FUNC_57 |
                                         AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60))
+  AV_FUNC(av_packet_alloc, (AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60))
+  AV_FUNC(av_packet_unref, (AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60))
+  AV_FUNC(av_packet_free, (AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60))
   AV_FUNC_OPTION(av_rdft_init, AV_FUNC_AVCODEC_ALL)
   AV_FUNC_OPTION(av_rdft_calc, AV_FUNC_AVCODEC_ALL)
   AV_FUNC_OPTION(av_rdft_end, AV_FUNC_AVCODEC_ALL)
@@ -179,6 +191,12 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
           (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
            AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60))
   AV_FUNC(av_frame_unref,
+          (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
+           AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60))
+  AV_FUNC(av_frame_get_buffer,
+          (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
+           AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60))
+  AV_FUNC(av_frame_make_writable,
           (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
            AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60))
   AV_FUNC(av_image_check_size, AV_FUNC_AVUTIL_ALL)
@@ -202,6 +220,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
   AV_FUNC(av_get_sample_fmt_name, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_dict_set, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_dict_free, AV_FUNC_AVUTIL_ALL)
+  AV_FUNC(av_opt_set, AV_FUNC_AVUTIL_ALL)
 
 #ifdef MOZ_WIDGET_GTK
   AV_FUNC_OPTION_SILENT(avcodec_get_hw_config,

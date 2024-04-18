@@ -32,6 +32,10 @@ void MacroAssembler::moveGPRToFloat32(Register src, FloatRegister dest) {
   ma_vxfer(src, dest);
 }
 
+void MacroAssembler::move8ZeroExtend(Register src, Register dest) {
+  as_uxtb(dest, src, 0);
+}
+
 void MacroAssembler::move8SignExtend(Register src, Register dest) {
   as_sxtb(dest, src, 0);
 }
@@ -2357,6 +2361,12 @@ void MacroAssembler::branchToComputedAddress(const BaseIndex& addr) {
     // add one extra instruction to accomodate for this shifted offset.
     breakpoint();
   }
+}
+
+void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Imm32 rhs,
+                                 Register src, Register dest) {
+  cmp32(lhs, rhs);
+  ma_mov(src, dest, LeaveCC, cond);
 }
 
 void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Register rhs,

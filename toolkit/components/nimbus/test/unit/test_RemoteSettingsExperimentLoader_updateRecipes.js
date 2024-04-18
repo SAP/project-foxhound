@@ -6,8 +6,11 @@ const { ExperimentFakes, ExperimentTestUtils } = ChromeUtils.importESModule(
 const { FirstStartup } = ChromeUtils.importESModule(
   "resource://gre/modules/FirstStartup.sys.mjs"
 );
-const { NimbusFeatures, _ExperimentFeature: ExperimentFeature } =
-  ChromeUtils.importESModule("resource://nimbus/ExperimentAPI.sys.mjs");
+const {
+  ExperimentAPI,
+  NimbusFeatures,
+  _ExperimentFeature: ExperimentFeature,
+} = ChromeUtils.importESModule("resource://nimbus/ExperimentAPI.sys.mjs");
 const { EnrollmentsContext } = ChromeUtils.importESModule(
   "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs"
 );
@@ -1635,3 +1638,120 @@ add_task(async function test_enrollment_targeting() {
   await assertEmptyStore(manager.store, { cleanup: true });
   cleanupFeatures();
 });
+
+add_task(async function test_update_experiments_ordered_by_published_date() {
+  const manager = ExperimentFakes.manager();
+  const sandbox = sinon.createSandbox();
+  const loader = ExperimentFakes.rsLoader();
+  loader.manager = manager;
+  const RECIPE_NO_PUBLISHED_DATE_1 = ExperimentFakes.recipe("foo");
+  const RECIPE_NO_PUBLISHED_DATE_2 = ExperimentFakes.recipe("bar");
+  const RECIPE_PUBLISHED_DATE_1 = ExperimentFakes.recipe("baz", {
+    publishedDate: `2024-01-05T12:00:00Z`,
+  });
+  const RECIPE_PUBLISHED_DATE_2 = ExperimentFakes.recipe("qux", {
+    publishedDate: `2024-01-03T12:00:00Z`,
+  });
+  const onRecipe = sandbox.stub(manager, "onRecipe");
+  sinon
+    .stub(loader.remoteSettingsClient, "get")
+    .resolves([
+      RECIPE_NO_PUBLISHED_DATE_1,
+      RECIPE_PUBLISHED_DATE_1,
+      RECIPE_PUBLISHED_DATE_2,
+      RECIPE_NO_PUBLISHED_DATE_2,
+    ]);
+  sandbox.stub(manager.store, "ready").resolves();
+
+  await loader.init();
+
+  ok(onRecipe.getCall(0).calledWithMatch({ slug: "foo" }, "rs-loader"));
+  ok(onRecipe.getCall(1).calledWithMatch({ slug: "bar" }, "rs-loader"));
+  ok(onRecipe.getCall(2).calledWithMatch({ slug: "qux" }, "rs-loader"));
+  ok(onRecipe.getCall(3).calledWithMatch({ slug: "baz" }, "rs-loader"));
+
+  await assertEmptyStore(manager.store);
+});
+
+add_task(
+  async function test_record_is_ready_no_value_for_nimbus_is_ready_feature() {
+    const sandbox = sinon.createSandbox();
+    const loader = ExperimentFakes.rsLoader();
+    const manager = loader.manager;
+
+    sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
+    sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
+
+    await loader.init();
+    await manager.onStartup();
+    await manager.store.ready();
+
+    sandbox.stub(loader.remoteSettingsClient, "get").resolves([]);
+
+    await Services.fog.testFlushAllChildren();
+    Services.fog.testResetFOG();
+    await loader.updateRecipes();
+
+    const isReadyEvents = Glean.nimbusEvents.isReady.testGetValue();
+
+    Assert.equal(isReadyEvents.length, 1);
+
+    await assertEmptyStore(manager.store);
+  }
+);
+
+add_task(
+  async function test_record_is_ready_set_value_for_nimbus_is_ready_feature() {
+    const sandbox = sinon.createSandbox();
+    const loader = ExperimentFakes.rsLoader();
+    const manager = loader.manager;
+
+    sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
+    sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
+
+    const slug = "foo";
+    const EXPERIMENT = ExperimentFakes.recipe(slug, {
+      branches: [
+        {
+          slug: "wsup",
+          ratio: 1,
+          features: [
+            {
+              featureId: "nimbusIsReady",
+              value: { eventCount: 3 },
+            },
+          ],
+        },
+      ],
+      bucketConfig: {
+        ...ExperimentFakes.recipe.bucketConfig,
+        count: 1000,
+      },
+    });
+
+    await loader.init();
+    await manager.onStartup();
+    await manager.store.ready();
+
+    sandbox.stub(loader.remoteSettingsClient, "get").resolves([EXPERIMENT]);
+
+    await Services.fog.testFlushAllChildren();
+    Services.fog.testResetFOG();
+    await loader.updateRecipes();
+
+    const enrollment = manager.store.get(slug);
+    Assert.equal(
+      enrollment?.active,
+      true,
+      `Enrollment exists for ${slug} and is active`
+    );
+
+    const isReadyEvents = Glean.nimbusEvents.isReady.testGetValue();
+
+    Assert.equal(isReadyEvents.length, 3);
+    manager.unenroll(EXPERIMENT.slug);
+    await assertEmptyStore(manager.store, { cleanup: true });
+
+    sandbox.restore();
+  }
+);

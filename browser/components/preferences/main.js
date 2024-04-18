@@ -86,6 +86,8 @@ Preferences.addAll([
   { id: "browser.warnOnQuitShortcut", type: "bool" },
   { id: "browser.tabs.warnOnOpen", type: "bool" },
   { id: "browser.ctrlTab.sortByRecentlyUsed", type: "bool" },
+  { id: "browser.tabs.cardPreview.enabled", type: "bool" },
+  { id: "browser.tabs.cardPreview.showThumbnails", type: "bool" },
 
   // CFR
   {
@@ -189,10 +191,6 @@ if (AppConstants.MOZ_UPDATER) {
 
   if (AppConstants.NIGHTLY_BUILD) {
     Preferences.addAll([{ id: "app.update.suppressPrompts", type: "bool" }]);
-  }
-
-  if (AppConstants.MOZ_MAINTENANCE_SERVICE) {
-    Preferences.addAll([{ id: "app.update.service.enabled", type: "bool" }]);
   }
 }
 
@@ -354,6 +352,15 @@ var gMainPane = {
       } catch (ex) {}
     }
 
+    let thumbsCheckbox = document.getElementById("tabPreviewShowThumbnails");
+    let cardPreviewEnabledPref = Preferences.get(
+      "browser.tabs.cardPreview.enabled"
+    );
+    let maybeShowThumbsCheckbox = () =>
+      (thumbsCheckbox.hidden = !cardPreviewEnabledPref.value);
+    cardPreviewEnabledPref.on("change", maybeShowThumbsCheckbox);
+    maybeShowThumbsCheckbox();
+
     // The "opening multiple tabs might slow down Firefox" warning provides
     // an option for not showing this warning again. When the user disables it,
     // we provide checkboxes to re-enable the warning.
@@ -423,7 +430,15 @@ var gMainPane = {
       NimbusFeatures.windowsLaunchOnLogin.recordExposureEvent({
         once: true,
       });
-      if (NimbusFeatures.windowsLaunchOnLogin.getVariable("enabled")) {
+      // We do a check here for startWithLastProfile as we could
+      // have disabled the pref for the user before they're ever
+      // exposed to the experiment on a new profile.
+      if (
+        NimbusFeatures.windowsLaunchOnLogin.getVariable("enabled") &&
+        Cc["@mozilla.org/toolkit/profile-service;1"].getService(
+          Ci.nsIToolkitProfileService
+        ).startWithLastProfile
+      ) {
         document.getElementById("windowsLaunchOnLoginBox").hidden = false;
       }
     }
@@ -626,9 +641,6 @@ var gMainPane = {
       ) {
         document.getElementById("updateAllowDescription").hidden = true;
         document.getElementById("updateSettingsContainer").hidden = true;
-        if (updateDisabled && AppConstants.MOZ_MAINTENANCE_SERVICE) {
-          document.getElementById("useService").hidden = true;
-        }
       } else {
         // Start with no option selected since we are still reading the value
         document.getElementById("autoDesktop").removeAttribute("selected");
@@ -659,17 +671,8 @@ var gMainPane = {
         let launchOnLoginCheckbox = document.getElementById(
           "windowsLaunchOnLogin"
         );
-        let registryName = WindowsLaunchOnLogin.getLaunchOnLoginRegistryName();
-        WindowsLaunchOnLogin.withLaunchOnLoginRegistryKey(async wrk => {
-          try {
-            // Reflect registry key value in about:preferences
-            launchOnLoginCheckbox.checked = wrk.hasValue(registryName);
-          } catch (e) {
-            // We should only end up here if we fail to open the registry
-            console.error("Failed to open Windows registry", e);
-          }
-        });
-
+        launchOnLoginCheckbox.checked =
+          WindowsLaunchOnLogin.getLaunchOnLoginEnabled();
         let approvedByWindows = WindowsLaunchOnLogin.getLaunchOnLoginApproved();
         launchOnLoginCheckbox.disabled = !approvedByWindows;
         document.getElementById("windowsLaunchOnLoginDisabledBox").hidden =
@@ -685,27 +688,6 @@ var gMainPane = {
         document.getElementById(
           "updateSettingCrossUserWarningDesc"
         ).hidden = false;
-      }
-
-      if (AppConstants.MOZ_MAINTENANCE_SERVICE) {
-        // Check to see if the maintenance service is installed.
-        // If it isn't installed, don't show the preference at all.
-        let installed;
-        try {
-          let wrk = Cc["@mozilla.org/windows-registry-key;1"].createInstance(
-            Ci.nsIWindowsRegKey
-          );
-          wrk.open(
-            wrk.ROOT_KEY_LOCAL_MACHINE,
-            "SOFTWARE\\Mozilla\\MaintenanceService",
-            wrk.ACCESS_READ | wrk.WOW64_64
-          );
-          installed = wrk.readIntValue("Installed");
-          wrk.close();
-        } catch (e) {}
-        if (installed != 1) {
-          document.getElementById("useService").hidden = true;
-        }
       }
     }
 
@@ -747,13 +729,15 @@ var gMainPane = {
       this._sortColumn = document.getElementById("typeColumn");
     }
 
-    let browserBundle = document.getElementById("browserBundle");
-    appendSearchKeywords("browserContainersSettings", [
-      browserBundle.getString("userContextPersonal.label"),
-      browserBundle.getString("userContextWork.label"),
-      browserBundle.getString("userContextBanking.label"),
-      browserBundle.getString("userContextShopping.label"),
-    ]);
+    appendSearchKeywords(
+      "browserContainersSettings",
+      [
+        "user-context-personal",
+        "user-context-work",
+        "user-context-banking",
+        "user-context-shopping",
+      ].map(ContextualIdentityService.formatContextLabel)
+    );
 
     AppearanceChooser.init();
 
@@ -1633,7 +1617,7 @@ var gMainPane = {
     startupPref.value = newValue;
   },
 
-  onWindowsLaunchOnLoginChange(event) {
+  async onWindowsLaunchOnLoginChange(event) {
     if (AppConstants.platform !== "win") {
       return;
     }
@@ -1645,8 +1629,9 @@ var gMainPane = {
         true
       );
     } else {
-      // windowsLaunchOnLogin has been unchecked: delete registry key
+      // windowsLaunchOnLogin has been unchecked: delete registry key and shortcut
       WindowsLaunchOnLogin.removeLaunchOnLoginRegistryKey();
+      await WindowsLaunchOnLogin.removeLaunchOnLoginShortcuts();
     }
   },
 
@@ -1734,7 +1719,7 @@ var gMainPane = {
   /**
    * Set browser as the operating system default browser.
    */
-  setDefaultBrowser() {
+  async setDefaultBrowser() {
     if (AppConstants.HAVE_SHELL_SERVICE) {
       let alwaysCheckPref = Preferences.get(
         "browser.shell.checkDefaultBrowser"
@@ -1748,11 +1733,20 @@ var gMainPane = {
       if (!shellSvc) {
         return;
       }
+
+      // Disable the set default button, so that the user doesn't try to hit it again
+      // while awaiting on setDefaultBrowser
+      let setDefaultButton = document.getElementById("setDefaultButton");
+      setDefaultButton.disabled = true;
+
       try {
-        shellSvc.setDefaultBrowser(false);
+        await shellSvc.setDefaultBrowser(false);
       } catch (ex) {
         console.error(ex);
         return;
+      } finally {
+        // Make sure to re-enable the default button when we're finished, regardless of the outcome
+        setDefaultButton.disabled = false;
       }
 
       let isDefault = shellSvc.isDefaultBrowser(false, true);
@@ -3723,7 +3717,7 @@ let gHandlerListItemFragment = MozXULElement.parseXULToFragment(`
       <label class="actionDescription" flex="1" crop="end"/>
     </hbox>
     <hbox class="actionsMenuContainer" flex="1">
-      <menulist class="actionsMenu" flex="1" crop="end" selectedIndex="1">
+      <menulist class="actionsMenu" flex="1" crop="end" selectedIndex="1" aria-labelledby="actionColumn">
         <menupopup/>
       </menulist>
     </hbox>
@@ -4164,22 +4158,10 @@ const AppearanceChooser = {
       });
     }
 
-    // Forward the click to the "colors" button.
-    document
-      .getElementById("web-appearance-manage-colors-link")
-      .addEventListener("click", function (e) {
-        document.getElementById("colors").click();
-        e.preventDefault();
-      });
-
-    document
-      .getElementById("web-appearance-manage-themes-link")
-      .addEventListener("click", function (e) {
-        window.browsingContext.topChromeWindow.BrowserOpenAddonsMgr(
-          "addons://list/theme"
-        );
-        e.preventDefault();
-      });
+    let webAppearanceSettings = document.getElementById(
+      "webAppearanceSettings"
+    );
+    webAppearanceSettings.addEventListener("click", this);
 
     this.warning = document.getElementById("web-appearance-override-warning");
 
@@ -4195,6 +4177,23 @@ const AppearanceChooser = {
   },
 
   handleEvent(e) {
+    if (e.type == "click") {
+      switch (e.target.id) {
+        // Forward the click to the "colors" button.
+        case "web-appearance-manage-colors-link":
+          document.getElementById("colors").click();
+          e.preventDefault();
+          break;
+        case "web-appearance-manage-themes-link":
+          window.browsingContext.topChromeWindow.BrowserOpenAddonsMgr(
+            "addons://list/theme"
+          );
+          e.preventDefault();
+          break;
+        default:
+          break;
+      }
+    }
     this._update();
   },
 

@@ -453,7 +453,7 @@ UtilityProcessManager::GetWindowsUtilsPromise() {
 void UtilityProcessManager::ReleaseWindowsUtils() { mWindowsUtils = nullptr; }
 
 RefPtr<UtilityProcessManager::WinFileDialogPromise>
-UtilityProcessManager::CreateWinFileDialogAsync() {
+UtilityProcessManager::CreateWinFileDialogActor() {
   using Promise = WinFileDialogPromise;
   TimeStamp startTime = TimeStamp::Now();
   auto wfdp = MakeRefPtr<widget::filedialog::WinFileDialogParent>();

@@ -12,6 +12,7 @@
 #include "GeckoProfiler.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/EventQueue.h"
+#include "mozilla/Hal.h"
 #include "mozilla/InputTaskManager.h"
 #include "mozilla/VsyncTaskManager.h"
 #include "mozilla/IOInterposer.h"
@@ -39,7 +40,16 @@ int32_t TaskController::GetPoolThreadCount() {
     return strtol(PR_GetEnv("MOZ_TASKCONTROLLER_THREADCOUNT"), nullptr, 0);
   }
 
-  int32_t numCores = std::max<int32_t>(1, PR_GetNumberOfProcessors());
+  int32_t numCores = 0;
+#if defined(XP_MACOSX) && defined(__aarch64__)
+  if (const auto& cpuInfo = hal::GetHeterogeneousCpuInfo()) {
+    // -1 because of the main thread.
+    numCores = cpuInfo->mBigCpus.Count() + cpuInfo->mMediumCpus.Count() - 1;
+  } else
+#endif
+  {
+    numCores = std::max<int32_t>(1, PR_GetNumberOfProcessors());
+  }
 
   return std::clamp<int32_t>(numCores, kMinimumPoolThreadCount,
                              kMaximumPoolThreadCount);
@@ -47,10 +57,35 @@ int32_t TaskController::GetPoolThreadCount() {
 
 #if defined(MOZ_COLLECTING_RUNNABLE_TELEMETRY)
 
-struct TaskMarker {
-  static constexpr Span<const char> MarkerTypeName() {
-    return MakeStringSpan("Task");
+struct TaskMarker : BaseMarkerType<TaskMarker> {
+  static constexpr const char* Name = "Task";
+  static constexpr const char* Description =
+      "Marker representing a task being executed in TaskController.";
+
+  using MS = MarkerSchema;
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"name", MS::InputType::CString, "Task Name", MS::Format::String,
+       MS::PayloadFlags::Searchable},
+      {"priority", MS::InputType::Uint32, "Priority level",
+       MS::Format::Integer},
+      {"priorityName", MS::InputType::CString, "Priority Name"}};
+
+  static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
+                                               MS::Location::MarkerTable};
+  static constexpr const char* ChartLabel = "{marker.data.name}";
+  static constexpr const char* TableLabel =
+      "{marker.name} - {marker.data.name} - priority: "
+      "{marker.data.priorityName} ({marker.data.priority})";
+
+  static constexpr MS::ETWMarkerGroup Group = MS::ETWMarkerGroup::Scheduling;
+
+  static void TranslateMarkerInputToSchema(void* aContext,
+                                           const nsCString& aName,
+                                           uint32_t aPriority) {
+    ETW::OutputMarkerSchema(aContext, TaskMarker{}, aName, aPriority,
+                            ProfilerStringView(""));
   }
+
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
                                    const nsCString& aName, uint32_t aPriority) {
     aWriter.StringProperty("name", aName);
@@ -66,27 +101,13 @@ struct TaskMarker {
       aWriter.StringProperty("priorityName", "Invalid Value");
     }
   }
-  static MarkerSchema MarkerTypeDisplay() {
-    using MS = MarkerSchema;
-    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.SetChartLabel("{marker.data.name}");
-    schema.SetTableLabel(
-        "{marker.name} - {marker.data.name} - priority: "
-        "{marker.data.priorityName} ({marker.data.priority})");
-    schema.AddKeyLabelFormatSearchable("name", "Task Name", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormat("priorityName", "Priority Name",
-                             MS::Format::String);
-    schema.AddKeyLabelFormat("priority", "Priority level", MS::Format::Integer);
-    return schema;
-  }
 };
 
 class MOZ_RAII AutoProfileTask {
  public:
   explicit AutoProfileTask(nsACString& aName, uint64_t aPriority)
       : mName(aName), mPriority(aPriority) {
-    if (profiler_is_active()) {
+    if (profiler_is_collecting_markers()) {
       mStartTime = TimeStamp::Now();
     }
   }
@@ -446,7 +467,15 @@ void TaskController::AddTask(already_AddRefed<Task>&& aTask) {
       insertion;
   switch (task->GetKind()) {
     case Task::Kind::MainThreadOnly:
-      insertion = mMainThreadTasks.insert(std::move(task));
+      if (task->GetPriority() >=
+              static_cast<uint32_t>(EventQueuePriority::Normal) &&
+          !mMainThreadTasks.empty()) {
+        insertion = std::pair(
+            mMainThreadTasks.insert(--mMainThreadTasks.end(), std::move(task)),
+            true);
+      } else {
+        insertion = mMainThreadTasks.insert(std::move(task));
+      }
       break;
     case Task::Kind::OffMainThreadOnly:
       insertion = mThreadableTasks.insert(std::move(task));

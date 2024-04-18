@@ -2487,12 +2487,7 @@ bool JSScript::fullyInitFromStencil(
       script->setMemberInitializers(lazyData.get()->getMemberInitializers());
     }
   }
-
   auto* scriptData = stencil.sharedData.get(scriptIndex);
-  MOZ_ASSERT_IF(
-      script->isGenerator() || script->isAsync(),
-      scriptData->nfixed() <= frontend::ParseContext::Scope::FixedSlotLimit);
-
   script->initSharedData(scriptData);
 
   // NOTE: JSScript is now constructed and should be linked in.
@@ -3269,10 +3264,6 @@ void JSScript::resetWarmUpCounterToDelayIonCompilation() {
   }
 }
 
-gc::AllocSite* JSScript::createAllocSite() {
-  return jitScript()->createAllocSite(this);
-}
-
 #if defined(DEBUG) || defined(JS_JITSPEW)
 
 void JSScript::dump(JSContext* cx) {
@@ -3403,7 +3394,7 @@ bool JSScript::dump(JSContext* cx, JS::Handle<JSScript*> script,
     }
 
     json.property("lineno", script->lineno());
-    json.property("column", script->column().zeroOriginValue());
+    json.property("column", script->column().oneOriginValue());
 
     json.beginListProperty("immutableFlags");
     DumpImmutableScriptFlags(json, script->immutableFlags());
@@ -3510,7 +3501,7 @@ bool JSScript::dumpSrcNotes(JSContext* cx, JS::Handle<JSScript*> script,
     SrcNoteType type = sn->type();
     const char* name = sn->name();
     sp->printf("%3u: %4u %6u %5u [%4u] %-16s", unsigned(sn - notes), lineno,
-               column.zeroOriginValue(), offset, delta, name);
+               column.oneOriginValue(), offset, delta, name);
 
     switch (type) {
       case SrcNoteType::Breakpoint:
@@ -3534,7 +3525,7 @@ bool JSScript::dumpSrcNotes(JSContext* cx, JS::Handle<JSScript*> script,
       case SrcNoteType::SetLineColumn:
         lineno = SrcNote::SetLineColumn::getLine(sn, script->lineno());
         column = SrcNote::SetLineColumn::getColumn(sn);
-        sp->printf(" lineno %u column %u", lineno, column.zeroOriginValue());
+        sp->printf(" lineno %u column %u", lineno, column.oneOriginValue());
         break;
 
       case SrcNoteType::NewLine:
@@ -3544,7 +3535,7 @@ bool JSScript::dumpSrcNotes(JSContext* cx, JS::Handle<JSScript*> script,
 
       case SrcNoteType::NewLineColumn:
         column = SrcNote::NewLineColumn::getColumn(sn);
-        sp->printf(" column %u", column.zeroOriginValue());
+        sp->printf(" column %u", column.oneOriginValue());
         ++lineno;
         break;
 
@@ -3650,7 +3641,7 @@ bool JSScript::dumpGCThings(JSContext* cx, JS::Handle<JSScript*> script,
         if (fun->hasBaseScript()) {
           BaseScript* script = fun->baseScript();
           sp->printf(" @ %u:%u\n", script->lineno(),
-                     script->column().zeroOriginValue());
+                     script->column().oneOriginValue());
         } else {
           sp->put(" (no script)\n");
         }

@@ -110,6 +110,7 @@ class nsGetterAddRefs;
 namespace mozilla {
 class DeclarationBlock;
 class MappedDeclarationsBuilder;
+class EditorBase;
 class ErrorResult;
 class OOMReporter;
 class SMILAttr;
@@ -485,25 +486,27 @@ class Element : public FragmentOrElement {
   inline Directionality GetDirectionality() const {
     ElementState state = State();
     if (state.HasState(ElementState::RTL)) {
-      return eDir_RTL;
+      return Directionality::Rtl;
     }
     if (state.HasState(ElementState::LTR)) {
-      return eDir_LTR;
+      return Directionality::Ltr;
     }
-    return eDir_NotSet;
+    return Directionality::Unset;
   }
 
   inline void SetDirectionality(Directionality aDir, bool aNotify) {
     AutoStateChangeNotifier notifier(*this, aNotify);
     RemoveStatesSilently(ElementState::DIR_STATES);
     switch (aDir) {
-      case eDir_RTL:
+      case Directionality::Rtl:
         AddStatesSilently(ElementState::RTL);
         break;
-      case eDir_LTR:
+      case Directionality::Ltr:
         AddStatesSilently(ElementState::LTR);
         break;
-      default:
+      case Directionality::Unset:
+      case Directionality::Auto:
+        MOZ_ASSERT_UNREACHABLE("Setting unresolved directionality?");
         break;
     }
   }
@@ -1279,6 +1282,16 @@ class Element : public FragmentOrElement {
    */
   MOZ_CAN_RUN_SCRIPT bool HasVisibleScrollbars();
 
+  /**
+   * Get an editor which handles user inputs when this element has focus.
+   * If this is a text control, return a TextEditor if it's already created.
+   * Otherwise, return nullptr.
+   * If this is not a text control but this is editable, return
+   * HTMLEditor which should've already been created.
+   * Otherwise, return nullptr.
+   */
+  EditorBase* GetEditorWithoutCreation() const;
+
  private:
   /**
    * Implement the algorithm specified at
@@ -1328,15 +1341,23 @@ class Element : public FragmentOrElement {
   bool ParseLoadingAttribute(const nsAString& aValue, nsAttrValue& aResult);
 
   // Shadow DOM v1
-  already_AddRefed<ShadowRoot> AttachShadow(const ShadowRootInit& aInit,
-                                            ErrorResult& aError);
+  enum class ShadowRootDeclarative : bool { No, Yes };
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  already_AddRefed<ShadowRoot> AttachShadow(
+      const ShadowRootInit& aInit, ErrorResult& aError,
+      ShadowRootDeclarative aNewShadowIsDeclarative =
+          ShadowRootDeclarative::No);
   bool CanAttachShadowDOM() const;
 
   enum class DelegatesFocus : bool { No, Yes };
+  enum class ShadowRootClonable : bool { No, Yes };
 
   already_AddRefed<ShadowRoot> AttachShadowWithoutNameChecks(
       ShadowRootMode aMode, DelegatesFocus = DelegatesFocus::No,
-      SlotAssignmentMode aSlotAssignmentMode = SlotAssignmentMode::Named);
+      SlotAssignmentMode aSlotAssignmentMode = SlotAssignmentMode::Named,
+      ShadowRootClonable aClonable = ShadowRootClonable::No,
+      ShadowRootDeclarative aDeclarative = ShadowRootDeclarative::No);
 
   // Attach UA Shadow Root if it is not attached.
   enum class NotifyUAWidgetSetup : bool { No, Yes };
@@ -2117,6 +2138,9 @@ class Element : public FragmentOrElement {
   virtual void GetLinkTarget(nsAString& aTarget);
 
   virtual bool Translate() const;
+
+  MOZ_CAN_RUN_SCRIPT
+  virtual void SetHTMLUnsafe(const nsAString& aHTML);
 
  protected:
   enum class ReparseAttributes { No, Yes };

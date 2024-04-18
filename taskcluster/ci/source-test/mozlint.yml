@@ -201,7 +201,6 @@ license:
             - '**/*.webidl'
             - '**/*.xhtml'
             - '**/*.xml'
-            - '**/*.xul'
             - 'tools/lint/license.yml'
 
 lintpref:
@@ -304,7 +303,7 @@ test-manifest:
         mach: lint -v -l test-manifest-alpha -l test-manifest-disable -l test-manifest-skip-if -f treeherder -f json:/builds/worker/mozlint.json .
     when:
         files-changed:
-            - '**/*.ini'
+            - '**/*.toml'
             - 'python/mozlint/**'
             - 'tools/lint/**'
             - 'tools/lint/test-disable.yml'
@@ -441,7 +440,17 @@ clippy:
             - 'tools/lint/clippy.yml'
     fetches:
         toolchain:
+            - linux64-clang
             - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-sccache
+            - linux64-nasm
+            - linux64-node
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+            - sysroot-wasm32-wasi
 
 
 file-whitespace:
@@ -465,15 +474,18 @@ file-whitespace:
             - '**/*.ftl'
             - '**/*.h'
             - '**/*.html'
+            - '**/*.json'
             - '**/*.md'
+            - '**/*.mn'
             - '**/*.properties'
             - '**/*.py'
             - '**/*.rs'
             - '**/*.rst'
             - '**/*.toml'
             - '**/*.webidl'
+            - '**/*.yaml'
+            - '**/*.yml'
             - '**/*.xhtml'
-            - 'tools/lint/file-whitespace.yml'
 
 
 file-perm:
@@ -498,12 +510,14 @@ file-perm:
             - '**/*.idl'
             - '**/*.js'
             - '**/*.jsm'
+            - '**/*.json'
             - '**/*.jsx'
             - '**/*.m'
             - '**/*.m4s'
             - '**/*.md'
             - '**/*.mjs'
             - '**/*.mm'
+            - '**/*.mn'
             - '**/*.mozbuild'
             - '**/*.mp4'
             - '**/*.png'
@@ -516,9 +530,8 @@ file-perm:
             - '**/*.webidl'
             - '**/*.xhtml'
             - '**/*.xml'
-            - '**/*.xul'
+            - '**/*.yaml'
             - '**/*.yml'
-            - 'tools/lint/file-perm.yml'
 
 
 perfdocs-verify:
@@ -539,7 +552,7 @@ perfdocs-verify:
         files-changed:
             - 'devtools/perfdocs/**'
             - 'taskcluster/**'
-            - '**/perftest.ini'
+            - '**/perftest.toml'
             - 'python/mozperftest/**'
             - 'testing/awsy/**'
             - 'testing/raptor/**'
@@ -548,6 +561,22 @@ perfdocs-verify:
             - 'testing/perfdocs/**'
             - 'tools/lint/perfdocs.yml'
 
+condprof-addons-verify:
+    description: |
+      Verifies all xpi files needed by condprof customization sideloading addons are
+      included in the firefox-addons fetch task.
+    treeherder:
+        symbol: misc(condprof-addons)
+    run:
+        mach: |
+            lint -v -l condprof-addons -f treeherder -f json:/builds/worker/mozlint.json .
+    fetches:
+        fetch:
+            - firefox-addons
+    when:
+        files-changed:
+            - 'testing/condprofile/condprof/customization/*.json'
+            - 'taskcluster/ci/fetch/browsertime.yml'
 
 fluent-lint:
     description: Check for problems with Fluent files.

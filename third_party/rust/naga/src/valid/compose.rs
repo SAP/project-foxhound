@@ -1,4 +1,3 @@
-#[cfg(feature = "validate")]
 use crate::proc::TypeResolution;
 
 use crate::arena::Handle;
@@ -14,7 +13,6 @@ pub enum ComposeError {
     ComponentType { index: u32 },
 }
 
-#[cfg(feature = "validate")]
 pub fn validate_compose(
     self_ty_handle: Handle<crate::Type>,
     gctx: crate::proc::GlobalCtx,
@@ -34,7 +32,12 @@ pub fn validate_compose(
                         scalar: comp_scalar,
                     } if comp_scalar == scalar => comp_size as u32,
                     ref other => {
-                        log::error!("Vector component[{}] type {:?}", index, other);
+                        log::error!(
+                            "Vector component[{}] type {:?}, building {:?}",
+                            index,
+                            other,
+                            scalar
+                        );
                         return Err(ComposeError::ComponentType {
                             index: index as u32,
                         });
@@ -52,12 +55,9 @@ pub fn validate_compose(
         Ti::Matrix {
             columns,
             rows,
-            width,
+            scalar,
         } => {
-            let inner = Ti::Vector {
-                size: rows,
-                scalar: crate::Scalar::float(width),
-            };
+            let inner = Ti::Vector { size: rows, scalar };
             if columns as usize != component_resolutions.len() {
                 return Err(ComposeError::ComponentCount {
                     expected: columns as u32,

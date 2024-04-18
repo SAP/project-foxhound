@@ -1113,23 +1113,28 @@ static void FinishAnyIncrementalGC() {
 }
 
 namespace geckoprofiler::markers {
-class CCSliceMarker {
+class CCSliceMarker : public BaseMarkerType<CCSliceMarker> {
  public:
-  static constexpr Span<const char> MarkerTypeName() {
-    return mozilla::MakeStringSpan("CCSlice");
-  }
+  static constexpr const char* Name = "CCSlice";
+  static constexpr const char* Description =
+      "Information for an individual CC slice.";
+
+  using MS = MarkerSchema;
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"idle", MS::InputType::Boolean, "Idle", MS::Format::Integer}};
+
+  static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
+                                               MS::Location::MarkerTable,
+                                               MS::Location::TimelineMemory};
+  static constexpr const char* AllLabels =
+      "{marker.name} (idle={marker.data.idle})";
+
+  static constexpr MS::ETWMarkerGroup Group = MS::ETWMarkerGroup::Memory;
+
   static void StreamJSONMarkerData(
       mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
       bool aIsDuringIdle) {
-    aWriter.BoolProperty("idle", aIsDuringIdle);
-  }
-  static MarkerSchema MarkerTypeDisplay() {
-    using MS = MarkerSchema;
-    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable,
-              MS::Location::TimelineMemory};
-    schema.SetAllLabels("{marker.name} (idle={marker.data.idle})");
-    schema.AddKeyLabelFormat("idle", "Idle", MS::Format::Integer);
-    return schema;
+    StreamJSONMarkerDataImpl(aWriter, aIsDuringIdle);
   }
 };
 }  // namespace geckoprofiler::markers
@@ -1569,10 +1574,19 @@ void nsJSContext::EndCycleCollectionCallback(
             StaticPrefs::javascript_options_gc_delay()) > kMaxICCDuration,
         "A max duration ICC shouldn't reduce GC delay to 0");
 
-    sScheduler->PokeGC(JS::GCReason::CC_FINISHED, nullptr,
-                       TimeDuration::FromMilliseconds(
-                           StaticPrefs::javascript_options_gc_delay()) -
-                           std::min(ccNowDuration, kMaxICCDuration));
+    TimeDuration delay;
+    if (aResults.mFreedGCed > 10000 && aResults.mFreedRefCounted > 10000) {
+      // If we collected lots of objects, trigger the next GC sooner so that
+      // GC can cut JS-to-native edges and native objects can be then deleted.
+      delay = TimeDuration::FromMilliseconds(
+          StaticPrefs::javascript_options_gc_delay_interslice());
+    } else {
+      delay = TimeDuration::FromMilliseconds(
+                  StaticPrefs::javascript_options_gc_delay()) -
+              std::min(ccNowDuration, kMaxICCDuration);
+    }
+
+    sScheduler->PokeGC(JS::GCReason::CC_FINISHED, nullptr, delay);
   }
 #if defined(MOZ_MEMORY)
   else if (
@@ -1876,7 +1890,7 @@ static void DOMGCSliceCallback(JSContext* aCx, JS::GCProgress aProgress,
         // If incremental GC wasn't triggered by GCTimerFired, we may not have a
         // runner to ensure all the slices are handled. So, create the runner
         // here.
-        sScheduler->EnsureGCRunner(0);
+        sScheduler->EnsureOrResetGCRunner();
       }
 
       if (sScheduler->IsCCNeeded(TimeStamp::Now(),

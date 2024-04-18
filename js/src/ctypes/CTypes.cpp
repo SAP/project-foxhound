@@ -7794,7 +7794,7 @@ static bool GetThisDataObject(JSContext* cx, const CallArgs& args,
   return true;
 }
 
-typedef JS::TwoByteCharsZ (*InflateUTF8Method)(JSContext*, const JS::UTF8Chars,
+typedef JS::TwoByteCharsZ (*InflateUTF8Method)(JSContext*, const JS::UTF8Chars&,
                                                size_t*, arena_id_t);
 
 static bool ReadStringCommon(JSContext* cx, InflateUTF8Method inflateUTF8,
@@ -8867,7 +8867,7 @@ bool Int64::Compare(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 #define LO_MASK ((uint64_t(1) << 32) - 1)
-#define INT64_LO(i) ((i)&LO_MASK)
+#define INT64_LO(i) ((i) & LO_MASK)
 #define INT64_HI(i) ((i) >> 32)
 
 bool Int64::Lo(JSContext* cx, unsigned argc, Value* vp) {

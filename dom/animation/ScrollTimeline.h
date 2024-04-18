@@ -196,6 +196,9 @@ class ScrollTimeline : public AnimationTimeline {
                              PseudoStyleType aPseudoType,
                              const StyleScrollTimeline& aNew);
 
+  void NotifyAnimationContentVisibilityChanged(Animation* aAnimation,
+                                               bool aIsVisible) override;
+
  protected:
   virtual ~ScrollTimeline() { Teardown(); }
   ScrollTimeline() = delete;

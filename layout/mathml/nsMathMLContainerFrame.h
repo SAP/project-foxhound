@@ -65,13 +65,6 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
   // --------------------------------------------------------------------------
   // Overloaded nsContainerFrame methods -- see documentation in nsIFrame.h
 
-  bool IsFrameOfType(uint32_t aFlags) const override {
-    if (aFlags & (eLineParticipant | eSupportsContainLayoutAndPaint)) {
-      return false;
-    }
-    return nsContainerFrame::IsFrameOfType(aFlags & ~eMathML);
-  }
-
   void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
 
   void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
@@ -428,10 +421,6 @@ class nsMathMLmathBlockFrame final : public nsBlockFrame {
     }
   }
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const override {
-    return nsBlockFrame::IsFrameOfType(aFlags & ~nsIFrame::eMathML);
-  }
-
   // See nsIMathMLFrame.h
   bool IsMrowLike() {
     return mFrames.FirstChild() != mFrames.LastChild() || !mFrames.FirstChild();
@@ -443,8 +432,8 @@ class nsMathMLmathBlockFrame final : public nsBlockFrame {
       : nsBlockFrame(aStyle, aPresContext, kClassID) {
     // We should always have a float manager.  Not that things can really try
     // to float out of us anyway, but we need one for line layout.
-    // Bug 1301881: Do we still need to set NS_BLOCK_FLOAT_MGR?
-    // AddStateBits(NS_BLOCK_FLOAT_MGR);
+    // Bug 1301881: Do we still need to set NS_BLOCK_STATIC_BFC?
+    // AddStateBits(NS_BLOCK_STATIC_BFC);
   }
   virtual ~nsMathMLmathBlockFrame() = default;
 };
@@ -501,10 +490,6 @@ class nsMathMLmathInlineFrame final : public nsInlineFrame,
     if (MOZ_LIKELY(aListID == mozilla::FrameChildListID::Principal)) {
       nsMathMLContainerFrame::ReLayoutChildren(this);
     }
-  }
-
-  bool IsFrameOfType(uint32_t aFlags) const override {
-    return nsInlineFrame::IsFrameOfType(aFlags & ~nsIFrame::eMathML);
   }
 
   bool IsMrowLike() override {

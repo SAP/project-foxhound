@@ -174,7 +174,9 @@ class HTMLEditor final : public EditorBase,
   bool CanPaste(int32_t aClipboardType) const final;
   using EditorBase::CanPaste;
 
-  MOZ_CAN_RUN_SCRIPT NS_IMETHOD DeleteNode(nsINode* aNode) final;
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD DeleteNode(nsINode* aNode,
+                                           bool aPreseveSelection,
+                                           uint8_t aOptionalArgCount) final;
 
   MOZ_CAN_RUN_SCRIPT NS_IMETHOD InsertLineBreak() final;
 
@@ -1909,6 +1911,9 @@ class HTMLEditor final : public EditorBase,
    *                            because it requires additional scan.
    */
   enum class PreserveWhiteSpaceStyle { No, Yes };
+  friend std::ostream& operator<<(
+      std::ostream& aStream,
+      const PreserveWhiteSpaceStyle aPreserveWhiteSpaceStyle);
   enum class RemoveIfCommentNode { No, Yes };
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<MoveNodeResult, nsresult>
   MoveNodeOrChildrenWithTransaction(
@@ -4681,11 +4686,10 @@ class MOZ_STACK_CLASS ParagraphStateAtSelection final {
 
   /**
    * CollectEditableFormatNodesInSelection() collects only editable nodes
-   * around selection ranges (with
-   * `AutoRangeArray::ExtendRangesToWrapLinesToHandleBlockLevelEditAction()` and
-   * `HTMLEditor::CollectEditTargetNodes()`, see its document for the detail).
-   * If it includes list, list item or table related elements, they will be
-   * replaced their children.
+   * around selection ranges (with `AutoRangeArray::ExtendRangesToWrapLines()`
+   * and `HTMLEditor::CollectEditTargetNodes()`, see its document for the
+   * detail). If it includes list, list item or table related elements, they
+   * will be replaced their children.
    *
    * @param aFormatBlockMode            Whether HTML formatBlock command or XUL
    *                                    paragraphState command.

@@ -16,17 +16,22 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
+  getTimeoutMultiplier: "chrome://remote/content/shared/AppInfo.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   modal: "chrome://remote/content/shared/Prompt.sys.mjs",
   registerNavigationId:
     "chrome://remote/content/shared/NavigationManager.sys.mjs",
   NavigationListener:
     "chrome://remote/content/shared/listeners/NavigationListener.sys.mjs",
+  OwnershipModel: "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
+  PollPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
   print: "chrome://remote/content/shared/PDF.sys.mjs",
   ProgressListener: "chrome://remote/content/shared/Navigate.sys.mjs",
   PromptListener:
     "chrome://remote/content/shared/listeners/PromptListener.sys.mjs",
+  setDefaultAndAssertSerializationOptions:
+    "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   waitForInitialNavigationCompleted:
     "chrome://remote/content/shared/Navigate.sys.mjs",
@@ -74,6 +79,22 @@ const CreateType = {
 };
 
 /**
+ * @typedef {string} LocatorType
+ */
+
+/**
+ * Enum of types supported by the browsingContext.locateNodes command.
+ *
+ * @readonly
+ * @enum {LocatorType}
+ */
+export const LocatorType = {
+  css: "css",
+  innerText: "innerText",
+  xpath: "xpath",
+};
+
+/**
  * @typedef {string} OriginType
  */
 
@@ -88,6 +109,8 @@ export const OriginType = {
   document: "document",
   viewport: "viewport",
 };
+
+const TIMEOUT_SET_HISTORY_INDEX = 1000;
 
 /**
  * Enum of user prompt types supported by the browsingContext.handleUserPrompt
@@ -427,11 +450,14 @@ class BrowsingContextModule extends Module {
     const {
       background = false,
       referenceContext: referenceContextId = null,
-      type,
+      type: typeHint,
     } = options;
-    if (type !== CreateType.tab && type !== CreateType.window) {
+
+    if (![CreateType.tab, CreateType.window].includes(typeHint)) {
       throw new lazy.error.InvalidArgumentError(
-        `Expected "type" to be one of ${Object.values(CreateType)}, got ${type}`
+        `Expected "type" to be one of ${Object.values(
+          CreateType
+        )}, got ${typeHint}`
       );
     }
 
@@ -448,6 +474,10 @@ class BrowsingContextModule extends Module {
     const previousWindow = Services.wm.getMostRecentBrowserWindow();
     const previousTab =
       lazy.TabManager.getTabBrowser(previousWindow).selectedTab;
+
+    // On Android there is only a single window allowed. As such fallback to
+    // open a new tab instead.
+    const type = lazy.AppInfo.isAndroid ? "tab" : typeHint;
 
     switch (type) {
       case "window":
@@ -695,6 +725,175 @@ class BrowsingContextModule extends Module {
     }
 
     throw new lazy.error.NoSuchAlertError();
+  }
+
+  /**
+   * Used as an argument for browsingContext.locateNodes command, as one of the available variants
+   * {CssLocator}, {InnerTextLocator} or {XPathLocator}, to represent a way of how lookup of nodes
+   * is going to be performed.
+   *
+   * @typedef Locator
+   */
+
+  /**
+   * Used as an argument for browsingContext.locateNodes command
+   * to represent a lookup by css selector.
+   *
+   * @typedef CssLocator
+   *
+   * @property {LocatorType} [type=LocatorType.css]
+   * @property {string} value
+   */
+
+  /**
+   * Used as an argument for browsingContext.locateNodes command
+   * to represent a lookup by inner text.
+   *
+   * @typedef InnerTextLocator
+   *
+   * @property {LocatorType} [type=LocatorType.innerText]
+   * @property {string} value
+   * @property {boolean=} ignoreCase
+   * @property {("full"|"partial")=} matchType
+   * @property {number=} maxDepth
+   */
+
+  /**
+   * Used as an argument for browsingContext.locateNodes command
+   * to represent a lookup by xpath.
+   *
+   * @typedef XPathLocator
+   *
+   * @property {LocatorType} [type=LocatorType.xpath]
+   * @property {string} value
+   */
+
+  /**
+   * Returns a list of all nodes matching
+   * the specified locator.
+   *
+   * @param {object} options
+   * @param {string} options.context
+   *     Id of the browsing context.
+   * @param {Locator} options.locator
+   *     The type of lookup which is going to be used.
+   * @param {number=} options.maxNodeCount
+   *     The maximum amount of nodes which is going to be returned.
+   *     Defaults to return all the found nodes.
+   * @param {OwnershipModel=} options.ownership
+   *     The ownership model to use for the serialization
+   *     of the DOM nodes. Defaults to `OwnershipModel.None`.
+   * @property {string=} sandbox
+   *     The name of the sandbox. If the value is null or empty
+   *     string, the default realm will be used.
+   * @property {SerializationOptions=} serializationOptions
+   *     An object which holds the information of how the DOM nodes
+   *     should be serialized.
+   * @property {Array<SharedReference>=} startNodes
+   *     A list of references to nodes, which are used as
+   *     starting points for lookup.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {InvalidSelectorError}
+   *     Raised if a locator value is invalid.
+   * @throws {NoSuchFrameError}
+   *     If the browsing context cannot be found.
+   * @throws {UnsupportedOperationError}
+   *     Raised when unsupported lookup types are used.
+   */
+  async locateNodes(options = {}) {
+    const {
+      context: contextId,
+      locator,
+      maxNodeCount = null,
+      ownership = lazy.OwnershipModel.None,
+      sandbox = null,
+      serializationOptions,
+      startNodes = null,
+    } = options;
+
+    lazy.assert.string(
+      contextId,
+      `Expected "context" to be a string, got ${contextId}`
+    );
+
+    const context = this.#getBrowsingContext(contextId);
+
+    lazy.assert.object(
+      locator,
+      `Expected "locator" to be an object, got ${locator}`
+    );
+
+    const locatorTypes = Object.values(LocatorType);
+
+    lazy.assert.that(
+      locatorType => locatorTypes.includes(locatorType),
+      `Expected "locator.type" to be one of ${locatorTypes}, got ${locator.type}`
+    )(locator.type);
+
+    if (![LocatorType.css, LocatorType.xpath].includes(locator.type)) {
+      throw new lazy.error.UnsupportedOperationError(
+        `"locator.type" argument with value: ${locator.type} is not supported yet.`
+      );
+    }
+
+    if (maxNodeCount != null) {
+      const maxNodeCountErrorMsg = `Expected "maxNodeCount" to be an integer and greater than 0, got ${maxNodeCount}`;
+      lazy.assert.that(maxNodeCount => {
+        lazy.assert.integer(maxNodeCount, maxNodeCountErrorMsg);
+        return maxNodeCount > 0;
+      }, maxNodeCountErrorMsg)(maxNodeCount);
+    }
+
+    const ownershipTypes = Object.values(lazy.OwnershipModel);
+    lazy.assert.that(
+      ownership => ownershipTypes.includes(ownership),
+      `Expected "ownership" to be one of ${ownershipTypes}, got ${ownership}`
+    )(ownership);
+
+    if (sandbox != null) {
+      lazy.assert.string(
+        sandbox,
+        `Expected "sandbox" to be a string, got ${sandbox}`
+      );
+    }
+
+    const serializationOptionsWithDefaults =
+      lazy.setDefaultAndAssertSerializationOptions(serializationOptions);
+
+    if (startNodes != null) {
+      lazy.assert.that(startNodes => {
+        lazy.assert.array(
+          startNodes,
+          `Expected "startNodes" to be an array, got ${startNodes}`
+        );
+        return !!startNodes.length;
+      }, `Expected "startNodes" to have at least one element, got ${startNodes}`)(
+        startNodes
+      );
+    }
+
+    const result = await this.messageHandler.forwardCommand({
+      moduleName: "browsingContext",
+      commandName: "_locateNodes",
+      destination: {
+        type: lazy.WindowGlobalMessageHandler.type,
+        id: context.id,
+      },
+      params: {
+        locator,
+        maxNodeCount,
+        resultOwnership: ownership,
+        sandbox,
+        serializationOptions: serializationOptionsWithDefaults,
+        startNodes,
+      },
+    });
+
+    return {
+      nodes: result.serializedNodes,
+    };
   }
 
   /**
@@ -1003,7 +1202,7 @@ class BrowsingContextModule extends Module {
    *
    * @throws {InvalidArgumentError}
    *     Raised if an argument is of an invalid type or value.
-   * @throws UnsupportedOperationError
+   * @throws {UnsupportedOperationError}
    *     Raised when the command is called on Android.
    */
   async setViewport(options = {}) {
@@ -1027,25 +1226,37 @@ class BrowsingContextModule extends Module {
         `Browsing Context with id ${contextId} is not top-level`
       );
     }
-    const browser = context.embedderElement;
 
-    if (typeof viewport !== "object") {
-      throw new lazy.error.InvalidArgumentError(
-        `Expected "viewport" to be an object or null, got ${viewport}`
-      );
-    }
+    const browser = context.embedderElement;
+    const currentHeight = browser.clientHeight;
+    const currentWidth = browser.clientWidth;
 
     let targetHeight, targetWidth;
-    if (viewport !== null) {
-      const { height, width } = viewport;
+    if (viewport === undefined) {
+      // Don't modify the viewport's size.
+      targetHeight = currentHeight;
+      targetWidth = currentWidth;
+    } else if (viewport === null) {
+      // Reset viewport to the original dimensions.
+      targetHeight = browser.parentElement.clientHeight;
+      targetWidth = browser.parentElement.clientWidth;
 
+      browser.style.removeProperty("height");
+      browser.style.removeProperty("width");
+    } else {
+      lazy.assert.object(
+        viewport,
+        `Expected "viewport" to be an object, got ${viewport}`
+      );
+
+      const { height, width } = viewport;
       targetHeight = lazy.assert.positiveInteger(
         height,
-        `Expected "height" to be a positive integer, got ${height}`
+        `Expected viewport's "height" to be a positive integer, got ${height}`
       );
       targetWidth = lazy.assert.positiveInteger(
         width,
-        `Expected "width" to be a positive integer, got ${width}`
+        `Expected viewport's "width" to be a positive integer, got ${width}`
       );
 
       if (targetHeight > MAX_WINDOW_SIZE || targetWidth > MAX_WINDOW_SIZE) {
@@ -1056,28 +1267,84 @@ class BrowsingContextModule extends Module {
 
       browser.style.setProperty("height", targetHeight + "px");
       browser.style.setProperty("width", targetWidth + "px");
-    } else {
-      // Reset viewport to the original dimensions
-      targetHeight = browser.parentElement.clientHeight;
-      targetWidth = browser.parentElement.clientWidth;
-
-      browser.style.removeProperty("height");
-      browser.style.removeProperty("width");
     }
 
-    // Wait until the viewport has been resized
-    await this.messageHandler.forwardCommand({
-      moduleName: "browsingContext",
-      commandName: "_awaitViewportDimensions",
-      destination: {
-        type: lazy.WindowGlobalMessageHandler.type,
-        id: context.id,
+    if (targetHeight !== currentHeight || targetWidth !== currentWidth) {
+      // Wait until the viewport has been resized
+      await this.messageHandler.forwardCommand({
+        moduleName: "browsingContext",
+        commandName: "_awaitViewportDimensions",
+        destination: {
+          type: lazy.WindowGlobalMessageHandler.type,
+          id: context.id,
+        },
+        params: {
+          height: targetHeight,
+          width: targetWidth,
+        },
+      });
+    }
+  }
+
+  /**
+   * Traverses the history of a given context by a given delta.
+   *
+   * @param {object=} options
+   * @param {string} options.context
+   *     Id of the browsing context.
+   * @param {number} options.delta
+   *     The number of steps we have to traverse.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {NoSuchFrameException}
+   *     When a context is not available.
+   * @throws {NoSuchHistoryEntryError}
+   *     When a requested history entry does not exist.
+   */
+  async traverseHistory(options = {}) {
+    const { context: contextId, delta } = options;
+
+    lazy.assert.string(
+      contextId,
+      `Expected "context" to be a string, got ${contextId}`
+    );
+
+    const context = this.#getBrowsingContext(contextId);
+
+    lazy.assert.integer(
+      delta,
+      `Expected "delta" to be an integer, got ${delta}`
+    );
+
+    const sessionHistory = context.sessionHistory;
+    const allSteps = sessionHistory.count;
+    const currentIndex = sessionHistory.index;
+    const targetIndex = currentIndex + delta;
+    const validEntry = targetIndex >= 0 && targetIndex < allSteps;
+
+    if (!validEntry) {
+      throw new lazy.error.NoSuchHistoryEntryError(
+        `History entry with delta ${delta} not found`
+      );
+    }
+
+    context.goToIndex(targetIndex);
+
+    // On some platforms the requested index isn't set immediately.
+    await lazy.PollPromise(
+      (resolve, reject) => {
+        if (sessionHistory.index == targetIndex) {
+          resolve();
+        } else {
+          reject();
+        }
       },
-      params: {
-        height: targetHeight,
-        width: targetWidth,
-      },
-    });
+      {
+        errorMessage: `History was not updated for index "${targetIndex}"`,
+        timeout: TIMEOUT_SET_HISTORY_INDEX * lazy.getTimeoutMultiplier(),
+      }
+    );
   }
 
   /**
@@ -1137,8 +1404,101 @@ class BrowsingContextModule extends Module {
       );
     }
 
+    // If WaitCondition is Complete, we should try to wait for the corresponding
+    // responseCompleted event to be received.
+    let onNavigationRequestCompleted;
+
+    // However, a navigation will not necessarily have network events.
+    // For instance: same document navigation, or when using file or data
+    // protocols (for which we don't have network events yet).
+    // Therefore we will not unconditionally wait for a navigation request and
+    // this flag should only be set when a responseCompleted event should be
+    // expected.
+    let shouldWaitForNavigationRequest = false;
+
+    // Cleaning up the listeners will be done at the end of this method.
+    let unsubscribeNavigationListeners;
+
+    if (wait === WaitCondition.Complete) {
+      let resolveOnNetworkEvent;
+      onNavigationRequestCompleted = new Promise(
+        r => (resolveOnNetworkEvent = r)
+      );
+      const onBeforeRequestSent = (name, data) => {
+        if (data.navigation) {
+          shouldWaitForNavigationRequest = true;
+        }
+      };
+      const onNetworkRequestCompleted = (name, data) => {
+        if (data.navigation) {
+          resolveOnNetworkEvent();
+        }
+      };
+
+      // The network request can either end with _responseCompleted or _fetchError
+      await this.messageHandler.eventsDispatcher.on(
+        "network._beforeRequestSent",
+        contextDescriptor,
+        onBeforeRequestSent
+      );
+      await this.messageHandler.eventsDispatcher.on(
+        "network._responseCompleted",
+        contextDescriptor,
+        onNetworkRequestCompleted
+      );
+      await this.messageHandler.eventsDispatcher.on(
+        "network._fetchError",
+        contextDescriptor,
+        onNetworkRequestCompleted
+      );
+
+      unsubscribeNavigationListeners = async () => {
+        await this.messageHandler.eventsDispatcher.off(
+          "network._beforeRequestSent",
+          contextDescriptor,
+          onBeforeRequestSent
+        );
+        await this.messageHandler.eventsDispatcher.off(
+          "network._responseCompleted",
+          contextDescriptor,
+          onNetworkRequestCompleted
+        );
+        await this.messageHandler.eventsDispatcher.off(
+          "network._fetchError",
+          contextDescriptor,
+          onNetworkRequestCompleted
+        );
+      };
+    }
+
     const navigated = listener.start();
-    navigated.finally(async () => {
+
+    try {
+      const navigationId = lazy.registerNavigationId({
+        contextDetails: { context: webProgress.browsingContext },
+      });
+
+      await startNavigationFn();
+      await navigated;
+
+      if (shouldWaitForNavigationRequest) {
+        await onNavigationRequestCompleted;
+      }
+
+      let url;
+      if (wait === WaitCondition.None) {
+        // If wait condition is None, the navigation resolved before the current
+        // context has navigated.
+        url = listener.targetURI.spec;
+      } else {
+        url = listener.currentURI.spec;
+      }
+
+      return {
+        navigation: navigationId,
+        url,
+      };
+    } finally {
       if (listener.isStarted) {
         listener.stop();
       }
@@ -1149,29 +1509,13 @@ class BrowsingContextModule extends Module {
           contextDescriptor,
           onDocumentInteractive
         );
+      } else if (
+        wait === WaitCondition.Complete &&
+        shouldWaitForNavigationRequest
+      ) {
+        await unsubscribeNavigationListeners();
       }
-    });
-
-    const navigationId = lazy.registerNavigationId({
-      contextDetails: { context: webProgress.browsingContext },
-    });
-
-    await startNavigationFn();
-    await navigated;
-
-    let url;
-    if (wait === WaitCondition.None) {
-      // If wait condition is None, the navigation resolved before the current
-      // context has navigated.
-      url = listener.targetURI.spec;
-    } else {
-      url = listener.currentURI.spec;
     }
-
-    return {
-      navigation: navigationId,
-      url,
-    };
   }
 
   /**

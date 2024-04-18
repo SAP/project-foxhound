@@ -35,11 +35,23 @@ export function getSelectors() {
     getH1() {
       return content.document.querySelector("h1");
     },
-    getLastParagraph() {
-      return content.document.querySelector("p:last-child");
-    },
     getHeader() {
       return content.document.querySelector("header");
+    },
+    getFirstParagraph() {
+      return content.document.querySelector("p:first-of-type");
+    },
+    getLastParagraph() {
+      return content.document.querySelector("p:last-of-type");
+    },
+    getSpanishParagraph() {
+      return content.document.getElementById("spanish-paragraph");
+    },
+    getSpanishHyperlink() {
+      return content.document.getElementById("spanish-hyperlink");
+    },
+    getEnglishHyperlink() {
+      return content.document.getElementById("english-hyperlink");
     },
   };
 }
@@ -82,4 +94,36 @@ export async function assertTranslationResult(message, getNode, translation) {
   }
 
   is(translation, getNode()?.innerText, message);
+}
+
+/**
+ * Simulates right-clicking an element with the mouse.
+ *
+ * @param {element} element - The element to right-click.
+ */
+export function rightClickContentElement(element) {
+  return new Promise(resolve => {
+    element.addEventListener(
+      "contextmenu",
+      function () {
+        resolve();
+      },
+      { once: true }
+    );
+
+    const EventUtils = ContentTaskUtils.getEventUtils(content);
+    EventUtils.sendMouseEvent({ type: "contextmenu" }, element, content.window);
+  });
+}
+
+/**
+ * Selects all the content within a specified element.
+ *
+ * @param {Element} element - The element containing the content to be selected.
+ * @returns {string} - The text content of the selection.
+ */
+export function selectContentElement(element) {
+  content.focus();
+  content.getSelection().selectAllChildren(element);
+  return element.textContent;
 }

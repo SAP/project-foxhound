@@ -6,7 +6,7 @@
 // We explicitly need HTTP URLs in this test
 /* eslint-disable @microsoft/sdl/no-insecure-url */
 
-XPCOMUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
+ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
   const { UrlbarTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/UrlbarTestUtils.sys.mjs"
   );
@@ -29,7 +29,6 @@ async function runMainTest(aInput, aDesc, aExpectedScheme) {
       window,
       value: aInput,
     });
-    await TestUtils.waitForTick();
     EventUtils.synthesizeKey("KEY_Enter");
     await loaded;
 
@@ -48,7 +47,6 @@ async function runCanonizedTest(aInput, aDesc, aExpectedScheme) {
       window,
       value: aInput,
     });
-    await TestUtils.waitForTick();
     EventUtils.synthesizeKey("KEY_Enter", { ctrlKey: true });
     await loaded;
 
@@ -73,7 +71,6 @@ async function runNewTabTest(aInput, aDesc, aExpectedScheme) {
         window,
         value: aInput,
       });
-      await TestUtils.waitForTick();
       EventUtils.synthesizeKey("KEY_Enter", { altKey: true });
       const newTab = await newTabPromise;
 
@@ -101,7 +98,6 @@ async function runNewWindowTest(aInput, aDesc, aExpectedScheme) {
       window,
       value: aInput,
     });
-    await TestUtils.waitForTick();
     EventUtils.synthesizeKey("KEY_Enter", { shiftKey: true });
     const newWindow = await newWindowPromise;
 

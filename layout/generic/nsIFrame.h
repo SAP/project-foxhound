@@ -49,7 +49,6 @@
 #include <algorithm>
 #include <stdio.h>
 
-#include "CaretAssociationHint.h"
 #include "FrameProperties.h"
 #include "LayoutConstants.h"
 #include "mozilla/AspectRatio.h"
@@ -127,7 +126,8 @@ struct CharacterDataChangeInfo;
 
 namespace mozilla {
 
-enum class PeekOffsetOption : uint8_t;
+enum class CaretAssociationHint;
+enum class PeekOffsetOption : uint16_t;
 enum class PseudoStyleType : uint8_t;
 enum class TableSelectionMode : uint32_t;
 
@@ -520,6 +520,43 @@ struct MOZ_RAII FrameDestroyContext {
   AutoTArray<RefPtr<nsIContent>, 100> mAnonymousContent;
 };
 
+/**
+ * Bit-flags specific to a given layout class id.
+ */
+enum class LayoutFrameClassFlags : uint16_t {
+  None = 0,
+  Leaf = 1 << 0,
+  LeafDynamic = 1 << 1,
+  MathML = 1 << 2,
+  SVG = 1 << 3,
+  SVGContainer = 1 << 4,
+  BidiInlineContainer = 1 << 5,
+  // The frame is for a replaced element, such as an image
+  Replaced = 1 << 6,
+  // Frame that contains a block but looks like a replaced element from the
+  // outside.
+  ReplacedContainsBlock = 1 << 7,
+  // A replaced element that has replaced-element sizing characteristics (i.e.,
+  // like images or iframes), as opposed to inline-block sizing characteristics
+  // (like form controls).
+  ReplacedSizing = 1 << 8,
+  // A frame that participates in inline reflow, i.e., one that requires
+  // ReflowInput::mLineLayout.
+  LineParticipant = 1 << 9,
+  // Whether this frame is a table part (but not a table or table wrapper).
+  TablePart = 1 << 10,
+  CanContainOverflowContainers = 1 << 11,
+  // Whether the frame supports CSS transforms.
+  SupportsCSSTransforms = 1 << 12,
+  // Whether this frame class supports 'contain: layout' and 'contain: paint'
+  // (supporting one is equivalent to supporting the other).
+  SupportsContainLayoutAndPaint = 1 << 13,
+  // Whether this frame class supports the `aspect-ratio` property.
+  SupportsAspectRatio = 1 << 14,
+};
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(LayoutFrameClassFlags)
+
 }  // namespace mozilla
 
 /**
@@ -578,6 +615,8 @@ class nsIFrame : public nsQueryFrame {
 
   typedef nsQueryFrame::ClassID ClassID;
 
+  using ClassFlags = mozilla::LayoutFrameClassFlags;
+
  protected:
   using ChildList = mozilla::FrameChildList;
   using ChildListID = mozilla::FrameChildListID;
@@ -622,8 +661,7 @@ class nsIFrame : public nsQueryFrame {
         mHasPaddingChange(false),
         mInScrollAnchorChain(false),
         mHasColumnSpanSiblings(false),
-        mDescendantMayDependOnItsStaticPosition(false),
-        mShouldGenerateComputedInfo(false) {
+        mDescendantMayDependOnItsStaticPosition(false) {
     MOZ_ASSERT(mComputedStyle);
     MOZ_ASSERT(mPresContext);
     mozilla::PodZero(&mOverflow);
@@ -2196,10 +2234,7 @@ class nsIFrame : public nsQueryFrame {
   // that need the beginning and end of the object, the StartOffset and
   // EndOffset helpers can be used.
   struct MOZ_STACK_CLASS ContentOffsets {
-    ContentOffsets()
-        : offset(0),
-          secondaryOffset(0),
-          associate(mozilla::CARET_ASSOCIATE_BEFORE) {}
+    ContentOffsets() = default;
     bool IsNull() { return !content; }
     // Helpers for places that need the ends of the offsets and expect them in
     // numerical order, as opposed to wanting the primary and secondary offsets
@@ -2207,17 +2242,20 @@ class nsIFrame : public nsQueryFrame {
     int32_t EndOffset() { return std::max(offset, secondaryOffset); }
 
     nsCOMPtr<nsIContent> content;
-    int32_t offset;
-    int32_t secondaryOffset;
+    int32_t offset = 0;
+    int32_t secondaryOffset = 0;
     // This value indicates whether the associated content is before or after
     // the offset; the most visible use is to allow the caret to know which line
     // to display on.
-    mozilla::CaretAssociationHint associate;
+    mozilla::CaretAssociationHint associate{0};  // Before
   };
   enum {
-    IGNORE_SELECTION_STYLE = 0x01,
+    IGNORE_SELECTION_STYLE = 1 << 0,
     // Treat visibility:hidden frames as non-selectable
-    SKIP_HIDDEN = 0x02
+    SKIP_HIDDEN = 1 << 1,
+    // Do not return content in native anonymous subtree (if the frame is in a
+    // native anonymous subtree, the method may return content in same subtree).
+    IGNORE_NATIVE_ANONYMOUS_SUBTREE = 1 << 2,
   };
   /**
    * This function calculates the content offsets for selection relative to
@@ -2350,6 +2388,13 @@ class nsIFrame : public nsQueryFrame {
    * Called when this frame becomes primary for mContent.
    */
   void InitPrimaryFrame();
+  /**
+   * Called when the primary frame style changes.
+   *
+   * Kind of like DidSetComputedStyle, but the first computed style is set
+   * before SetPrimaryFrame, so we need this tweak.
+   */
+  void HandlePrimaryFrameStyleChange(ComputedStyle* aOldStyle);
 
  public:
   /**
@@ -3264,8 +3309,9 @@ class nsIFrame : public nsQueryFrame {
    * Update the whether or not this frame is considered relevant content for the
    * purposes of `content-visibility: auto` according to the rules specified in
    * https://drafts.csswg.org/css-contain-2/#relevant-to-the-user.
+   * Returns true if the over-all relevancy changed.
    */
-  void UpdateIsRelevantContent(const ContentRelevancy& aRelevancyToUpdate);
+  bool UpdateIsRelevantContent(const ContentRelevancy& aRelevancyToUpdate);
 
   /**
    * Get the "type" of the frame.
@@ -3276,6 +3322,60 @@ class nsIFrame : public nsQueryFrame {
     MOZ_ASSERT(uint8_t(mClass) < mozilla::ArrayLength(sLayoutFrameTypes));
     return sLayoutFrameTypes[uint8_t(mClass)];
   }
+
+  /**
+   * Get the type flags of the frame.
+   *
+   * @see mozilla::LayoutFrameType
+   */
+  ClassFlags GetClassFlags() const {
+    MOZ_ASSERT(uint8_t(mClass) < mozilla::ArrayLength(sLayoutFrameClassFlags));
+    return sLayoutFrameClassFlags[uint8_t(mClass)];
+  }
+
+  bool HasAnyClassFlag(ClassFlags aFlag) const {
+    return bool(GetClassFlags() & aFlag);
+  }
+
+  /**
+   * Is this a leaf frame?  Frames that want the frame constructor to be able to
+   * construct kids for them should return false, all others should return true.
+   *
+   * Note that returning true here does not mean that the frame _can't_ have
+   * kids. It could still have kids created via nsIAnonymousContentCreator.
+   *
+   * Returning true indicates that "normal" (non-anonymous, CSS generated
+   * content, etc) children should not be constructed.
+   */
+  bool IsLeaf() const {
+    auto bits = GetClassFlags();
+    if (MOZ_UNLIKELY(bits & ClassFlags::LeafDynamic)) {
+      return IsLeafDynamic();
+    }
+    return bool(bits & ClassFlags::Leaf);
+  }
+  virtual bool IsLeafDynamic() const { return false; }
+
+#define CLASS_FLAG_METHOD(name_, flag_) \
+  bool name_() const { return HasAnyClassFlag(ClassFlags::flag_); }
+#define CLASS_FLAG_METHOD0(name_) CLASS_FLAG_METHOD(name_, name_)
+
+  CLASS_FLAG_METHOD(IsMathMLFrame, MathML);
+  CLASS_FLAG_METHOD(IsSVGFrame, SVG);
+  CLASS_FLAG_METHOD(IsSVGContainerFrame, SVGContainer);
+  CLASS_FLAG_METHOD(IsBidiInlineContainer, BidiInlineContainer);
+  CLASS_FLAG_METHOD(IsLineParticipant, LineParticipant);
+  CLASS_FLAG_METHOD(IsReplaced, Replaced);
+  CLASS_FLAG_METHOD(IsReplacedWithBlock, ReplacedContainsBlock);
+  CLASS_FLAG_METHOD(HasReplacedSizing, ReplacedSizing);
+  CLASS_FLAG_METHOD(IsTablePart, TablePart);
+  CLASS_FLAG_METHOD0(CanContainOverflowContainers)
+  CLASS_FLAG_METHOD0(SupportsCSSTransforms);
+  CLASS_FLAG_METHOD0(SupportsContainLayoutAndPaint)
+  CLASS_FLAG_METHOD0(SupportsAspectRatio)
+
+#undef CLASS_FLAG_METHOD
+#undef CLASS_FLAG_METHOD0
 
 #ifdef __GNUC__
 #  pragma GCC diagnostic push
@@ -3330,63 +3430,6 @@ class nsIFrame : public nsQueryFrame {
                                       mozilla::RelativeTo aStopAtAncestor,
                                       nsIFrame** aOutAncestor,
                                       uint32_t aFlags = 0) const;
-
-  /**
-   * Bit-flags to pass to IsFrameOfType()
-   */
-  enum {
-    eMathML = 1 << 0,
-    eSVG = 1 << 1,
-    eSVGContainer = 1 << 2,
-    eBidiInlineContainer = 1 << 3,
-    // the frame is for a replaced element, such as an image
-    eReplaced = 1 << 4,
-    // Frame that contains a block but looks like a replaced element
-    // from the outside
-    eReplacedContainsBlock = 1 << 5,
-    // A frame that participates in inline reflow, i.e., one that
-    // requires ReflowInput::mLineLayout.
-    eLineParticipant = 1 << 6,
-    eCanContainOverflowContainers = 1 << 7,
-    eTablePart = 1 << 8,
-    eSupportsCSSTransforms = 1 << 9,
-
-    // A replaced element that has replaced-element sizing
-    // characteristics (i.e., like images or iframes), as opposed to
-    // inline-block sizing characteristics (like form controls).
-    eReplacedSizing = 1 << 10,
-
-    // Does this frame class support 'contain: layout' and
-    // 'contain:paint' (supporting one is equivalent to supporting the
-    // other).
-    eSupportsContainLayoutAndPaint = 1 << 11,
-
-    // Does this frame class support `aspect-ratio` property.
-    eSupportsAspectRatio = 1 << 12,
-
-    // These are to allow nsIFrame::Init to assert that IsFrameOfType
-    // implementations all call the base class method.  They are only
-    // meaningful in DEBUG builds.
-    eDEBUGAllFrames = 1 << 30,
-    eDEBUGNoFrames = 1 << 31
-  };
-
-  /**
-   * API for doing a quick check if a frame is of a given
-   * type. Returns true if the frame matches ALL flags passed in.
-   *
-   * Implementations should always override with inline virtual
-   * functions that call the base class's IsFrameOfType method.
-   */
-  virtual bool IsFrameOfType(uint32_t aFlags) const {
-    return !(aFlags & ~(
-#ifdef DEBUG
-                          nsIFrame::eDEBUGAllFrames |
-#endif
-                          nsIFrame::eSupportsCSSTransforms |
-                          nsIFrame::eSupportsContainLayoutAndPaint |
-                          nsIFrame::eSupportsAspectRatio));
-  }
 
   /**
    * Return true if this frame's preferred size property or max size property
@@ -3471,26 +3514,6 @@ class nsIFrame : public nsQueryFrame {
    * Note that very few frames are, so default to false.
    */
   virtual bool IsFloatContainingBlock() const { return false; }
-
-  /**
-   * Is this a leaf frame?  Frames that want the frame constructor to be able
-   * to construct kids for them should return false, all others should return
-   * true.  Note that returning true here does not mean that the frame _can't_
-   * have kids.  It could still have kids created via
-   * nsIAnonymousContentCreator.  Returning true indicates that "normal"
-   * (non-anonymous, CSS generated content, etc) children should not be
-   * constructed.
-   */
-  bool IsLeaf() const {
-    MOZ_ASSERT(uint8_t(mClass) < mozilla::ArrayLength(sFrameClassBits));
-    FrameClassBits bits = sFrameClassBits[uint8_t(mClass)];
-    if (MOZ_UNLIKELY(bits & eFrameClassBitsDynamicLeaf)) {
-      return IsLeafDynamic();
-    }
-    return bits & eFrameClassBitsLeaf;
-  }
-
-  virtual bool IsLeafDynamic() const { return false; }
 
   /**
    * Marks all display items created by this frame as needing a repaint,
@@ -3907,6 +3930,8 @@ class nsIFrame : public nsQueryFrame {
     bool mJumpedLine = false;
     /** whether we met a hard break between the input and the returned frame */
     bool mJumpedHardBreak = false;
+    /** whether we met a child placeholder frame */
+    bool mFoundPlaceholder = false;
     /** whether we jumped over a non-selectable frame during the search */
     bool mMovedOverNonSelectableText = false;
     /** whether we met selectable text frame that isn't editable during the
@@ -4296,17 +4321,6 @@ class nsIFrame : public nsQueryFrame {
                                     const nsStyleEffects* aEffects,
                                     const nsSize& aSize) const;
 
-  struct Focusable {
-    bool mFocusable = false;
-    // The computed tab index:
-    //         < 0 if not tabbable
-    //         == 0 if in normal tab order
-    //         > 0 can be tabbed to in the order specified by this value
-    int32_t mTabIndex = -1;
-
-    explicit operator bool() const { return mFocusable; }
-  };
-
   /**
    * Check if this frame is focusable and in the current tab order.
    * Tabbable is indicated by a nonnegative tabindex & is a subset of focusable.
@@ -4582,6 +4596,14 @@ class nsIFrame : public nsQueryFrame {
     return HasAnyStateBits(NS_FRAME_IS_SVG_TEXT);
   }
 
+  // https://drafts.csswg.org/css-overflow-3/#scroll-container
+  bool IsScrollContainer() const {
+    const bool result = IsScrollFrame() || IsListControlFrame();
+    MOZ_ASSERT(result == !!GetAsScrollContainer());
+    return result;
+  }
+  nsIScrollableFrame* GetAsScrollContainer() const;
+
   /**
    * Returns true if the frame is an SVG Rendering Observer container.
    */
@@ -4679,8 +4701,6 @@ class nsIFrame : public nsQueryFrame {
   }
   // Update mAllDescendantsAreInvisible flag for this frame and ancestors.
   void UpdateVisibleDescendantsState();
-
-  void UpdateAnimationVisibility();
 
   /**
    * If this returns true, the frame it's called on should get the
@@ -4904,13 +4924,6 @@ class nsIFrame : public nsQueryFrame {
   }
   void SetDescendantMayDependOnItsStaticPosition(bool aValue) {
     mDescendantMayDependOnItsStaticPosition = aValue;
-  }
-
-  bool ShouldGenerateComputedInfo() const {
-    return mShouldGenerateComputedInfo;
-  }
-  void SetShouldGenerateComputedInfo(bool aValue) {
-    mShouldGenerateComputedInfo = aValue;
   }
 
   /**
@@ -5191,13 +5204,6 @@ class nsIFrame : public nsQueryFrame {
    */
   bool mDescendantMayDependOnItsStaticPosition : 1;
 
-  /**
-   * True if the next reflow of this frame should generate computed info
-   * metrics. These are used by devtools to reveal details of the layout
-   * process.
-   */
-  bool mShouldGenerateComputedInfo : 1;
-
  protected:
   // Helpers
   /**
@@ -5359,28 +5365,18 @@ class nsIFrame : public nsQueryFrame {
                           const nsStyleEffects* aStyleEffects,
                           mozilla::EffectSet* aEffectSet = nullptr) const;
 
-  // Maps mClass to LayoutFrameType.
-  static const mozilla::LayoutFrameType sLayoutFrameTypes[
+  static constexpr size_t kFrameClassCount =
 #define FRAME_ID(...) 1 +
 #define ABSTRACT_FRAME_ID(...)
 #include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
-      0];
+      0;
 
-  enum FrameClassBits {
-    eFrameClassBitsNone = 0x0,
-    eFrameClassBitsLeaf = 0x1,
-    eFrameClassBitsDynamicLeaf = 0x2,
-  };
-  // Maps mClass to IsLeaf() flags.
-  static const FrameClassBits sFrameClassBits[
-#define FRAME_ID(...) 1 +
-#define ABSTRACT_FRAME_ID(...)
-#include "mozilla/FrameIdList.h"
-#undef FRAME_ID
-#undef ABSTRACT_FRAME_ID
-      0];
+  // Maps mClass to LayoutFrameType.
+  static const mozilla::LayoutFrameType sLayoutFrameTypes[kFrameClassCount];
+  // Maps mClass to LayoutFrameTypeFlags.
+  static const ClassFlags sLayoutFrameClassFlags[kFrameClassCount];
 
 #ifdef DEBUG_FRAME_DUMP
  public:

@@ -15,6 +15,7 @@
 
 #include "builtin/temporal/TemporalRoundingMode.h"
 #include "builtin/temporal/TemporalUnit.h"
+#include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "vm/NativeObject.h"
 
@@ -324,16 +325,8 @@ bool ToIntegerWithTruncation(JSContext* cx, JS::Handle<JS::Value> value,
 /**
  * GetMethod ( V, P )
  */
-bool GetMethod(JSContext* cx, JS::Handle<JSObject*> object,
-               JS::Handle<PropertyName*> name,
-               JS::MutableHandle<JS::Value> result);
-
-/**
- * GetMethod ( V, P )
- */
-bool GetMethodForCall(JSContext* cx, JS::Handle<JSObject*> object,
-                      JS::Handle<PropertyName*> name,
-                      JS::MutableHandle<JS::Value> result);
+JSObject* GetMethod(JSContext* cx, JS::Handle<JSObject*> object,
+                    JS::Handle<PropertyName*> name);
 
 /**
  * SnapshotOwnProperties ( source, proto [ , excludedKeys [ , excludedValues ] ]
@@ -372,7 +365,7 @@ struct DifferenceSettings final {
  * fallbackSmallestUnit, smallestLargestDefaultUnit )
  */
 bool GetDifferenceSettings(JSContext* cx, TemporalDifference operation,
-                           JS::Handle<JSObject*> options,
+                           JS::Handle<PlainObject*> options,
                            TemporalUnitGroup unitGroup,
                            TemporalUnit smallestAllowedUnit,
                            TemporalUnit fallbackSmallestUnit,
@@ -384,7 +377,7 @@ bool GetDifferenceSettings(JSContext* cx, TemporalDifference operation,
  * fallbackSmallestUnit, smallestLargestDefaultUnit )
  */
 inline bool GetDifferenceSettings(JSContext* cx, TemporalDifference operation,
-                                  JS::Handle<JSObject*> options,
+                                  JS::Handle<PlainObject*> options,
                                   TemporalUnitGroup unitGroup,
                                   TemporalUnit fallbackSmallestUnit,
                                   TemporalUnit smallestLargestDefaultUnit,
@@ -393,6 +386,11 @@ inline bool GetDifferenceSettings(JSContext* cx, TemporalDifference operation,
                                TemporalUnit::Nanosecond, fallbackSmallestUnit,
                                smallestLargestDefaultUnit, result);
 }
+
+/**
+ * Sets |result| to `true` when array iteration is still in its initial state.
+ */
+bool IsArrayIterationSane(JSContext* cx, bool* result);
 
 } /* namespace js::temporal */
 

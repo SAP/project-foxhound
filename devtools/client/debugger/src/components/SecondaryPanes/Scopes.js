@@ -2,13 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { PureComponent } from "react";
-import { div, button, span } from "react-dom-factories";
-import PropTypes from "prop-types";
+import React, { PureComponent } from "devtools/client/shared/vendor/react";
+import {
+  div,
+  button,
+  span,
+} from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import AccessibleImage from "../shared/AccessibleImage";
 import { showMenu } from "../../context-menu/menu";
-import { connect } from "../../utils/connect";
-import actions from "../../actions";
+import { connect } from "devtools/client/shared/vendor/react-redux";
+import actions from "../../actions/index";
 
 import {
   getSelectedFrame,
@@ -20,7 +24,7 @@ import {
   isMapScopesEnabled,
   getLastExpandedScopes,
   getIsCurrentThreadPaused,
-} from "../../selectors";
+} from "../../selectors/index";
 import {
   getScopesItemsForSelectedFrame,
   getScopeItemPath,
@@ -28,9 +32,6 @@ import {
 import { clientCommands } from "../../client/firefox";
 
 import { objectInspector } from "devtools/client/shared/components/reps/index";
-
-import "./Scopes.css";
-
 const { ObjectInspector } = objectInspector;
 
 class Scopes extends PureComponent {
@@ -347,14 +348,13 @@ class Scopes extends PureComponent {
 const mapStateToProps = state => {
   // This component doesn't need any prop when we are not paused
   const selectedFrame = getSelectedFrame(state, getCurrentThread(state));
+  if (!selectedFrame) {
+    return {};
+  }
   const why = getPauseReason(state, selectedFrame.thread);
   const expandedScopes = getLastExpandedScopes(state, selectedFrame.thread);
   const isPaused = getIsCurrentThreadPaused(state);
   const selectedSource = getSelectedSource(state);
-
-  if (!selectedFrame) {
-    return {};
-  }
 
   let originalFrameScopes;
   let generatedFrameScopes;

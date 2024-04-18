@@ -39,8 +39,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
-export let Schemas;
-
 const KEY_CONTENT_SCHEMAS = "extensions-framework/schemas/content";
 const KEY_PRIVILEGED_SCHEMAS = "extensions-framework/schemas/privileged";
 
@@ -378,9 +376,12 @@ class Context {
       localize(value, context) {
         return value;
       },
+      ...params.preprocessors,
     };
+
     this.postprocessors = POSTPROCESSORS;
-    this.isChromeCompat = false;
+    this.isChromeCompat = params.isChromeCompat ?? false;
+    this.manifestVersion = params.manifestVersion;
 
     this.currentChoices = new Set();
     this.choicePathIndex = 0;
@@ -388,17 +389,6 @@ class Context {
     for (let method of overridableMethods) {
       if (method in params) {
         this[method] = params[method].bind(params);
-      }
-    }
-
-    let props = ["isChromeCompat", "manifestVersion", "preprocessors"];
-    for (let prop of props) {
-      if (prop in params) {
-        if (prop in this && typeof this[prop] == "object") {
-          Object.assign(this[prop], params[prop]);
-        } else {
-          this[prop] = params[prop];
-        }
       }
     }
   }
@@ -894,10 +884,10 @@ class InjectionContext extends Context {
    * @abstract
    * @param {string} namespace The namespace of the API. This may contain dots,
    *     e.g. in the case of "devtools.inspectedWindow".
-   * @param {string} [name] The name of the property in the namespace.
+   * @param {string?} name The name of the property in the namespace.
    *     `null` if we are checking whether the namespace should be injected.
-   * @param {Array<string>} allowedContexts A list of additional contexts in which
-   *     this API should be available. May include any of:
+   * @param {Array<string>} allowedContexts A list of additional contexts in
+   *      which this API should be available. May include any of:
    *         "main" - The main chrome browser process.
    *         "addon" - An addon process.
    *         "content" - A content process.
@@ -990,7 +980,7 @@ class InjectionContext extends Context {
    *        will be injected.
    * @param {Array<string>} path
    *        The full path from the root injection object to this entry.
-   * @param {Entry} parentEntry
+   * @param {Partial<Entry>} parentEntry
    *        The parent entry for this entry.
    *
    * @returns {object?}
@@ -1211,7 +1201,7 @@ const FORMATS = {
     // Our pattern just checks the format, we could still have invalid
     // values (e.g., month=99 or month=02 and day=31).  Let the Date
     // constructor do the dirty work of validating.
-    if (isNaN(new Date(string))) {
+    if (isNaN(Date.parse(string))) {
       throw new Error(`Invalid date string ${string}`);
     }
     return string;
@@ -1348,7 +1338,7 @@ class Entry {
    * its `deprecated` property.
    *
    * @param {Context} context
-   * @param {value} [value]
+   * @param {any} [value]
    */
   logDeprecation(context, value = null) {
     let message = "This property is deprecated";
@@ -1372,7 +1362,7 @@ class Entry {
    * deprecation message.
    *
    * @param {Context} context
-   * @param {value} [value]
+   * @param {any} [value]
    */
   checkDeprecated(context, value = null) {
     if (this.deprecated) {
@@ -1457,7 +1447,7 @@ class Type extends Entry {
    *        corresponding to the property names and array indices
    *        traversed during parsing in order to arrive at this schema
    *        object.
-   * @param {Array<string>} [extra]
+   * @param {Iterable<string>} [extra]
    *        An array of extra property names which are valid for this
    *        schema in the current context.
    * @throws {Error}
@@ -1538,6 +1528,7 @@ class ChoiceType extends Type {
     return ["choices", ...super.EXTRA_PROPERTIES];
   }
 
+  /** @type {(root, schema, path, extraProperties?: Iterable) => ChoiceType} */
   static parseSchema(root, schema, path, extraProperties = []) {
     this.checkSchemaProperties(schema, path, extraProperties);
 
@@ -1638,6 +1629,7 @@ class RefType extends Type {
     return ["$ref", ...super.EXTRA_PROPERTIES];
   }
 
+  /** @type {(root, schema, path, extraProperties?: Iterable) => RefType} */
   static parseSchema(root, schema, path, extraProperties = []) {
     this.checkSchemaProperties(schema, path, extraProperties);
 
@@ -2554,6 +2546,8 @@ class ValueProperty extends Entry {
 // Represents a "property" defined in a schema namespace that is not a
 // constant.
 class TypeProperty extends Entry {
+  unsupported = false;
+
   constructor(schema, path, name, type, writable, permissions) {
     super(schema);
     this.path = path;
@@ -2692,6 +2686,8 @@ class SubModuleProperty extends Entry {
 // care of validating parameter lists (i.e., handling of optional
 // parameters and parameter type checking).
 class CallEntry extends Entry {
+  hasAsyncCallback = false;
+
   constructor(schema, path, name, parameters, allowAmbiguousOptionalArguments) {
     super(schema);
     this.path = path;
@@ -2785,6 +2781,7 @@ class CallEntry extends Entry {
 FunctionEntry = class FunctionEntry extends CallEntry {
   static parseSchema(root, schema, path) {
     // When not in DEBUG mode, we just need to know *if* this returns.
+    /** @type {boolean|object} */
     let returns = !!schema.returns;
     if (DEBUG && "returns" in schema) {
       returns = {
@@ -3117,9 +3114,11 @@ class Namespace extends Map {
       this._lazySchemas.unshift(...this.superNamespace._lazySchemas);
     }
 
-    for (let type of Object.keys(LOADERS)) {
-      this[type] = new DefaultMap(() => []);
-    }
+    // Keep in sync with LOADERS above.
+    this.types = new DefaultMap(() => []);
+    this.properties = new DefaultMap(() => []);
+    this.functions = new DefaultMap(() => []);
+    this.events = new DefaultMap(() => []);
 
     for (let schema of this._lazySchemas) {
       for (let type of schema.types || []) {
@@ -3315,6 +3314,7 @@ class Namespace extends Map {
     return super.keys();
   }
 
+  /** @returns {Generator<[string, Entry]>} */
   *entries() {
     for (let key of this.keys()) {
       yield [key, this.get(key)];
@@ -3651,7 +3651,7 @@ export class SchemaRoot extends Namespace {
   }
 }
 
-Schemas = {
+export var Schemas = {
   initialized: false,
 
   REVOKE: Symbol("@@revoke"),

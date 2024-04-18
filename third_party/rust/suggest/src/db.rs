@@ -115,7 +115,7 @@ impl SuggestDb {
 /// reference (`&mut self`).
 pub(crate) struct SuggestDao<'a> {
     pub conn: &'a Connection,
-    scope: SqlInterruptScope,
+    pub scope: SqlInterruptScope,
 }
 
 impl<'a> SuggestDao<'a> {
@@ -125,7 +125,12 @@ impl<'a> SuggestDao<'a> {
 
     /// Fetches suggestions that match the given query from the database.
     pub fn fetch_suggestions(&self, query: &SuggestionQuery) -> Result<Vec<Suggestion>> {
-        let (keyword_prefix, keyword_suffix) = split_keyword(&query.keyword);
+        if let Some(suggestion) = self.fetch_yelp_suggestion(query)? {
+            return Ok(vec![suggestion]);
+        }
+
+        let keyword_lowercased = &query.keyword.to_lowercase();
+        let (keyword_prefix, keyword_suffix) = split_keyword(keyword_lowercased);
         let suggestions_limit = query.limit.unwrap_or(-1);
 
         let (mut statement, params) = if query
@@ -150,7 +155,7 @@ impl<'a> SuggestDao<'a> {
                     providers_to_sql_list(&query.providers),
                 ),
             )?, vec![
-                (":keyword", &query.keyword as &dyn ToSql),
+                (":keyword", keyword_lowercased as &dyn ToSql),
                 (":keyword_prefix", &keyword_prefix as &dyn ToSql),
                 (":suggestions_limit", &suggestions_limit as &dyn ToSql),
             ])
@@ -167,7 +172,7 @@ impl<'a> SuggestDao<'a> {
                     providers_to_sql_list(&query.providers),
                 ),
             )?, vec![
-                (":keyword", &query.keyword as &dyn ToSql),
+                (":keyword", keyword_lowercased as &dyn ToSql),
                 (":suggestions_limit", &suggestions_limit as &dyn ToSql),
             ])
         };
@@ -210,7 +215,7 @@ impl<'a> SuggestDao<'a> {
                                     title,
                                     url: cooked_url,
                                     raw_url,
-                                    full_keyword: full_keyword(&query.keyword, &keywords),
+                                    full_keyword: full_keyword(keyword_lowercased, &keywords),
                                     icon: row.get("icon")?,
                                     impression_url: row.get("impression_url")?,
                                     click_url: cooked_click_url,
@@ -233,7 +238,7 @@ impl<'a> SuggestDao<'a> {
                         Ok(Some(Suggestion::Wikipedia {
                             title,
                             url: raw_url,
-                            full_keyword: full_keyword(&query.keyword, &keywords),
+                            full_keyword: full_keyword(keyword_lowercased, &keywords),
                             icon,
                         }))
                     }
@@ -293,7 +298,8 @@ impl<'a> SuggestDao<'a> {
                         } else {
                             Ok(None)
                         }
-                    }
+                    },
+                    _ => Ok(None),
                 }
             }
         )?.flat_map(Result::transpose).collect::<Result<_>>()?;
@@ -614,6 +620,18 @@ impl<'a> SuggestDao<'a> {
     pub fn drop_suggestions(&mut self, record_id: &SuggestRecordId) -> Result<()> {
         self.conn.execute_cached(
             "DELETE FROM suggestions WHERE record_id = :record_id",
+            named_params! { ":record_id": record_id.as_str() },
+        )?;
+        self.conn.execute_cached(
+            "DELETE FROM yelp_subjects WHERE record_id = :record_id",
+            named_params! { ":record_id": record_id.as_str() },
+        )?;
+        self.conn.execute_cached(
+            "DELETE FROM yelp_modifiers WHERE record_id = :record_id",
+            named_params! { ":record_id": record_id.as_str() },
+        )?;
+        self.conn.execute_cached(
+            "DELETE FROM yelp_location_signs WHERE record_id = :record_id",
             named_params! { ":record_id": record_id.as_str() },
         )?;
         Ok(())

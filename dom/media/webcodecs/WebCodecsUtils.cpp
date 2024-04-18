@@ -6,15 +6,33 @@
 
 #include "WebCodecsUtils.h"
 
+#include "DecoderTypes.h"
 #include "VideoUtils.h"
 #include "js/experimental/TypedData.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/VideoColorSpaceBinding.h"
 #include "mozilla/dom/VideoFrameBinding.h"
 #include "mozilla/gfx/Types.h"
 #include "nsDebug.h"
+#include "PlatformEncoderModule.h"
+#include "PlatformEncoderModule.h"
+
+extern mozilla::LazyLogModule gWebCodecsLog;
+
+#ifdef LOG_INTERNAL
+#  undef LOG_INTERNAL
+#endif  // LOG_INTERNAL
+#define LOG_INTERNAL(level, msg, ...) \
+  MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
+#ifdef LOG
+#  undef LOG
+#endif  // LOG
+#define LOG(msg, ...) LOG_INTERNAL(Debug, msg, ##__VA_ARGS__)
+
+namespace mozilla {
+std::atomic<WebCodecsId> sNextId = 0;
+};
 
 namespace mozilla::dom {
 
@@ -218,12 +236,12 @@ Maybe<VideoTransferCharacteristics> ToTransferCharacteristics(
 Maybe<VideoColorPrimaries> ToPrimaries(const gfx::ColorSpace2& aColorSpace) {
   switch (aColorSpace) {
     case gfx::ColorSpace2::UNKNOWN:
-    case gfx::ColorSpace2::SRGB:
       return Nothing();
     case gfx::ColorSpace2::DISPLAY_P3:
       return Some(VideoColorPrimaries::Smpte432);
     case gfx::ColorSpace2::BT601_525:
       return Some(VideoColorPrimaries::Smpte170m);
+    case gfx::ColorSpace2::SRGB:
     case gfx::ColorSpace2::BT709:
       return Some(VideoColorPrimaries::Bt709);
     case gfx::ColorSpace2::BT2020:
@@ -282,4 +300,279 @@ Maybe<VideoPixelFormat> ImageBitmapFormatToVideoPixelFormat(
   return Nothing();
 }
 
-}  // namespace mozilla::dom
+Result<RefPtr<MediaByteBuffer>, nsresult> GetExtraDataFromArrayBuffer(
+    const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aBuffer) {
+  RefPtr<MediaByteBuffer> data = MakeRefPtr<MediaByteBuffer>();
+  Unused << AppendTypedArrayDataTo(aBuffer, *data);
+  return data->Length() > 0 ? data : nullptr;
+}
+
+bool IsOnAndroid() {
+#if defined(ANDROID)
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool IsOnMacOS() {
+#if defined(XP_MACOSX)
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool IsOnLinux() {
+#if defined(XP_LINUX)
+  return true;
+#else
+  return false;
+#endif
+}
+
+template <typename T>
+nsCString MaybeToString(const Maybe<T>& aMaybe) {
+  return nsPrintfCString(
+      "%s", aMaybe.isSome() ? ToString(aMaybe.value()).c_str() : "nothing");
+}
+
+struct ConfigurationChangeToString {
+  nsCString operator()(const CodecChange& aCodecChange) {
+    return nsPrintfCString("Codec: %s",
+                           NS_ConvertUTF16toUTF8(aCodecChange.get()).get());
+  }
+  nsCString operator()(const DimensionsChange& aDimensionChange) {
+    return nsPrintfCString("Dimensions: %dx%d", aDimensionChange.get().width,
+                           aDimensionChange.get().height);
+  }
+  nsCString operator()(const DisplayDimensionsChange& aDisplayDimensionChange) {
+    if (aDisplayDimensionChange.get().isNothing()) {
+      return nsPrintfCString("Display dimensions: nothing");
+    }
+    gfx::IntSize displayDimensions = aDisplayDimensionChange.get().value();
+    return nsPrintfCString("Dimensions: %dx%d", displayDimensions.width,
+                           displayDimensions.height);
+  }
+  nsCString operator()(const BitrateChange& aBitrateChange) {
+    return nsPrintfCString("Bitrate: %skbps",
+                           MaybeToString(aBitrateChange.get()).get());
+  }
+  nsCString operator()(const FramerateChange& aFramerateChange) {
+    return nsPrintfCString("Framerate: %sHz",
+                           MaybeToString(aFramerateChange.get()).get());
+  }
+  nsCString operator()(
+      const HardwareAccelerationChange& aHardwareAccelerationChange) {
+    return nsPrintfCString("HW acceleration: %s",
+                           dom::HardwareAccelerationValues::GetString(
+                               aHardwareAccelerationChange.get())
+                               .data());
+  }
+  nsCString operator()(const AlphaChange& aAlphaChange) {
+    return nsPrintfCString(
+        "Alpha: %s",
+        dom::AlphaOptionValues::GetString(aAlphaChange.get()).data());
+  }
+  nsCString operator()(const ScalabilityModeChange& aScalabilityModeChange) {
+    if (aScalabilityModeChange.get().isNothing()) {
+      return nsCString("Scalability mode: nothing");
+    }
+    return nsPrintfCString(
+        "Scalability mode: %s",
+        NS_ConvertUTF16toUTF8(aScalabilityModeChange.get().value()).get());
+  }
+  nsCString operator()(const BitrateModeChange& aBitrateModeChange) {
+    return nsPrintfCString(
+        "Bitrate mode: %s",
+        dom::VideoEncoderBitrateModeValues::GetString(aBitrateModeChange.get())
+            .data());
+  }
+  nsCString operator()(const LatencyModeChange& aLatencyModeChange) {
+    return nsPrintfCString(
+        "Latency mode: %s",
+        dom::LatencyModeValues::GetString(aLatencyModeChange.get()).data());
+  }
+  nsCString operator()(const ContentHintChange& aContentHintChange) {
+    return nsPrintfCString("Content hint: %s",
+                           MaybeToString(aContentHintChange.get()).get());
+  }
+  template <typename T>
+  nsCString operator()(const T& aNewBitrate) {
+    return nsPrintfCString("Not implemented");
+  }
+};
+
+nsString WebCodecsConfigurationChangeList::ToString() const {
+  nsString rv;
+  for (const WebCodecsEncoderConfigurationItem& change : mChanges) {
+    nsCString str = change.match(ConfigurationChangeToString());
+    rv.AppendPrintf("- %s\n", str.get());
+  }
+  return rv;
+}
+
+using CodecChange = StrongTypedef<nsString, struct CodecChangeTypeWebCodecs>;
+using DimensionsChange =
+    StrongTypedef<gfx::IntSize, struct DimensionsChangeTypeWebCodecs>;
+using DisplayDimensionsChange =
+    StrongTypedef<Maybe<gfx::IntSize>,
+                  struct DisplayDimensionsChangeTypeWebCodecs>;
+using BitrateChange =
+    StrongTypedef<Maybe<uint32_t>, struct BitrateChangeTypeWebCodecs>;
+using FramerateChange =
+    StrongTypedef<Maybe<double>, struct FramerateChangeTypeWebCodecs>;
+using HardwareAccelerationChange =
+    StrongTypedef<dom::HardwareAcceleration,
+                  struct HardwareAccelerationChangeTypeWebCodecs>;
+using AlphaChange =
+    StrongTypedef<dom::AlphaOption, struct AlphaChangeTypeWebCodecs>;
+using ScalabilityModeChange =
+    StrongTypedef<Maybe<nsString>, struct ScalabilityModeChangeTypeWebCodecs>;
+using BitrateModeChange = StrongTypedef<dom::VideoEncoderBitrateMode,
+                                        struct BitrateModeChangeTypeWebCodecs>;
+using LatencyModeChange =
+    StrongTypedef<dom::LatencyMode, struct LatencyModeTypeChangeTypeWebCodecs>;
+using ContentHintChange =
+    StrongTypedef<Maybe<nsString>, struct ContentHintTypeTypeWebCodecs>;
+
+bool WebCodecsConfigurationChangeList::CanAttemptReconfigure() const {
+  for (const auto& change : mChanges) {
+    if (change.is<CodecChange>() || change.is<HardwareAccelerationChange>() ||
+        change.is<AlphaChange>() || change.is<ScalabilityModeChange>()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+RefPtr<EncoderConfigurationChangeList>
+WebCodecsConfigurationChangeList::ToPEMChangeList() const {
+  auto rv = MakeRefPtr<EncoderConfigurationChangeList>();
+  MOZ_ASSERT(CanAttemptReconfigure());
+  for (const auto& change : mChanges) {
+    if (change.is<dom::DimensionsChange>()) {
+      rv->Push(mozilla::DimensionsChange(change.as<DimensionsChange>().get()));
+    } else if (change.is<dom::DisplayDimensionsChange>()) {
+      rv->Push(mozilla::DisplayDimensionsChange(
+          change.as<DisplayDimensionsChange>().get()));
+    } else if (change.is<dom::BitrateChange>()) {
+      rv->Push(mozilla::BitrateChange(change.as<BitrateChange>().get()));
+    } else if (change.is<FramerateChange>()) {
+      rv->Push(mozilla::FramerateChange(change.as<FramerateChange>().get()));
+    } else if (change.is<dom::BitrateModeChange>()) {
+      MediaDataEncoder::BitrateMode mode;
+      if (change.as<dom::BitrateModeChange>().get() ==
+          dom::VideoEncoderBitrateMode::Constant) {
+        mode = MediaDataEncoder::BitrateMode::Constant;
+      } else if (change.as<BitrateModeChange>().get() ==
+                 dom::VideoEncoderBitrateMode::Variable) {
+        mode = MediaDataEncoder::BitrateMode::Variable;
+      } else {
+        // Quantizer, not underlying support yet.
+        mode = MediaDataEncoder::BitrateMode::Variable;
+      }
+      rv->Push(mozilla::BitrateModeChange(mode));
+    } else if (change.is<LatencyModeChange>()) {
+      MediaDataEncoder::Usage usage;
+      if (change.as<LatencyModeChange>().get() == dom::LatencyMode::Quality) {
+        usage = MediaDataEncoder::Usage::Record;
+      } else {
+        usage = MediaDataEncoder::Usage::Realtime;
+      }
+      rv->Push(UsageChange(usage));
+    } else if (change.is<ContentHintChange>()) {
+      rv->Push(
+          mozilla::ContentHintChange(change.as<ContentHintChange>().get()));
+    }
+  }
+  return rv.forget();
+}
+
+#define ENUM_TO_STRING(enumType, enumValue) \
+  enumType##Values::GetString(enumValue).data()
+
+nsCString ColorSpaceInitToString(
+    const dom::VideoColorSpaceInit& aColorSpaceInit) {
+  nsCString rv("VideoColorSpace");
+
+  if (!aColorSpaceInit.mFullRange.IsNull()) {
+    rv.AppendPrintf(" range: %s",
+                    aColorSpaceInit.mFullRange.Value() ? "true" : "false");
+  }
+  if (!aColorSpaceInit.mMatrix.IsNull()) {
+    rv.AppendPrintf(" matrix: %s",
+                    ENUM_TO_STRING(dom::VideoMatrixCoefficients,
+                                   aColorSpaceInit.mMatrix.Value()));
+  }
+  if (!aColorSpaceInit.mTransfer.IsNull()) {
+    rv.AppendPrintf(" transfer: %s",
+                    ENUM_TO_STRING(dom::VideoTransferCharacteristics,
+                                   aColorSpaceInit.mTransfer.Value()));
+  }
+  if (!aColorSpaceInit.mPrimaries.IsNull()) {
+    rv.AppendPrintf(" primaries: %s",
+                    ENUM_TO_STRING(dom::VideoColorPrimaries,
+                                   aColorSpaceInit.mPrimaries.Value()));
+  }
+
+  return rv;
+}
+
+RefPtr<TaskQueue> GetWebCodecsEncoderTaskQueue() {
+  return TaskQueue::Create(
+      GetMediaThreadPool(MediaThreadType::PLATFORM_ENCODER),
+      "WebCodecs encoding", false);
+}
+
+VideoColorSpaceInit FallbackColorSpaceForVideoContent() {
+  // If we're unable to determine the color space, but we think this is video
+  // content (e.g. because it's in YUV or NV12 or something like that,
+  // consider it's in BT709).
+  // This is step 3 of
+  // https://w3c.github.io/webcodecs/#videoframe-pick-color-space
+  VideoColorSpaceInit colorSpace;
+  colorSpace.mFullRange = false;
+  colorSpace.mMatrix = VideoMatrixCoefficients::Bt709;
+  colorSpace.mTransfer = VideoTransferCharacteristics::Bt709;
+  colorSpace.mPrimaries = VideoColorPrimaries::Bt709;
+  return colorSpace;
+}
+VideoColorSpaceInit FallbackColorSpaceForWebContent() {
+  // If we're unable to determine the color space, but we think this is from
+  // Web content (canvas, image, svg, etc.), consider it's in sRGB.
+  // This is step 2 of
+  // https://w3c.github.io/webcodecs/#videoframe-pick-color-space
+  VideoColorSpaceInit colorSpace;
+  colorSpace.mFullRange = true;
+  colorSpace.mMatrix = VideoMatrixCoefficients::Rgb;
+  colorSpace.mTransfer = VideoTransferCharacteristics::Iec61966_2_1;
+  colorSpace.mPrimaries = VideoColorPrimaries::Bt709;
+  return colorSpace;
+}
+
+Maybe<CodecType> CodecStringToCodecType(const nsAString& aCodecString) {
+  if (StringBeginsWith(aCodecString, u"av01"_ns)) {
+    return Some(CodecType::AV1);
+  }
+  if (StringBeginsWith(aCodecString, u"vp8"_ns)) {
+    return Some(CodecType::VP8);
+  }
+  if (StringBeginsWith(aCodecString, u"vp09"_ns)) {
+    return Some(CodecType::VP9);
+  }
+  if (StringBeginsWith(aCodecString, u"avc1"_ns)) {
+    return Some(CodecType::H264);
+  }
+  return Nothing();
+}
+
+nsString ConfigToString(const VideoDecoderConfig& aConfig) {
+  nsString rv;
+
+  auto internal = VideoDecoderConfigInternal::Create(aConfig);
+
+  return internal->ToString();
+}
+
+};  // namespace mozilla::dom

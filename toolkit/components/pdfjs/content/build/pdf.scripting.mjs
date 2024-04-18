@@ -180,7 +180,7 @@ function getFieldType(actions) {
   if (format.startsWith("AFDate_")) {
     return FieldType.date;
   }
-  if (format.startsWith("AFTime__")) {
+  if (format.startsWith("AFTime_")) {
     return FieldType.time;
   }
   return FieldType.none;
@@ -537,7 +537,7 @@ class Field extends PDFObject {
       this._setChoiceValue(value);
       return;
     }
-    if (value === "" || typeof value !== "string") {
+    if (value === "" || typeof value !== "string" || this._fieldType >= FieldType.date) {
       this._originalValue = undefined;
       this._value = value;
       return;
@@ -3996,8 +3996,8 @@ function initSandbox(params) {
 
 ;// CONCATENATED MODULE: ./src/pdf.scripting.js
 
-const pdfjsVersion = '4.0.240';
-const pdfjsBuild = 'ffbfd680e';
+const pdfjsVersion = '4.1.30';
+const pdfjsBuild = 'a22b5a4f0';
 globalThis.pdfjsScripting = {
   initSandbox: initSandbox
 };

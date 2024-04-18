@@ -355,6 +355,7 @@ checkbox {
 
 #updateDeck > hbox > label {
   flex: 1;
+  margin-inline-end: 5px !important;
 }
 
 .manualLink {
@@ -901,10 +902,6 @@ dialog > .sync-engines-list + hbox {
   vertical-align: text-bottom;
 }
 
-#updateDeck > hbox > label {
-  margin-inline-end: 5px ! important;
-}
-
 .update-throbber {
   width: 16px;
   min-height: 16px;
@@ -1298,6 +1295,10 @@ richlistitem .text-link:hover {
 
 #mozilla-vpn {
   background-image: url("chrome://browser/skin/preferences/vpn-logo.svg");
+}
+
+#mozilla-monitor {
+  background-image: url("chrome://browser/skin/preferences/monitor-logo.svg");
 }
 
 #firefox-relay {

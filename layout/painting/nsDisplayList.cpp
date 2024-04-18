@@ -2938,8 +2938,7 @@ nsDisplayBackgroundImage::nsDisplayBackgroundImage(
   if (mBackgroundStyle && mBackgroundStyle != mFrame->Style()) {
     // If this changes, then you also need to adjust css::ImageLoader to
     // invalidate mFrame as needed.
-    MOZ_ASSERT(mFrame->IsCanvasFrame() ||
-               mFrame->IsFrameOfType(nsIFrame::eTablePart));
+    MOZ_ASSERT(mFrame->IsCanvasFrame() || mFrame->IsTablePart());
   }
 #endif
 
@@ -5198,7 +5197,8 @@ bool nsDisplayOwnLayer::IsZoomingLayer() const {
 }
 
 bool nsDisplayOwnLayer::IsFixedPositionLayer() const {
-  return GetType() == DisplayItemType::TYPE_FIXED_POSITION;
+  return GetType() == DisplayItemType::TYPE_FIXED_POSITION ||
+         GetType() == DisplayItemType::TYPE_TABLE_FIXED_POSITION;
 }
 
 bool nsDisplayOwnLayer::IsStickyPositionLayer() const {
@@ -5215,14 +5215,6 @@ bool nsDisplayOwnLayer::HasDynamicToolbar() const {
          StaticPrefs::apz_fixed_margin_override_enabled();
 }
 
-bool nsDisplayOwnLayer::ShouldFixedAndStickyContentGetAnimationIds() const {
-#if defined(MOZ_WIDGET_ANDROID)
-  return mFrame->PresContext()->IsRootContentDocumentCrossProcess();
-#else
-  return false;
-#endif
-}
-
 bool nsDisplayOwnLayer::CreateWebRenderCommands(
     wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
     const StackingContextHelper& aSc, RenderRootStateManager* aManager,
@@ -5230,10 +5222,7 @@ bool nsDisplayOwnLayer::CreateWebRenderCommands(
   Maybe<wr::WrAnimationProperty> prop;
   bool needsProp = aManager->LayerManager()->AsyncPanZoomEnabled() &&
                    (IsScrollThumbLayer() || IsZoomingLayer() ||
-                    (IsFixedPositionLayer() &&
-                     ShouldFixedAndStickyContentGetAnimationIds()) ||
-                    (IsStickyPositionLayer() &&
-                     ShouldFixedAndStickyContentGetAnimationIds()) ||
+                    ShouldGetFixedOrStickyAnimationId() ||
                     (IsRootScrollbarContainer() && HasDynamicToolbar()));
 
   if (needsProp) {
@@ -5260,10 +5249,7 @@ bool nsDisplayOwnLayer::CreateWebRenderCommands(
     params.prim_flags |= wr::PrimitiveFlags::IS_SCROLLBAR_CONTAINER;
   }
   if (IsZoomingLayer() ||
-      ((IsFixedPositionLayer() &&
-        ShouldFixedAndStickyContentGetAnimationIds()) ||
-       (IsStickyPositionLayer() &&
-        ShouldFixedAndStickyContentGetAnimationIds()) ||
+      (ShouldGetFixedOrStickyAnimationId() ||
        (IsRootScrollbarContainer() && HasDynamicToolbar()))) {
     params.is_2d_scale_translation = true;
     params.should_snap = true;
@@ -5281,10 +5267,7 @@ bool nsDisplayOwnLayer::UpdateScrollData(WebRenderScrollData* aData,
                                          WebRenderLayerScrollData* aLayerData) {
   bool isRelevantToApz =
       (IsScrollThumbLayer() || IsScrollbarContainer() || IsZoomingLayer() ||
-       (IsFixedPositionLayer() &&
-        ShouldFixedAndStickyContentGetAnimationIds()) ||
-       (IsStickyPositionLayer() &&
-        ShouldFixedAndStickyContentGetAnimationIds()));
+       ShouldGetFixedOrStickyAnimationId());
 
   if (!isRelevantToApz) {
     return false;
@@ -5299,12 +5282,12 @@ bool nsDisplayOwnLayer::UpdateScrollData(WebRenderScrollData* aData,
     return true;
   }
 
-  if (IsFixedPositionLayer() && ShouldFixedAndStickyContentGetAnimationIds()) {
+  if (IsFixedPositionLayer() && ShouldGetFixedOrStickyAnimationId()) {
     aLayerData->SetFixedPositionAnimationId(mWrAnimationId);
     return true;
   }
 
-  if (IsStickyPositionLayer() && ShouldFixedAndStickyContentGetAnimationIds()) {
+  if (IsStickyPositionLayer() && ShouldGetFixedOrStickyAnimationId()) {
     aLayerData->SetStickyPositionAnimationId(mWrAnimationId);
     return true;
   }
@@ -5331,7 +5314,7 @@ bool nsDisplayOwnLayer::UpdateScrollData(WebRenderScrollData* aData,
             : mFrame->PresContext()->PresShell()->GetCumulativeResolution();
     LayerIntRect layerBounds =
         RoundedOut(bounds * LayoutDeviceToLayerScale(resolution));
-    aLayerData->SetVisibleRegion(LayerIntRegion(layerBounds));
+    aLayerData->SetVisibleRect(layerBounds);
   }
   return true;
 }
@@ -5450,7 +5433,7 @@ nsDisplayFixedPosition::nsDisplayFixedPosition(
   MOZ_COUNT_CTOR(nsDisplayFixedPosition);
 }
 
-ScrollableLayerGuid::ViewID nsDisplayFixedPosition::GetScrollTargetId() {
+ScrollableLayerGuid::ViewID nsDisplayFixedPosition::GetScrollTargetId() const {
   if (mScrollTargetASR &&
       (mIsFixedBackground || !nsLayoutUtils::IsReallyFixedPos(mFrame))) {
     return mScrollTargetASR->GetViewId();
@@ -5488,6 +5471,16 @@ bool nsDisplayFixedPosition::UpdateScrollData(
   }
   nsDisplayOwnLayer::UpdateScrollData(aData, aLayerData);
   return true;
+}
+
+bool nsDisplayFixedPosition::ShouldGetFixedOrStickyAnimationId() {
+#if defined(MOZ_WIDGET_ANDROID)
+  return mFrame->PresContext()->IsRootContentDocumentCrossProcess() &&
+         nsLayoutUtils::ScrollIdForRootScrollFrame(mFrame->PresContext()) ==
+             GetScrollTargetId();
+#else
+  return false;
+#endif
 }
 
 void nsDisplayFixedPosition::WriteDebugInfo(std::stringstream& aStream) {
@@ -5841,6 +5834,23 @@ bool nsDisplayStickyPosition::UpdateScrollData(
   bool ret = hasDynamicToolbar;
   ret |= nsDisplayOwnLayer::UpdateScrollData(aData, aLayerData);
   return ret;
+}
+
+bool nsDisplayStickyPosition::ShouldGetFixedOrStickyAnimationId() {
+#if defined(MOZ_WIDGET_ANDROID)
+  if (HasDynamicToolbar()) {  // also implies being in the cross-process RCD
+    StickyScrollContainer* stickyScrollContainer = GetStickyScrollContainer();
+    if (stickyScrollContainer) {
+      ScrollableLayerGuid::ViewID scrollId =
+          nsLayoutUtils::FindOrCreateIDFor(stickyScrollContainer->ScrollFrame()
+                                               ->GetScrolledFrame()
+                                               ->GetContent());
+      return nsLayoutUtils::ScrollIdForRootScrollFrame(mFrame->PresContext()) ==
+             scrollId;
+    }
+  }
+#endif
+  return false;
 }
 
 nsDisplayScrollInfoLayer::nsDisplayScrollInfoLayer(

@@ -6,10 +6,11 @@
 
 BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
 
-XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.ini"]
+XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.toml"]
 
 DevToolsModules(
     "ChannelMap.sys.mjs",
+    "NetworkAuthListener.sys.mjs",
     "NetworkHelper.sys.mjs",
     "NetworkObserver.sys.mjs",
     "NetworkOverride.sys.mjs",

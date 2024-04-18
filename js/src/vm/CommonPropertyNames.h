@@ -151,6 +151,8 @@
   MACRO_(dot_fieldKeys_, ".fieldKeys")                                         \
   MACRO_(dot_generator_, ".generator")                                         \
   MACRO_(dot_initializers_, ".initializers")                                   \
+  IF_DECORATORS(                                                               \
+      MACRO_(dot_instanceExtraInitializers_, ".instanceExtraInitializers"))    \
   MACRO_(dot_newTarget_, ".newTarget")                                         \
   MACRO_(dot_privateBrand_, ".privateBrand")                                   \
   MACRO_(dot_staticFieldKeys_, ".staticFieldKeys")                             \
@@ -241,6 +243,7 @@
   MACRO_(GetTypeError, "GetTypeError")                                         \
   MACRO_(global, "global")                                                     \
   MACRO_(globalThis, "globalThis")                                             \
+  MACRO_(granularity, "granularity")                                           \
   MACRO_(group, "group")                                                       \
   MACRO_(groupBy, "groupBy")                                                   \
   MACRO_(groups, "groups")                                                     \
@@ -283,6 +286,8 @@
   MACRO_(InitializeNumberFormat, "InitializeNumberFormat")                     \
   MACRO_(InitializePluralRules, "InitializePluralRules")                       \
   MACRO_(InitializeRelativeTimeFormat, "InitializeRelativeTimeFormat")         \
+  MACRO_(InitializeSegmenter, "InitializeSegmenter")                           \
+  IF_DECORATORS(MACRO_(initializer, "initializer"))                            \
   MACRO_(inLeapYear, "inLeapYear")                                             \
   MACRO_(innermost, "innermost")                                               \
   MACRO_(inNursery, "inNursery")                                               \
@@ -324,6 +329,7 @@
   MACRO_(iterate, "iterate")                                                   \
   MACRO_(join, "join")                                                         \
   MACRO2(js, "js")                                                             \
+  MACRO_(jsStringModule, "js-string")                                          \
   MACRO_(keys, "keys")                                                         \
   IF_DECORATORS(MACRO_(kind, "kind"))                                          \
   MACRO_(label, "label")                                                       \

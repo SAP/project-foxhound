@@ -23,6 +23,8 @@ const SPANISH_PAGE_URL_DOT_ORG =
   URL_ORG_PREFIX + DIR_PATH + "translations-tester-es.html";
 const NO_LANGUAGE_URL =
   URL_COM_PREFIX + DIR_PATH + "translations-tester-no-tag.html";
+const EMPTY_PDF_URL =
+  URL_COM_PREFIX + DIR_PATH + "translations-tester-empty-pdf-file.pdf";
 
 const PIVOT_LANGUAGE = "en";
 const LANGUAGE_PAIRS = [
@@ -337,6 +339,28 @@ function getTranslationsParent() {
 }
 
 /**
+ * Closes the context menu if it is open.
+ */
+function closeContextMenuIfOpen() {
+  return waitForCondition(async () => {
+    const contextMenu = document.getElementById("contentAreaContextMenu");
+    if (!contextMenu) {
+      return true;
+    }
+    if (contextMenu.state === "closed") {
+      return true;
+    }
+    let popuphiddenPromise = BrowserTestUtils.waitForEvent(
+      contextMenu,
+      "popuphidden"
+    );
+    PanelMultiView.hidePopup(contextMenu);
+    await popuphiddenPromise;
+    return false;
+  });
+}
+
+/**
  * Closes the translations panel settings menu if it is open.
  */
 function closeSettingsMenuIfOpen() {
@@ -419,6 +443,7 @@ async function setupActorTest({
     async cleanup() {
       await TranslationsParent.destroyEngineProcess();
       await closeTranslationsPanelIfOpen();
+      await closeContextMenuIfOpen();
       BrowserTestUtils.removeTab(tab);
       await removeMocks();
       TestTranslationsTelemetry.reset();
@@ -560,6 +585,7 @@ async function loadTestPage({
     async cleanup() {
       await TranslationsParent.destroyEngineProcess();
       await closeTranslationsPanelIfOpen();
+      await closeContextMenuIfOpen();
       await removeMocks();
       Services.fog.testResetFOG();
       TranslationsParent.testAutomaticPopup = false;
@@ -759,6 +785,14 @@ function createRecordsForLanguagePair(fromLang, toLang) {
     { fileType: "vocab", name: `vocab.${lang}.spm` },
   ];
 
+  const attachment = {
+    hash: `${crypto.randomUUID()}`,
+    size: `123`,
+    filename: `model.${lang}.intgemm.alphas.bin`,
+    location: `main-workspace/translations-models/${crypto.randomUUID()}.bin`,
+    mimetype: "application/octet-stream",
+  };
+
   if (models.length !== FILES_PER_LANGUAGE_PAIR) {
     throw new Error("Files per language pair was wrong.");
   }
@@ -773,6 +807,7 @@ function createRecordsForLanguagePair(fromLang, toLang) {
       version: TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION + ".0",
       last_modified: Date.now(),
       schema: Date.now(),
+      attachment,
     });
   }
   return records;
@@ -1010,6 +1045,7 @@ async function setupAboutPreferences(
   async function cleanup() {
     await TranslationsParent.destroyEngineProcess();
     await closeTranslationsPanelIfOpen();
+    await closeContextMenuIfOpen();
     BrowserTestUtils.removeTab(tab);
     await removeMocks();
     await SpecialPowers.popPrefEnv();
@@ -1155,6 +1191,10 @@ class TestTranslationsTelemetry {
         );
       }
       TestTranslationsTelemetry.#previousFlowId = flowId;
+    }
+
+    if (eventCount !== expectedEventCount) {
+      console.error("Actual events:", events);
     }
 
     is(
@@ -1336,7 +1376,7 @@ function promiseLoadSubDialog(aURL) {
           "Element should not be null, when checking visibility"
         );
         Assert.ok(
-          !BrowserTestUtils.is_hidden(aEvent.detail.dialog._overlay),
+          !BrowserTestUtils.isHidden(aEvent.detail.dialog._overlay),
           "The element is visible"
         );
 

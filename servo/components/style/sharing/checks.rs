@@ -137,13 +137,7 @@ where
 
     let for_element = target.revalidation_match_results(stylist, bloom, selector_caches);
 
-    let for_candidate =
-        candidate.revalidation_match_results(stylist, bloom, selector_caches);
-
-    // This assert "ensures", to some extent, that the two candidates have
-    // matched the same rulehash buckets, and as such, that the bits we're
-    // comparing represent the same set of selectors.
-    debug_assert_eq!(for_element.len(), for_candidate.len());
+    let for_candidate = candidate.revalidation_match_results(stylist, bloom, selector_caches);
 
     for_element == for_candidate
 }

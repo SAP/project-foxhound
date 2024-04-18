@@ -195,7 +195,7 @@ void nsStyledElement::ParseStyleAttribute(const nsAString& aValue,
 
   if (!isNativeAnon &&
       !nsStyleUtil::CSPAllowsInlineStyle(this, doc, aMaybeScriptedPrincipal, 0,
-                                         0, aValue, nullptr))
+                                         1, aValue, nullptr))
     return;
 
   if (aForceInDataDoc || !doc->IsLoadedAsData() || GetExistingStyle() ||
@@ -225,7 +225,7 @@ nsresult nsStyledElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (HasAttr(nsGkAtoms::autofocus) && aContext.AllowsAutoFocus() &&
-      (!IsSVGElement() || IsFocusable())) {
+      (!IsSVGElement() || IsFocusableWithoutStyle())) {
     aContext.OwnerDoc().ElementWithAutoFocusInserted(this);
   }
 

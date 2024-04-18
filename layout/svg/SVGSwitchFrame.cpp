@@ -119,10 +119,9 @@ nsIFrame* SVGSwitchFrame::GetFrameForPoint(const gfxPoint& aPoint) {
   return nullptr;
 }
 
-static bool shouldReflowSVGTextFrameInside(nsIFrame* aFrame) {
-  return aFrame->IsFrameOfType(nsIFrame::eSVG | nsIFrame::eSVGContainer) ||
-         aFrame->IsSVGForeignObjectFrame() ||
-         !aFrame->IsFrameOfType(nsIFrame::eSVG);
+static bool ShouldReflowSVGTextFrameInside(nsIFrame* aFrame) {
+  return aFrame->IsSVGContainerFrame() || aFrame->IsSVGForeignObjectFrame() ||
+         !aFrame->IsSVGFrame();
 }
 
 void SVGSwitchFrame::AlwaysReflowSVGTextFrameDoForOneKid(nsIFrame* aKid) {
@@ -135,7 +134,7 @@ void SVGSwitchFrame::AlwaysReflowSVGTextFrameDoForOneKid(nsIFrame* aKid) {
                "A non-display SVGTextFrame directly contained in a display "
                "container?");
     static_cast<SVGTextFrame*>(aKid)->ReflowSVG();
-  } else if (shouldReflowSVGTextFrameInside(aKid)) {
+  } else if (ShouldReflowSVGTextFrameInside(aKid)) {
     if (!aKid->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
       for (nsIFrame* kid : aKid->PrincipalChildList()) {
         AlwaysReflowSVGTextFrameDoForOneKid(kid);
@@ -154,7 +153,7 @@ void SVGSwitchFrame::AlwaysReflowSVGTextFrameDoForOneKid(nsIFrame* aKid) {
 
 void SVGSwitchFrame::ReflowAllSVGTextFramesInsideNonActiveChildren(
     nsIFrame* aActiveChild) {
-  for (nsIFrame* kid = mFrames.FirstChild(); kid; kid = kid->GetNextSibling()) {
+  for (auto* kid : mFrames) {
     if (aActiveChild == kid) {
       continue;
     }
@@ -196,19 +195,17 @@ void SVGSwitchFrame::ReflowSVG() {
   ReflowAllSVGTextFramesInsideNonActiveChildren(child);
 
   ISVGDisplayableFrame* svgChild = do_QueryFrame(child);
-  if (svgChild) {
-    MOZ_ASSERT(!child->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
-               "Check for this explicitly in the |if|, then");
+  if (svgChild && !child->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     svgChild->ReflowSVG();
 
     // We build up our child frame overflows here instead of using
     // nsLayoutUtils::UnionChildOverflow since SVG frame's all use the same
     // frame list, and we're iterating over that list now anyway.
     ConsiderChildOverflow(overflowRects, child);
-  } else if (child && shouldReflowSVGTextFrameInside(child)) {
-    MOZ_ASSERT(child->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY) ||
-                   !child->IsFrameOfType(nsIFrame::eSVG),
-               "Check for this explicitly in the |if|, then");
+  } else if (child && ShouldReflowSVGTextFrameInside(child)) {
+    MOZ_ASSERT(
+        child->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY) || !child->IsSVGFrame(),
+        "Check for this explicitly in the |if|, then");
     ReflowSVGNonDisplayText(child);
   }
 
@@ -249,8 +246,7 @@ nsIFrame* SVGSwitchFrame::GetActiveChildFrame() {
       static_cast<dom::SVGSwitchElement*>(GetContent())->GetActiveChild();
 
   if (activeChild) {
-    for (nsIFrame* kid = mFrames.FirstChild(); kid;
-         kid = kid->GetNextSibling()) {
+    for (auto* kid : mFrames) {
       if (activeChild == kid->GetContent()) {
         return kid;
       }

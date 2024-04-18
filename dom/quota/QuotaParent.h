@@ -20,7 +20,7 @@ class Quota final : public PQuotaParent {
  public:
   Quota();
 
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(mozilla::dom::quota::Quota)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(mozilla::dom::quota::Quota, override)
 
  private:
   ~Quota();
@@ -52,6 +52,12 @@ class Quota final : public PQuotaParent {
 
   virtual bool DeallocPQuotaRequestParent(PQuotaRequestParent* aActor) override;
 
+  virtual mozilla::ipc::IPCResult RecvStorageInitialized(
+      StorageInitializedResolver&& aResolver) override;
+
+  virtual mozilla::ipc::IPCResult RecvTemporaryStorageInitialized(
+      TemporaryStorageInitializedResolver&& aResolver) override;
+
   virtual mozilla::ipc::IPCResult RecvInitializeStorage(
       InitializeStorageResolver&& aResolver) override;
 
@@ -63,6 +69,9 @@ class Quota final : public PQuotaParent {
       const PersistenceType& aPersistenceType,
       const PrincipalInfo& aPrincipalInfo, const Type& aClientType,
       InitializeTemporaryClientResolver&& aResolve) override;
+
+  virtual mozilla::ipc::IPCResult RecvInitializeTemporaryStorage(
+      InitializeTemporaryStorageResolver&& aResolver) override;
 
   virtual mozilla::ipc::IPCResult RecvClearStoragesForOrigin(
       const Maybe<PersistenceType>& aPersistenceType,
@@ -95,9 +104,7 @@ class Quota final : public PQuotaParent {
       const ContentParentId& aContentParentId) override;
 };
 
-PQuotaParent* AllocPQuotaParent();
-
-bool DeallocPQuotaParent(PQuotaParent* aActor);
+already_AddRefed<PQuotaParent> AllocPQuotaParent();
 
 }  // namespace mozilla::dom::quota
 

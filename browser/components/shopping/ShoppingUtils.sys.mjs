@@ -23,6 +23,12 @@ const LAST_AUTO_ACTIVATE_PREF =
 const AUTO_ACTIVATE_COUNT_PREF =
   "browser.shopping.experience2023.autoActivateCount";
 const ADS_USER_ENABLED_PREF = "browser.shopping.experience2023.ads.userEnabled";
+const AUTO_OPEN_ENABLED_PREF =
+  "browser.shopping.experience2023.autoOpen.enabled";
+const AUTO_OPEN_USER_ENABLED_PREF =
+  "browser.shopping.experience2023.autoOpen.userEnabled";
+const SIDEBAR_CLOSED_COUNT_PREF =
+  "browser.shopping.experience2023.sidebarClosedCount";
 
 const CFR_FEATURES_PREF =
   "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features";
@@ -60,6 +66,7 @@ export const ShoppingUtils = {
       return;
     }
     this.onNimbusUpdate = this.onNimbusUpdate.bind(this);
+    this.onActiveUpdate = this.onActiveUpdate.bind(this);
 
     if (!this.registered) {
       // Note (bug 1855545): we must set `this.registered` before calling
@@ -79,6 +86,14 @@ export const ShoppingUtils = {
 
     this.setOnUpdate(undefined, undefined, this.optedIn);
     this.recordUserAdsPreference();
+    this.recordUserAutoOpenPreference();
+
+    if (this._isAutoOpenEligible()) {
+      Services.prefs.setBoolPref(ACTIVE_PREF, true);
+    }
+    Services.prefs.addObserver(ACTIVE_PREF, this.onActiveUpdate);
+
+    Services.prefs.setIntPref(SIDEBAR_CLOSED_COUNT_PREF, 0);
 
     this.initialized = true;
   },
@@ -93,6 +108,8 @@ export const ShoppingUtils = {
 
     // Do shutdown-time stuff here, like firing glean pings or modifying any
     // prefs for onboarding.
+
+    Services.prefs.removeObserver(ACTIVE_PREF, this.onActiveUpdate);
 
     this.initialized = false;
   },
@@ -141,11 +158,8 @@ export const ShoppingUtils = {
 
   // For users in either the nimbus control or treatment groups, increment a
   // counter when they visit supported product pages.
-  maybeRecordExposure(aLocationURI, aFlags) {
-    if (
-      (this.nimbusEnabled || this.nimbusControl) &&
-      ShoppingUtils.isProductPageNavigation(aLocationURI, aFlags)
-    ) {
+  recordExposure() {
+    if (this.nimbusEnabled || this.nimbusControl) {
       Glean.shopping.productPageVisits.add(1);
     }
   },
@@ -157,6 +171,12 @@ export const ShoppingUtils = {
 
   recordUserAdsPreference() {
     Glean.shoppingSettings.disabledAds.set(!ShoppingUtils.adsUserEnabled);
+  },
+
+  recordUserAutoOpenPreference() {
+    Glean.shoppingSettings.autoOpenUserDisabled.set(
+      !ShoppingUtils.autoOpenUserEnabled
+    );
   },
 
   /**
@@ -213,6 +233,43 @@ export const ShoppingUtils = {
     await lazy.ASRouter.waitForInitialized;
     await lazy.ASRouter.sendTriggerMessage(trigger);
   },
+
+  onActiveUpdate(subject, topic, data) {
+    if (data !== ACTIVE_PREF || topic !== "nsPref:changed") {
+      return;
+    }
+
+    let newValue = Services.prefs.getBoolPref(ACTIVE_PREF);
+    if (newValue === false) {
+      ShoppingUtils.resetActiveOnNextProductPage = true;
+    }
+  },
+
+  _isAutoOpenEligible() {
+    return (
+      this.optedIn === 1 && this.autoOpenEnabled && this.autoOpenUserEnabled
+    );
+  },
+
+  onLocationChange(aLocationURI, aFlags) {
+    let isProductPageNavigation = this.isProductPageNavigation(
+      aLocationURI,
+      aFlags
+    );
+
+    if (isProductPageNavigation) {
+      this.recordExposure(aLocationURI, aFlags);
+    }
+
+    if (
+      this._isAutoOpenEligible() &&
+      this.resetActiveOnNextProductPage &&
+      isProductPageNavigation
+    ) {
+      this.resetActiveOnNextProductPage = false;
+      Services.prefs.setBoolPref(ACTIVE_PREF, true);
+    }
+  },
 };
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -236,4 +293,19 @@ XPCOMUtils.defineLazyPreferenceGetter(
   ADS_USER_ENABLED_PREF,
   false,
   ShoppingUtils.recordUserAdsPreference
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  ShoppingUtils,
+  "autoOpenEnabled",
+  AUTO_OPEN_ENABLED_PREF,
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  ShoppingUtils,
+  "autoOpenUserEnabled",
+  AUTO_OPEN_USER_ENABLED_PREF,
+  false,
+  ShoppingUtils.recordUserAutoOpenPreference
 );

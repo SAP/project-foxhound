@@ -18,6 +18,7 @@
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/media/MediaUtils.h"
 #include "nsStringFwd.h"
+#include "WebCodecsUtils.h"
 
 namespace mozilla {
 
@@ -28,23 +29,6 @@ namespace dom {
 class WebCodecsErrorCallback;
 class Promise;
 enum class CodecState : uint8_t;
-
-template <typename T>
-class MessageRequestHolder {
- public:
-  MessageRequestHolder() = default;
-  ~MessageRequestHolder() = default;
-
-  MozPromiseRequestHolder<T>& Request() { return mRequest; }
-  void Disconnect() { mRequest.Disconnect(); }
-  void Complete() { mRequest.Complete(); }
-  bool Exists() const { return mRequest.Exists(); }
-
- protected:
-  MozPromiseRequestHolder<T> mRequest;
-};
-
-enum class MessageProcessedResult { NotProcessed, Processed };
 
 template <typename DecoderType>
 class DecoderTemplate : public DOMEventTargetHelper {
@@ -152,7 +136,6 @@ class DecoderTemplate : public DOMEventTargetHelper {
 
   uint32_t DecodeQueueSize() const { return mDecodeQueueSize; };
 
-  // TODO: Replace virtual with MOZ_EXPORT (visibility("default"))
   void Configure(const ConfigType& aConfig, ErrorResult& aRv);
 
   void Decode(InputType& aInput, ErrorResult& aRv);
@@ -169,10 +152,9 @@ class DecoderTemplate : public DOMEventTargetHelper {
       UniquePtr<InputTypeInternal>&& aData, TrackInfo& aInfo,
       const ConfigTypeInternal& aConfig) = 0;
   virtual nsTArray<RefPtr<OutputType>> DecodedDataToOutputType(
-      nsIGlobalObject* aGlobalObject, nsTArray<RefPtr<MediaData>>&& aData,
+      nsIGlobalObject* aGlobalObject, const nsTArray<RefPtr<MediaData>>&& aData,
       ConfigTypeInternal& aConfig) = 0;
 
-  /* Internal member variables and functions */
  protected:
   // DecoderTemplate can run on either main thread or worker thread.
   void AssertIsOnOwningThread() const {
@@ -180,29 +162,26 @@ class DecoderTemplate : public DOMEventTargetHelper {
   }
 
   Result<Ok, nsresult> ResetInternal(const nsresult& aResult);
-  Result<Ok, nsresult> CloseInternal(const nsresult& aResult);
+  // Calling this method calls the error callback synchronously.
+  MOZ_CAN_RUN_SCRIPT
+  void CloseInternal(const nsresult& aResult);
+  // Calling this method doesn't call the error calback.
+  Result<Ok, nsresult> CloseInternalWithAbort();
 
   MOZ_CAN_RUN_SCRIPT void ReportError(const nsresult& aResult);
   MOZ_CAN_RUN_SCRIPT void OutputDecodedData(
-      nsTArray<RefPtr<MediaData>>&& aData);
+      const nsTArray<RefPtr<MediaData>>&& aData);
 
-  class ErrorRunnable;
-  void ScheduleReportError(const nsresult& aResult);
-
-  class OutputRunnable;
-  void ScheduleOutputDecodedData(nsTArray<RefPtr<MediaData>>&& aData,
-                                 const nsACString& aLabel);
-
-  void ScheduleClose(const nsresult& aResult);
-
-  void ScheduleDequeueEvent();
+  void ScheduleDequeueEventIfNeeded();
   nsresult FireEvent(nsAtom* aTypeWithOn, const nsAString& aEventType);
-
-  void SchedulePromiseResolveOrReject(already_AddRefed<Promise> aPromise,
-                                      const nsresult& aResult);
 
   void ProcessControlMessageQueue();
   void CancelPendingControlMessages(const nsresult& aResult);
+
+  // Queue a task to the control thread. This is to be used when a task needs to
+  // perform multiple steps.
+  template <typename Func>
+  void QueueATask(const char* aName, Func&& aSteps);
 
   MessageProcessedResult ProcessConfigureMessage(
       UniquePtr<ControlMessage>& aMessage);

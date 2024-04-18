@@ -210,7 +210,7 @@ reviewed.
 
 .. note::
 
-   Note: Be sure to build the application with the patch applied. This
+   Be sure to build the application with the patch applied. This
    ensures it runs as expected, passing automated tests, and/or runs
    through the `try
    server <https://wiki.mozilla.org/Build:TryServerAsBranch>`__. In the
@@ -224,7 +224,6 @@ reviewed.
 Ask the reviewer to land the patch for you.
 For more details, see :ref:`push_a_change`
 
-If pushing the patch yourself, please follow :ref:`Committing rules and responsibilities`.
 `Lando <https://moz-conduit.readthedocs.io/en/latest/lando-user.html>`__ is used
 to automatically land your code.
 

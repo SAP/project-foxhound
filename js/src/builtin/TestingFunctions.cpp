@@ -124,6 +124,7 @@
 #include "vm/PlainObject.h"    // js::PlainObject
 #include "vm/PromiseObject.h"  // js::PromiseObject, js::PromiseSlot_*
 #include "vm/ProxyObject.h"
+#include "vm/RealmFuses.h"
 #include "vm/SavedStacks.h"
 #include "vm/ScopeKind.h"
 #include "vm/Stack.h"
@@ -133,10 +134,10 @@
 #include "vm/StringType.h"
 #include "wasm/AsmJS.h"
 #include "wasm/WasmBaselineCompile.h"
+#include "wasm/WasmBuiltinModule.h"
 #include "wasm/WasmFeatures.h"
 #include "wasm/WasmGcObject.h"
 #include "wasm/WasmInstance.h"
-#include "wasm/WasmIntrinsic.h"
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmModule.h"
@@ -205,9 +206,9 @@ static bool GetRealmConfiguration(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  bool importAssertions = cx->options().importAssertions();
-  if (!JS_SetProperty(cx, info, "importAssertions",
-                      importAssertions ? TrueHandleValue : FalseHandleValue)) {
+  bool importAttributes = cx->options().importAttributes();
+  if (!JS_SetProperty(cx, info, "importAttributes",
+                      importAttributes ? TrueHandleValue : FalseHandleValue)) {
     return false;
   }
 
@@ -647,6 +648,28 @@ static bool GetBuildConfiguration(JSContext* cx, unsigned argc, Value* vp) {
 
   value = Int32Value(JSThinInlineString::MAX_LENGTH_TWO_BYTE);
   if (!JS_SetProperty(cx, info, "thin-inline-two-byte-chars", value)) {
+    return false;
+  }
+
+  if (js::ThinInlineAtom::EverInstantiated) {
+    value = Int32Value(js::ThinInlineAtom::MAX_LENGTH_LATIN1);
+    if (!JS_SetProperty(cx, info, "thin-inline-atom-latin1-chars", value)) {
+      return false;
+    }
+
+    value = Int32Value(js::ThinInlineAtom::MAX_LENGTH_TWO_BYTE);
+    if (!JS_SetProperty(cx, info, "thin-inline-atom-two-byte-chars", value)) {
+      return false;
+    }
+  }
+
+  value = Int32Value(js::FatInlineAtom::MAX_LENGTH_LATIN1);
+  if (!JS_SetProperty(cx, info, "fat-inline-atom-latin1-chars", value)) {
+    return false;
+  }
+
+  value = Int32Value(js::FatInlineAtom::MAX_LENGTH_TWO_BYTE);
+  if (!JS_SetProperty(cx, info, "fat-inline-atom-two-byte-chars", value)) {
     return false;
   }
 
@@ -1792,24 +1815,9 @@ static bool DisassembleNative(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  DisasmBuffer buf(cx);
-  disasmBuf.set(&buf);
-  auto onFinish = mozilla::MakeScopeExit([&] { disasmBuf.set(nullptr); });
-
-  jit::Disassemble(jit_begin, jit_end - jit_begin, &captureDisasmText);
-
-  if (buf.oom) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-  JSString* sresult = buf.builder.finishString();
-  if (!sresult) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-  sprinter.putString(cx, sresult);
-
-  if (args.length() > 1 && args[1].isString()) {
+  // Dump the raw code to a file before disassembling in case
+  // finishString triggers a GC and discards the jitcode.
+  if (!fuzzingSafe && args.length() > 1 && args[1].isString()) {
     RootedString str(cx, args[1].toString());
     JS::UniqueChars fileNameBytes = JS_EncodeStringToUTF8(cx, str);
 
@@ -1834,6 +1842,23 @@ static bool DisassembleNative(JSContext* cx, unsigned argc, Value* vp) {
     }
     fclose(f);
   }
+
+  DisasmBuffer buf(cx);
+  disasmBuf.set(&buf);
+  auto onFinish = mozilla::MakeScopeExit([&] { disasmBuf.set(nullptr); });
+
+  jit::Disassemble(jit_begin, jit_end - jit_begin, &captureDisasmText);
+
+  if (buf.oom) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+  JSString* sresult = buf.builder.finishString();
+  if (!sresult) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+  sprinter.putString(cx, sresult);
 
   JSString* str = sprinter.release(cx);
   if (!str) {
@@ -2113,7 +2138,7 @@ static bool WasmLoadedFromCache(JSContext* cx, unsigned argc, Value* vp) {
   return WasmReturnFlag(cx, argc, vp, Flag::Deserialized);
 }
 
-static bool WasmIntrinsicI8VecMul(JSContext* cx, unsigned argc, Value* vp) {
+static bool WasmBuiltinI8VecMul(JSContext* cx, unsigned argc, Value* vp) {
   if (!wasm::HasSupport(cx)) {
     JS_ReportErrorASCII(cx, "wasm support unavailable");
     return false;
@@ -2121,9 +2146,9 @@ static bool WasmIntrinsicI8VecMul(JSContext* cx, unsigned argc, Value* vp) {
 
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  wasm::IntrinsicId ids[] = {wasm::IntrinsicId::I8VecMul};
   Rooted<WasmModuleObject*> module(cx);
-  if (!wasm::CompileIntrinsicModule(cx, ids, wasm::Shareable::False, &module)) {
+  if (!wasm::CompileBuiltinModule(cx, wasm::BuiltinModuleId::SelfTest,
+                                  &module)) {
     return false;
   }
   args.rval().set(ObjectValue(*module.get()));
@@ -2418,6 +2443,13 @@ static bool GCZeal(JSContext* cx, unsigned argc, Value* vp) {
     RootedObject callee(cx, &args.callee());
     ReportUsageErrorASCII(cx, callee, "Too many arguments");
     return false;
+  }
+
+  if (args.length() == 0) {
+    uint32_t zealBits, unused1, unused2;
+    cx->runtime()->gc.getZealBits(&zealBits, &unused1, &unused2);
+    args.rval().setNumber(zealBits);
+    return true;
   }
 
   uint8_t zeal;
@@ -3422,7 +3454,12 @@ static bool AddWatchtowerTarget(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 struct TestExternalString : public JSExternalStringCallbacks {
+  void finalize(JS::Latin1Char* chars) const override { js_free(chars); }
   void finalize(char16_t* chars) const override { js_free(chars); }
+  size_t sizeOfBuffer(const JS::Latin1Char* chars,
+                      mozilla::MallocSizeOf mallocSizeOf) const override {
+    return mallocSizeOf(chars);
+  }
   size_t sizeOfBuffer(const char16_t* chars,
                       mozilla::MallocSizeOf mallocSizeOf) const override {
     return mallocSizeOf(chars);
@@ -3553,8 +3590,9 @@ static bool NewString(JSContext* cx, unsigned argc, Value* vp) {
           return nullptr;
         }
         mozilla::PodCopy(news.get(), chars, len);
-        return JSLinearString::newValidLength<CanGC>(cx, std::move(news), len,
-                                                     heap);
+        Rooted<JSString::OwnedChars<CharT>> owned(cx, std::move(news), len,
+                                                  true);
+        return JSLinearString::newValidLength<CanGC, CharT>(cx, &owned, heap);
       };
 
       if (stable.isLatin1()) {
@@ -4848,7 +4886,7 @@ static bool testingFunc_inIon(JSContext* cx, unsigned argc, Value* vp) {
   // Use frame iterator to inspect caller.
   FrameIter iter(cx);
 
-  // We may be invoked directly, not in a JS context, e.g. if inJson is added as
+  // We may be invoked directly, not in a JS context, e.g. if inIon is added as
   // a callback on the event queue.
   if (iter.done()) {
     args.rval().setBoolean(false);
@@ -5228,6 +5266,15 @@ class CustomSerializableObject : public NativeObject {
         self.infallibleInit();
         self.set(js_new<ActivityLog>());
         MOZ_RELEASE_ASSERT(self.get());
+        if (!TlsContext.get()->runtime()->atExit(
+                [](void* vpData) {
+                  auto* log = static_cast<ActivityLog*>(vpData);
+                  js_delete(log);
+                },
+                self.get())) {
+          AutoEnterOOMUnsafeRegion oomUnsafe;
+          oomUnsafe.crash("atExit");
+        }
       }
       return self.get();
     }
@@ -6839,20 +6886,38 @@ static bool EvalReturningScope(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  RootedObject global(cx);
-  if (args.hasDefined(1)) {
-    global = ToObject(cx, args[1]);
-    if (!global) {
-      return false;
-    }
-  }
-
   JS::AutoFilename filename;
   uint32_t lineno;
 
   JS::DescribeScriptedCaller(cx, &filename, &lineno);
 
-  JS::CompileOptions options(cx);
+  // CompileOption should be created in the target global's realm.
+  RootedObject global(cx);
+  Maybe<JS::CompileOptions> maybeOptions;
+  if (args.hasDefined(1)) {
+    global = ToObject(cx, args[1]);
+    if (!global) {
+      return false;
+    }
+
+    global = CheckedUnwrapDynamic(global, cx, /* stopAtWindowProxy = */ false);
+    if (!global) {
+      JS_ReportErrorASCII(cx, "Permission denied to access global");
+      return false;
+    }
+    if (!global->is<GlobalObject>()) {
+      JS_ReportErrorASCII(cx, "Argument must be a global object");
+      return false;
+    }
+
+    JSAutoRealm ar(cx, global);
+    maybeOptions.emplace(cx);
+  } else {
+    global = JS::CurrentGlobalOrNull(cx);
+    maybeOptions.emplace(cx);
+  }
+
+  CompileOptions& options = maybeOptions.ref();
   options.setFileAndLine(filename.get(), lineno);
   options.setNoScriptRval(true);
   options.setNonSyntacticScope(true);
@@ -6864,20 +6929,6 @@ static bool EvalReturningScope(JSContext* cx, unsigned argc, Value* vp) {
   JS::SourceText<char16_t> srcBuf;
   if (!srcBuf.initMaybeBorrowed(cx, linearChars)) {
     return false;
-  }
-
-  if (global) {
-    global = CheckedUnwrapDynamic(global, cx, /* stopAtWindowProxy = */ false);
-    if (!global) {
-      JS_ReportErrorASCII(cx, "Permission denied to access global");
-      return false;
-    }
-    if (!global->is<GlobalObject>()) {
-      JS_ReportErrorASCII(cx, "Argument must be a global object");
-      return false;
-    }
-  } else {
-    global = JS::CurrentGlobalOrNull(cx);
   }
 
   RootedObject varObj(cx);
@@ -7215,6 +7266,11 @@ static bool EvalStencil(JSContext* cx, uint32_t argc, Value* vp) {
   if (useDebugMetadata) {
     instantiateOptions.hideScriptFromDebugger = true;
   }
+
+  if (!js::ValidateLazinessOfStencilAndGlobal(cx, *stencilObj->stencil())) {
+    return false;
+  }
+
   RootedScript script(cx, JS::InstantiateGlobalStencil(cx, instantiateOptions,
                                                        stencilObj->stencil()));
   if (!script) {
@@ -7341,12 +7397,15 @@ static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   /* Prepare the input byte array. */
-  if (!args[0].isObject() || !args[0].toObject().is<StencilXDRBufferObject>()) {
+  if (!args[0].isObject()) {
+    JS_ReportErrorASCII(cx, "evalStencilXDR: stencil XDR object expected");
+  }
+  Rooted<StencilXDRBufferObject*> xdrObj(
+      cx, args[0].toObject().maybeUnwrapIf<StencilXDRBufferObject>());
+  if (!xdrObj) {
     JS_ReportErrorASCII(cx, "evalStencilXDR: stencil XDR object expected");
     return false;
   }
-  Rooted<StencilXDRBufferObject*> xdrObj(
-      cx, &args[0].toObject().as<StencilXDRBufferObject>());
   MOZ_ASSERT(xdrObj->hasBuffer());
 
   CompileOptions options(cx);
@@ -7392,6 +7451,10 @@ static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
     JS_ReportErrorASCII(cx,
                         "evalStencilXDR: Module stencil cannot be evaluated. "
                         "Use instantiateModuleStencilXDR instead");
+    return false;
+  }
+
+  if (!js::ValidateLazinessOfStencilAndGlobal(cx, stencil)) {
     return false;
   }
 
@@ -7742,6 +7805,12 @@ static bool IsNurseryAllocated(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   args.rval().setBoolean(IsInsideNursery(args[0].toGCThing()));
+  return true;
+}
+
+static bool NumAllocSitesPretenured(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  args.rval().setInt32(cx->realm()->numAllocSitesPretenured);
   return true;
 }
 
@@ -8226,6 +8295,69 @@ static bool GetEnvironmentObjectType(JSContext* cx, unsigned argc, Value* vp) {
     args.rval().setString(str);
     return true;
   }
+
+  args.rval().setUndefined();
+  return true;
+}
+
+static bool AssertRealmFuseInvariants(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  // Note: This will crash if any invariant isn't held, so it's sufficient to
+  // simply return true always.
+  cx->realm()->realmFuses.assertInvariants(cx);
+  args.rval().setUndefined();
+  return true;
+}
+
+static bool GetFuseState(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  cx->realm()->realmFuses.assertInvariants(cx);
+
+  RootedObject returnObj(cx, JS_NewPlainObject(cx));
+  if (!returnObj) {
+    return false;
+  }
+
+  RootedObject fuseObj(cx);
+  RootedString intactStr(cx, NewStringCopyZ<CanGC>(cx, "intact"));
+  if (!intactStr) {
+    return false;
+  }
+
+  RootedValue intactValue(cx);
+
+#define FUSE(Name, LowerName)                                                \
+  fuseObj = JS_NewPlainObject(cx);                                           \
+  if (!fuseObj) {                                                            \
+    return false;                                                            \
+  }                                                                          \
+  intactValue.setBoolean(cx->realm()->realmFuses.LowerName.intact());        \
+  if (!JS_DefineProperty(cx, fuseObj, "intact", intactValue,                 \
+                         JSPROP_ENUMERATE)) {                                \
+    return false;                                                            \
+  }                                                                          \
+  if (!JS_DefineProperty(cx, returnObj, #Name, fuseObj, JSPROP_ENUMERATE)) { \
+    return false;                                                            \
+  }
+
+  FOR_EACH_REALM_FUSE(FUSE)
+#undef FUSE
+
+  args.rval().setObject(*returnObj);
+  return true;
+}
+
+static bool PopAllFusesInRealm(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  MOZ_ASSERT(cx->realm());
+
+  RealmFuses& realmFuses = cx->realm()->realmFuses;
+
+#define FUSE(Name, LowerName) realmFuses.LowerName.popFuse(cx, realmFuses);
+  FOR_EACH_REALM_FUSE(FUSE)
+#undef FUSE
 
   args.rval().setUndefined();
   return true;
@@ -8738,6 +8870,8 @@ static bool GetAvailableLocalesOf(JSContext* cx, unsigned argc, Value* vp) {
       kind = SupportedLocaleKind::PluralRules;
     } else if (StringEqualsLiteral(typeStr, "RelativeTimeFormat")) {
       kind = SupportedLocaleKind::RelativeTimeFormat;
+    } else if (StringEqualsLiteral(typeStr, "Segmenter")) {
+      kind = SupportedLocaleKind::Segmenter;
     } else {
       ReportUsageErrorASCII(cx, callee, "Unsupported Intl constructor name");
       return false;
@@ -9189,7 +9323,7 @@ JS_FN_HELP("rejectPromise", RejectPromise, 2, 0,
 
 #ifdef JS_GC_ZEAL
     JS_FN_HELP("gczeal", GCZeal, 2, 0,
-"gczeal(mode, [frequency])",
+"gczeal([mode, [frequency]])",
 gc::ZealModeHelpText),
 
     JS_FN_HELP("unsetgczeal", UnsetGCZeal, 2, 0,
@@ -9491,8 +9625,8 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE)
 "  Returns a boolean indicating whether a given module was deserialized directly from a\n"
 "  cache (as opposed to compiled from bytecode)."),
 
-    JS_FN_HELP("wasmIntrinsicI8VecMul", WasmIntrinsicI8VecMul, 0, 0,
-"wasmIntrinsicI8VecMul()",
+    JS_FN_HELP("wasmBuiltinI8VecMul", WasmBuiltinI8VecMul, 0, 0,
+"wasmBuiltinI8VecMul()",
 "  Returns a module that implements an i8 vector pairwise multiplication intrinsic."),
 
 #ifdef ENABLE_WASM_GC
@@ -9803,12 +9937,17 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE)
 
     JS_FN_HELP("nurseryStringsEnabled", NurseryStringsEnabled, 0, 0,
 "nurseryStringsEnabled()",
-"  Return whether strings are currently allocated in the nursery for current\n"
+"  Return whether strings are currently allocated in the nursery for the current\n"
 "  global\n"),
 
     JS_FN_HELP("isNurseryAllocated", IsNurseryAllocated, 1, 0,
 "isNurseryAllocated(thing)",
 "  Return whether a GC thing is nursery allocated.\n"),
+
+    JS_FN_HELP("numAllocSitesPretenured", NumAllocSitesPretenured, 0, 0,
+"numAllocSitesPretenured()",
+"  Return the number of allocation sites that were pretenured for the current\n"
+"  global\n"),
 
     JS_FN_HELP("getLcovInfo", GetLcovInfo, 1, 0,
 "getLcovInfo(global)",
@@ -9962,7 +10101,16 @@ JS_FN_HELP("isSmallFunction", IsSmallFunction, 1, 0,
 "nukeCCW(wrapper)",
 "  Nuke a CrossCompartmentWrapper, which turns it into a DeadProxyObject."),
 
-    JS_FS_HELP_END
+  JS_FN_HELP("assertRealmFuseInvariants", AssertRealmFuseInvariants, 0, 0,
+  "assertRealmFuseInvariants()",
+  " Runs the realm's fuse invariant checks -- these will crash on failure. "
+  " Only available in fuzzing or debug builds, so usage should be guarded. "),
+
+  JS_FN_HELP("popAllFusesInRealm", PopAllFusesInRealm, 0, 0,
+  "popAllFusesInRealm()",
+  " Pops all the fuses in the current realm"),
+
+  JS_FS_HELP_END
 };
 // clang-format on
 
@@ -10014,6 +10162,10 @@ JS_FN_HELP("getEnvironmentObjectType", GetEnvironmentObjectType, 1, 0,
       "      (default 3).\n"
       "    start: The object to start all paths from. If not given, then\n"
       "      the starting point will be the set of GC roots."),
+
+    JS_FN_HELP("getFuseState", GetFuseState, 0, 0,
+"getFuseState()",
+"  Return an object describing the calling realm's fuse state"),
 
 
     JS_FS_HELP_END

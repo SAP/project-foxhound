@@ -54,8 +54,7 @@ class nsComboboxControlFrame final : public nsBlockFrame,
 
  public:
   friend nsComboboxControlFrame* NS_NewComboboxControlFrame(
-      mozilla::PresShell* aPresShell, ComputedStyle* aStyle,
-      nsFrameState aFlags);
+      mozilla::PresShell* aPresShell, ComputedStyle* aStyle);
   friend class nsComboboxDisplayFrame;
 
   explicit nsComboboxControlFrame(ComputedStyle* aStyle,
@@ -93,11 +92,6 @@ class nsComboboxControlFrame final : public nsBlockFrame,
                         const nsDisplayListSet& aLists) final;
 
   void PaintFocus(DrawTarget& aDrawTarget, nsPoint aPt);
-
-  bool IsFrameOfType(uint32_t aFlags) const final {
-    return nsBlockFrame::IsFrameOfType(
-        aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
-  }
 
   void Init(nsIContent* aContent, nsContainerFrame* aParent,
             nsIFrame* aPrevInFlow) final;

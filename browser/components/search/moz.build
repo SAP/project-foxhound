@@ -17,9 +17,9 @@ BROWSER_CHROME_MANIFESTS += [
     "test/browser/telemetry/browser.toml",
 ]
 
-MARIONETTE_UNIT_MANIFESTS += ["test/marionette/manifest.ini"]
+MARIONETTE_MANIFESTS += ["test/marionette/manifest.toml"]
 
-XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]
+XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.toml"]
 
 JAR_MANIFESTS += ["jar.mn"]
 

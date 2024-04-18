@@ -4,7 +4,9 @@
 
 import argparse
 import ast
+import difflib
 import errno
+import shlex
 import sys
 import types
 import uuid
@@ -14,7 +16,7 @@ from typing import Dict, Optional, Union
 
 from mozfile import load_source
 
-from .base import MissingFileError
+from .base import MissingFileError, UnknownCommandError
 
 INVALID_ENTRY_POINT = r"""
 Entry points should return a list of command providers or directories
@@ -132,6 +134,7 @@ MACH_COMMANDS = {
     "mach-debug-commands": MachCommandReference(
         "python/mach/mach/commands/commandinfo.py"
     ),
+    "manifest": MachCommandReference("testing/mach_commands.py"),
     "marionette-test": MachCommandReference("testing/marionette/mach_commands.py"),
     "mochitest": MachCommandReference("testing/mochitest/mach_commands.py", ["test"]),
     "mots": MachCommandReference("tools/mach_commands.py"),
@@ -342,7 +345,13 @@ class DetermineCommandVenvAction(argparse.Action):
             return
 
         command = values[0]
-        setattr(namespace, "command_name", command)
+
+        aliases = namespace.mach_command_aliases
+
+        if command in aliases:
+            alias = aliases[command]
+            arg_string = shlex.split(alias)
+            command = arg_string.pop(0)
 
         # the "help" command does not have a module file, it's handled
         # a bit later and should be skipped here.
@@ -352,10 +361,17 @@ class DetermineCommandVenvAction(argparse.Action):
         command_reference = MACH_COMMANDS.get(command)
 
         if not command_reference:
-            # If there's no match for the command in the dictionary it
-            # means that the command doesn't exist, or that it's misspelled.
-            # We exit early and let both scenarios be handled elsewhere.
-            return
+            # Try to find similarly named commands, may raise UnknownCommandError.
+            suggested_command = suggest_command(command)
+
+            sys.stderr.write(
+                f"We're assuming the '{command}' command is '{suggested_command}' and we're executing it for you.\n\n"
+            )
+
+            command = suggested_command
+            command_reference = MACH_COMMANDS.get(command)
+
+        setattr(namespace, "command_name", command)
 
         if len(values) > 1:
             potential_sub_command_name = values[1]
@@ -385,6 +401,23 @@ class DetermineCommandVenvAction(argparse.Action):
                     site = sub_command_dict.get("virtualenv_name", "common")
 
         setattr(namespace, "site_name", site)
+
+
+def suggest_command(command):
+    names = MACH_COMMANDS.keys()
+    # We first try to look for a valid command that is very similar to the given command.
+    suggested_commands = difflib.get_close_matches(command, names, cutoff=0.8)
+    # If we find more than one matching command, or no command at all,
+    # we give command suggestions instead (with a lower matching threshold).
+    # All commands that start with the given command (for instance:
+    # 'mochitest-plain', 'mochitest-chrome', etc. for 'mochitest-')
+    # are also included.
+    if len(suggested_commands) != 1:
+        suggested_commands = set(difflib.get_close_matches(command, names, cutoff=0.5))
+        suggested_commands |= {cmd for cmd in names if cmd.startswith(command)}
+        raise UnknownCommandError(command, "run", suggested_commands)
+
+    return suggested_commands[0]
 
 
 def load_commands_from_directory(path: Path):

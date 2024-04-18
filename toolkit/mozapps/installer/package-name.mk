@@ -15,18 +15,18 @@ MOZ_PKG_VERSION = $(MOZ_APP_VERSION)
 endif
 
 ifndef MOZ_PKG_PLATFORM
-MOZ_PKG_PLATFORM := $(TARGET_RAW_OS)-$(TARGET_CPU)
+MOZ_PKG_PLATFORM := $(TARGET_RAW_OS)-$(TARGET_RAW_CPU)
 
 ifeq ($(MOZ_BUILD_APP),mobile/android)
-MOZ_PKG_PLATFORM := android-$(TARGET_CPU)
+MOZ_PKG_PLATFORM := android-$(TARGET_RAW_CPU)
 endif
 
-# TARGET_RAW_OS/TARGET_CPU may be unintuitive, so we hardcode some special formats
+# TARGET_RAW_OS/TARGET_RAW_CPU may be unintuitive, so we hardcode some special formats
 ifeq ($(OS_ARCH),WINNT)
-ifeq ($(CPU_ARCH),x86)
+ifeq ($(TARGET_CPU),x86)
 MOZ_PKG_PLATFORM := win32
 else
-ifeq ($(CPU_ARCH),aarch64)
+ifeq ($(TARGET_CPU),aarch64)
 MOZ_PKG_PLATFORM := win64-aarch64
 else
 MOZ_PKG_PLATFORM := win64
@@ -37,7 +37,7 @@ ifeq ($(OS_ARCH),Darwin)
 MOZ_PKG_PLATFORM := mac
 endif
 ifeq ($(TARGET_RAW_OS),linux-gnu)
-MOZ_PKG_PLATFORM := linux-$(TARGET_CPU)
+MOZ_PKG_PLATFORM := linux-$(TARGET_RAW_CPU)
 endif
 endif #MOZ_PKG_PLATFORM
 

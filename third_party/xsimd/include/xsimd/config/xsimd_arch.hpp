@@ -57,7 +57,7 @@ namespace xsimd
         {
         };
 
-        template <class... Archs>
+        template <unsigned... Vals>
         struct is_sorted;
 
         template <>
@@ -65,14 +65,14 @@ namespace xsimd
         {
         };
 
-        template <class Arch>
-        struct is_sorted<Arch> : std::true_type
+        template <unsigned Val>
+        struct is_sorted<Val> : std::true_type
         {
         };
 
-        template <class A0, class A1, class... Archs>
-        struct is_sorted<A0, A1, Archs...>
-            : std::conditional<(A0::version() >= A1::version()), is_sorted<Archs...>,
+        template <unsigned V0, unsigned V1, unsigned... Vals>
+        struct is_sorted<V0, V1, Vals...>
+            : std::conditional<(V0 >= V1), is_sorted<V1, Vals...>,
                                std::false_type>::type
         {
         };
@@ -111,7 +111,7 @@ namespace xsimd
     struct arch_list
     {
 #ifndef NDEBUG
-        static_assert(detail::is_sorted<Archs...>::value,
+        static_assert(detail::is_sorted<Archs::version()...>::value,
                       "architecture list must be sorted by version");
 #endif
 
@@ -187,19 +187,23 @@ namespace xsimd
         };
     } // namespace detail
 
-    struct unsupported
-    {
-    };
-    using all_x86_architectures = arch_list<avx512bw, avx512dq, avx512cd, avx512f, fma3<avx2>, avx2, fma3<avx>, avx, fma4, fma3<sse4_2>, sse4_2, sse4_1, /*sse4a,*/ ssse3, sse3, sse2>;
+    using all_x86_architectures = arch_list<
+        avx512vnni<avx512vbmi>, avx512vbmi, avx512ifma, avx512pf, avx512vnni<avx512bw>, avx512bw, avx512er, avx512dq, avx512cd, avx512f,
+        avxvnni, fma3<avx2>, avx2, fma3<avx>, avx, fma4, fma3<sse4_2>,
+        sse4_2, sse4_1, /*sse4a,*/ ssse3, sse3, sse2>;
+
     using all_sve_architectures = arch_list<detail::sve<512>, detail::sve<256>, detail::sve<128>>;
+    using all_rvv_architectures = arch_list<detail::rvv<512>, detail::rvv<256>, detail::rvv<128>>;
     using all_arm_architectures = typename detail::join<all_sve_architectures, arch_list<neon64, neon>>::type;
+    using all_riscv_architectures = all_rvv_architectures;
     using all_wasm_architectures = arch_list<wasm>;
-    using all_architectures = typename detail::join<all_arm_architectures, all_x86_architectures, all_wasm_architectures>::type;
+    using all_architectures = typename detail::join<all_riscv_architectures, all_wasm_architectures, all_arm_architectures, all_x86_architectures>::type;
 
     using supported_architectures = typename detail::supported<all_architectures>::type;
 
     using x86_arch = typename detail::supported<all_x86_architectures>::type::best;
     using arm_arch = typename detail::supported<all_arm_architectures>::type::best;
+    using riscv_arch = typename detail::supported<all_riscv_architectures>::type::best;
     using best_arch = typename supported_architectures::best;
 
 #ifdef XSIMD_DEFAULT_ARCH
@@ -214,7 +218,7 @@ namespace xsimd
         class dispatcher
         {
 
-            const unsigned best_arch_found;
+            const decltype(available_architectures()) availables_archs;
             F functor;
 
             template <class Arch, class... Tys>
@@ -227,7 +231,7 @@ namespace xsimd
             template <class Arch, class ArchNext, class... Archs, class... Tys>
             inline auto walk_archs(arch_list<Arch, ArchNext, Archs...>, Tys&&... args) noexcept -> decltype(functor(Arch {}, std::forward<Tys>(args)...))
             {
-                if (Arch::version() <= best_arch_found)
+                if (availables_archs.has(Arch {}))
                     return functor(Arch {}, std::forward<Tys>(args)...);
                 else
                     return walk_archs(arch_list<ArchNext, Archs...> {}, std::forward<Tys>(args)...);
@@ -235,7 +239,7 @@ namespace xsimd
 
         public:
             inline dispatcher(F f) noexcept
-                : best_arch_found(available_architectures().best)
+                : availables_archs(available_architectures())
                 , functor(f)
             {
             }

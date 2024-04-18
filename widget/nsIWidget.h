@@ -58,10 +58,15 @@ class WidgetGUIEvent;
 class WidgetInputEvent;
 class WidgetKeyboardEvent;
 struct FontRange;
-
-enum class StyleWindowShadow : uint8_t;
 enum class ColorScheme : uint8_t;
 enum class WindowButtonType : uint8_t;
+
+enum class WindowShadow : uint8_t {
+  None,
+  Menu,
+  Panel,
+  Tooltip,
+};
 
 #if defined(MOZ_WIDGET_ANDROID)
 namespace ipc {
@@ -1009,6 +1014,8 @@ class nsIWidget : public nsISupports {
    */
   virtual void SetCursor(const Cursor&) = 0;
 
+  virtual void SetCustomCursorAllowed(bool) = 0;
+
   static nsIntSize CustomCursorSize(const Cursor&);
 
   /**
@@ -1046,7 +1053,7 @@ class nsIWidget : public nsISupports {
    *
    * Ignored on child widgets and on non-Mac platforms.
    */
-  virtual void SetWindowShadowStyle(mozilla::StyleWindowShadow aStyle) = 0;
+  virtual void SetWindowShadowStyle(mozilla::WindowShadow aStyle) = 0;
 
   /**
    * Set the opacity of the window.
@@ -2027,6 +2034,11 @@ class nsIWidget : public nsISupports {
   virtual TextEventDispatcherListener*
   GetNativeTextEventDispatcherListener() = 0;
 
+  /**
+   * Trigger an animation to zoom to the given |aRect|.
+   * |aRect| should be relative to the layout viewport of the widget's root
+   * document
+   */
   virtual void ZoomToRect(const uint32_t& aPresShellId,
                           const ScrollableLayerGuid::ViewID& aViewId,
                           const CSSRect& aRect, const uint32_t& aFlags) = 0;

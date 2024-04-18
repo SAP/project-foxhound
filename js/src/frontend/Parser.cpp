@@ -3464,6 +3464,12 @@ bool GeneralParser<ParseHandler, Unit>::functionFormalParametersAndBody(
     if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dot_initializers_())) {
       return false;
     }
+#ifdef ENABLE_DECORATORS
+    if (!noteUsedName(TaggedParserAtomIndex::WellKnown::
+                          dot_instanceExtraInitializers_())) {
+      return false;
+    }
+#endif
   }
 
   // See below for an explanation why arrow function parameters and arrow
@@ -4899,11 +4905,11 @@ GeneralParser<ParseHandler, Unit>::moduleExportName() {
 }
 
 template <class ParseHandler, typename Unit>
-bool GeneralParser<ParseHandler, Unit>::assertClause(
-    ListNodeType assertionsSet) {
-  MOZ_ASSERT(anyChars.isCurrentTokenType(TokenKind::Assert));
+bool GeneralParser<ParseHandler, Unit>::withClause(ListNodeType assertionsSet) {
+  MOZ_ASSERT(anyChars.isCurrentTokenType(TokenKind::Assert) ||
+             anyChars.isCurrentTokenType(TokenKind::With));
 
-  if (!options().importAssertions()) {
+  if (!options().importAttributes()) {
     error(JSMSG_IMPORT_ASSERTIONS_NOT_SUPPORTED);
     return false;
   }
@@ -4968,12 +4974,12 @@ bool GeneralParser<ParseHandler, Unit>::assertClause(
     NameNodeType valueNode;
     MOZ_TRY_VAR_OR_RETURN(valueNode, stringLiteral(), false);
 
-    BinaryNodeType importAssertionNode;
-    MOZ_TRY_VAR_OR_RETURN(importAssertionNode,
-                          handler_.newImportAssertion(keyNode, valueNode),
+    BinaryNodeType importAttributeNode;
+    MOZ_TRY_VAR_OR_RETURN(importAttributeNode,
+                          handler_.newImportAttribute(keyNode, valueNode),
                           false);
 
-    handler_.addList(assertionsSet, importAssertionNode);
+    handler_.addList(assertionsSet, importAttributeNode);
 
     if (!tokenStream.getToken(&token)) {
       return false;
@@ -5239,19 +5245,35 @@ GeneralParser<ParseHandler, Unit>::importDeclaration() {
   NameNodeType moduleSpec;
   MOZ_TRY_VAR(moduleSpec, stringLiteral());
 
+  // The `assert` keyword has a [no LineTerminator here] production before it in
+  // the grammar -- `with` does not. We need to handle this distinction.
   if (!tokenStream.peekTokenSameLine(&tt, TokenStream::SlashIsRegExp)) {
     return errorResult();
   }
 
-  ListNodeType importAssertionList;
-  MOZ_TRY_VAR(importAssertionList,
-              handler_.newList(ParseNodeKind::ImportAssertionList, pos()));
+  // `with` may have an EOL prior, so peek the next token and replace
+  // EOL if the next token is `with`.
+  if (tt == TokenKind::Eol) {
+    // Doing a regular peek won't produce Eol, but the actual next token.
+    TokenKind peekedToken;
+    if (!tokenStream.peekToken(&peekedToken, TokenStream::SlashIsRegExp)) {
+      return errorResult();
+    }
 
-  if (tt == TokenKind::Assert) {
-    tokenStream.consumeKnownToken(TokenKind::Assert,
-                                  TokenStream::SlashIsRegExp);
+    if (peekedToken == TokenKind::With) {
+      tt = TokenKind::With;
+    }
+  }
 
-    if (!assertClause(importAssertionList)) {
+  ListNodeType importAttributeList;
+  MOZ_TRY_VAR(importAttributeList,
+              handler_.newList(ParseNodeKind::ImportAttributeList, pos()));
+
+  if (tt == TokenKind::With ||
+      (tt == TokenKind::Assert && options().importAttributesAssertSyntax())) {
+    tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
+
+    if (!withClause(importAttributeList)) {
       return errorResult();
     }
   }
@@ -5262,7 +5284,7 @@ GeneralParser<ParseHandler, Unit>::importDeclaration() {
 
   BinaryNodeType moduleRequest;
   MOZ_TRY_VAR(moduleRequest,
-              handler_.newModuleRequest(moduleSpec, importAssertionList,
+              handler_.newModuleRequest(moduleSpec, importAttributeList,
                                         TokenPos(begin, pos().end)));
 
   BinaryNodeType node;
@@ -5591,19 +5613,37 @@ GeneralParser<ParseHandler, Unit>::exportFrom(uint32_t begin, Node specList) {
   MOZ_TRY_VAR(moduleSpec, stringLiteral());
 
   TokenKind tt;
+
+  // The `assert` keyword has a [no LineTerminator here] production before it in
+  // the grammar -- `with` does not. We need to handle this distinction.
   if (!tokenStream.peekTokenSameLine(&tt, TokenStream::SlashIsRegExp)) {
     return errorResult();
   }
+
+  // `with` may have an EOL prior, so peek the next token and replace
+  // EOL if the next token is `with`.
+  if (tt == TokenKind::Eol) {
+    // Doing a regular peek won't produce Eol, but the actual next token.
+    TokenKind peekedToken;
+    if (!tokenStream.peekToken(&peekedToken, TokenStream::SlashIsRegExp)) {
+      return errorResult();
+    }
+
+    if (peekedToken == TokenKind::With) {
+      tt = TokenKind::With;
+    }
+  }
+
   uint32_t moduleSpecPos = pos().begin;
 
-  ListNodeType importAssertionList;
-  MOZ_TRY_VAR(importAssertionList,
-              handler_.newList(ParseNodeKind::ImportAssertionList, pos()));
-  if (tt == TokenKind::Assert) {
-    tokenStream.consumeKnownToken(TokenKind::Assert,
-                                  TokenStream::SlashIsRegExp);
+  ListNodeType importAttributeList;
+  MOZ_TRY_VAR(importAttributeList,
+              handler_.newList(ParseNodeKind::ImportAttributeList, pos()));
+  if (tt == TokenKind::With ||
+      (tt == TokenKind::Assert && options().importAttributesAssertSyntax())) {
+    tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
 
-    if (!assertClause(importAssertionList)) {
+    if (!withClause(importAttributeList)) {
       return errorResult();
     }
   }
@@ -5614,7 +5654,7 @@ GeneralParser<ParseHandler, Unit>::exportFrom(uint32_t begin, Node specList) {
 
   BinaryNodeType moduleRequest;
   MOZ_TRY_VAR(moduleRequest,
-              handler_.newModuleRequest(moduleSpec, importAssertionList,
+              handler_.newModuleRequest(moduleSpec, importAttributeList,
                                         TokenPos(moduleSpecPos, pos().end)));
 
   BinaryNodeType node;
@@ -6417,6 +6457,15 @@ bool GeneralParser<ParseHandler, Unit>::forHeadStart(
 
     parsingLexicalDeclaration = nextTokenContinuesLetDeclaration(next);
     if (!parsingLexicalDeclaration) {
+      // If we end up here, we may have `for (let <reserved word> of/in ...`,
+      // which is not valid.
+      if (next != TokenKind::In && next != TokenKind::Of &&
+          TokenKindIsReservedWord(next)) {
+        tokenStream.consumeKnownToken(next);
+        error(JSMSG_UNEXPECTED_TOKEN_NO_EXPECT, TokenKindToDesc(next));
+        return false;
+      }
+
       anyChars.ungetToken();
       letIsIdentifier = true;
     }
@@ -7603,6 +7652,11 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
       classInitializedMembers.staticFields++;
     } else {
       classInitializedMembers.instanceFields++;
+#ifdef ENABLE_DECORATORS
+      if (decorators) {
+        classInitializedMembers.hasInstanceDecorators = true;
+      }
+#endif
     }
 
     TokenPos propNamePos(propNameOffset, pos().end);
@@ -7714,6 +7768,14 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
                           DeclarationKind::Let, pos())) {
       return false;
     }
+
+#ifdef ENABLE_DECORATORS
+    if (!noteDeclaredName(
+            TaggedParserAtomIndex::WellKnown::dot_instanceExtraInitializers_(),
+            DeclarationKind::Let, pos())) {
+      return false;
+    }
+#endif
   }
 
   // Calling toString on constructors need to return the source text for
@@ -7765,6 +7827,12 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
     }
   }
 
+#ifdef ENABLE_DECORATORS
+  if (decorators) {
+    classInitializedMembers.hasInstanceDecorators = true;
+  }
+#endif
+
   Node method;
   MOZ_TRY_VAR_OR_RETURN(
       method,
@@ -7806,6 +7874,14 @@ bool GeneralParser<ParseHandler, Unit>::finishClassConstructor(
                           DeclarationKind::Let, pos())) {
       return false;
     }
+
+#ifdef ENABLE_DECORATORS
+    if (!noteDeclaredName(
+            TaggedParserAtomIndex::WellKnown::dot_instanceExtraInitializers_(),
+            DeclarationKind::Let, pos(), ClosedOver::Yes)) {
+      return false;
+    }
+#endif
 
     // synthesizeConstructor assigns to classStmt.constructorBox
     TokenPos synthesizedBodyPos(classStartOffset, classEndOffset);
@@ -7868,6 +7944,7 @@ GeneralParser<ParseHandler, Unit>::classDefinition(
              anyChars.isCurrentTokenType(TokenKind::Class));
 
   ListNodeType decorators = null();
+  FunctionNodeType addInitializerFunction = null();
   if (anyChars.isCurrentTokenType(TokenKind::At)) {
     MOZ_TRY_VAR(decorators, decoratorList(yieldHandling));
     TokenKind next;
@@ -7983,6 +8060,15 @@ GeneralParser<ParseHandler, Unit>::classDefinition(
           break;
         }
       }
+#ifdef ENABLE_DECORATORS
+      if (classInitializedMembers.hasInstanceDecorators) {
+        MOZ_TRY_VAR(addInitializerFunction,
+                    synthesizeAddInitializerFunction(
+                        TaggedParserAtomIndex::WellKnown::
+                            dot_instanceExtraInitializers_(),
+                        yieldHandling));
+      }
+#endif
 
       if (classInitializedMembers.privateMethods +
               classInitializedMembers.privateAccessors >
@@ -8086,7 +8172,7 @@ GeneralParser<ParseHandler, Unit>::classDefinition(
 
   return handler_.newClass(nameNode, classHeritage, classBlock,
 #ifdef ENABLE_DECORATORS
-                           decorators,
+                           decorators, addInitializerFunction,
 #endif
                            TokenPos(classStartOffset, classEndOffset));
 }
@@ -8205,6 +8291,13 @@ bool GeneralParser<ParseHandler, Unit>::synthesizeConstructorBody(
   if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dot_initializers_())) {
     return false;
   }
+
+#ifdef ENABLE_DECORATORS
+  if (!noteUsedName(
+          TaggedParserAtomIndex::WellKnown::dot_instanceExtraInitializers_())) {
+    return false;
+  }
+#endif
 
   if (hasHeritage == HasHeritage::Yes) {
     // |super()| implicitly reads |new.target|.
@@ -8703,6 +8796,112 @@ GeneralParser<ParseHandler, Unit>::synthesizePrivateMethodInitializer(
 }
 
 #ifdef ENABLE_DECORATORS
+template <class ParseHandler, typename Unit>
+typename ParseHandler::FunctionNodeResult
+GeneralParser<ParseHandler, Unit>::synthesizeAddInitializerFunction(
+    TaggedParserAtomIndex initializers, YieldHandling yieldHandling) {
+  if (!abortIfSyntaxParser()) {
+    return errorResult();
+  }
+
+  // TODO: Add support for static and class extra initializers, see bug 1868220
+  // and bug 1868221.
+  MOZ_ASSERT(
+      initializers ==
+      TaggedParserAtomIndex::WellKnown::dot_instanceExtraInitializers_());
+
+  TokenPos propNamePos = pos();
+
+  // Synthesize an addInitializer function that can be used to append to
+  // .initializers
+  FunctionSyntaxKind syntaxKind = FunctionSyntaxKind::Statement;
+  FunctionAsyncKind asyncKind = FunctionAsyncKind::SyncFunction;
+  GeneratorKind generatorKind = GeneratorKind::NotGenerator;
+  bool isSelfHosting = options().selfHostingMode;
+  FunctionFlags flags =
+      InitialFunctionFlags(syntaxKind, generatorKind, asyncKind, isSelfHosting);
+
+  FunctionNodeType funNode;
+  MOZ_TRY_VAR(funNode, handler_.newFunction(syntaxKind, propNamePos));
+
+  Directives directives(true);
+  FunctionBox* funbox =
+      newFunctionBox(funNode, TaggedParserAtomIndex::null(), flags,
+                     propNamePos.begin, directives, generatorKind, asyncKind);
+  if (!funbox) {
+    return errorResult();
+  }
+  funbox->initWithEnclosingParseContext(pc_, syntaxKind);
+
+  ParseContext* outerpc = pc_;
+  SourceParseContext funpc(this, funbox, /* newDirectives = */ nullptr);
+  if (!funpc.init()) {
+    return errorResult();
+  }
+  pc_->functionScope().useAsVarScope(pc_);
+
+  // Takes a single parameter, `initializer`.
+  ParamsBodyNodeType params;
+  MOZ_TRY_VAR(params, handler_.newParamsBody(propNamePos));
+
+  handler_.setFunctionFormalParametersAndBody(funNode, params);
+
+  constexpr bool disallowDuplicateParams = true;
+  bool duplicatedParam = false;
+  if (!notePositionalFormalParameter(
+          funNode, TaggedParserAtomIndex::WellKnown::initializer(), pos().begin,
+          disallowDuplicateParams, &duplicatedParam)) {
+    return null();
+  }
+  MOZ_ASSERT(!duplicatedParam);
+  MOZ_ASSERT(pc_->positionalFormalParameterNames().length() == 1);
+
+  funbox->setLength(1);
+  funbox->setArgCount(1);
+  setFunctionStartAtCurrentToken(funbox);
+
+  // Like private method initializers, the addInitializer method is not created
+  // with a body of synthesized AST nodes. Instead, the body is left empty and
+  // the initializer is synthesized at the bytecode level. See
+  // DecoratorEmitter::emitCreateAddInitializerFunction.
+  ListNodeType stmtList;
+  MOZ_TRY_VAR(stmtList, handler_.newStatementList(propNamePos));
+
+  if (!noteUsedName(initializers)) {
+    return null();
+  }
+
+  bool canSkipLazyClosedOverBindings = handler_.reuseClosedOverBindings();
+  if (!pc_->declareFunctionThis(usedNames_, canSkipLazyClosedOverBindings)) {
+    return null();
+  }
+  if (!pc_->declareNewTarget(usedNames_, canSkipLazyClosedOverBindings)) {
+    return null();
+  }
+
+  LexicalScopeNodeType addInitializerBody;
+  MOZ_TRY_VAR(addInitializerBody,
+              finishLexicalScope(pc_->varScope(), stmtList,
+                                 ScopeKind::FunctionLexical));
+  handler_.setBeginPosition(addInitializerBody, stmtList);
+  handler_.setEndPosition(addInitializerBody, stmtList);
+  handler_.setFunctionBody(funNode, addInitializerBody);
+
+  // Set field-initializer lambda boundary to start at property name and end
+  // after method body.
+  setFunctionStartAtPosition(funbox, propNamePos);
+  setFunctionEndFromCurrentToken(funbox);
+
+  if (!finishFunction()) {
+    return errorResult();
+  }
+
+  if (!leaveInnerFunction(outerpc)) {
+    return errorResult();
+  }
+
+  return funNode;
+}
 
 template <class ParseHandler, typename Unit>
 typename ParseHandler::ClassMethodResult
@@ -10590,6 +10789,12 @@ typename ParseHandler::NodeResult GeneralParser<ParseHandler, Unit>::memberExpr(
                 TaggedParserAtomIndex::WellKnown::dot_initializers_())) {
           return errorResult();
         }
+#ifdef ENABLE_DECORATORS
+        if (!noteUsedName(TaggedParserAtomIndex::WellKnown::
+                              dot_instanceExtraInitializers_())) {
+          return null();
+        }
+#endif
       } else {
         MOZ_TRY_VAR(nextMember,
                     memberCall(tt, lhs, yieldHandling, possibleError));
@@ -12350,7 +12555,7 @@ GeneralParser<ParseHandler, Unit>::importExpr(YieldHandling yieldHandling,
     }
 
     Node optionalArg;
-    if (options().importAssertions()) {
+    if (options().importAttributes()) {
       if (next == TokenKind::Comma) {
         tokenStream.consumeKnownToken(TokenKind::Comma,
                                       TokenStream::SlashIsRegExp);

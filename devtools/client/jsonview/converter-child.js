@@ -5,11 +5,9 @@
 "use strict";
 
 const lazy = {};
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "NetUtil",
-  "resource://gre/modules/NetUtil.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+});
 
 const {
   getTheme,
@@ -28,7 +26,7 @@ const BufferStream = Components.Constructor(
   "setData"
 );
 
-const kCSP = "default-src 'none' ; script-src resource:; ";
+const kCSP = "default-src 'none'; script-src resource:; img-src 'self';";
 
 // Localization
 loader.lazyGetter(this, "jsonViewStrings", () => {

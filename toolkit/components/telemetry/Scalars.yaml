@@ -1514,11 +1514,12 @@ extensions.quarantinedDomains:
   listsize:
     bug_numbers:
       - 1840615
+      - 1866196
     description: >
       Number of domains listed in the quarantined domains list pref for the client during
       this session.
     kind: uint
-    expires: "123"
+    expires: "130"
     notification_emails:
       - addons-dev-internal@mozilla.com
     products:
@@ -1529,10 +1530,11 @@ extensions.quarantinedDomains:
   listhash:
     bug_numbers:
       - 1841683
+      - 1866196
     description: >
       SHA1 cryptographic hash of the quarantined domains string pref.
     kind: string
-    expires: "123"
+    expires: "130"
     notification_emails:
       - addons-dev-internal@mozilla.com
     products:
@@ -1543,11 +1545,12 @@ extensions.quarantinedDomains:
   remotehash:
     bug_numbers:
       - 1840615
+      - 1866196
     description: >
       SHA1 cryptographic hash of the quarantined domains string pref as it was
       set based on the value got synced from the RemoteSettings collection.
     kind: string
-    expires: "123"
+    expires: "130"
     notification_emails:
       - addons-dev-internal@mozilla.com
     products:
@@ -1561,7 +1564,7 @@ extensions.startupCache:
       - 1767336
     description: >
       The amount of bytes writted into the Extensions StartupCache file.
-    expires: never
+    expires: "128"
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -1576,7 +1579,7 @@ extensions.startupCache:
     description: >
       The amount of times an unexpected error has been raised while
       reading the Extensions StartupCache file
-    expires: never
+    expires: "128"
     kind: uint
     keyed: true
     notification_emails:
@@ -2775,10 +2778,11 @@ dom.contentprocess:
       - 1754658
       - 1777404
       - 1817104
+      - 1866197
     description: >
       The number of times a process crashed early but we could verify it was not
       because of buildID mismatch between the parent and the content processes.
-    expires: "123"
+    expires: "135"
     kind: uint
     notification_emails:
       - alissy@mozilla.com
@@ -3563,7 +3567,7 @@ dom.event:
     keyed: true
     kind: uint
     notification_emails:
-      - mnakano@mozilla.com
+      - mnakano.birchill@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -3583,7 +3587,7 @@ dom.event:
     keyed: true
     kind: uint
     notification_emails:
-      - mnakano@mozilla.com
+      - mnakano.birchill@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5087,11 +5091,28 @@ widget:
     expires: never
     kind: boolean
     notification_emails:
-      - mnakano@mozilla.com
+      - mnakano.birchill@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
       - 'fennec'
+    record_in_processes:
+      - 'main'
+
+  ime_name_on_windows_inserted_crlf:
+    bug_numbers:
+      - 1865256
+    description:
+      Same data as ime_name_on_windows, but only collecting IME names which
+      inserted CRLF to check whether the feature works.
+    keyed: true
+    expires: never
+    kind: boolean
+    notification_emails:
+      - mnakano.birchill@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
     record_in_processes:
       - 'main'
 
@@ -5124,7 +5145,7 @@ widget:
     expires: never
     kind: boolean
     notification_emails:
-      - mnakano@mozilla.com
+      - mnakano.birchill@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5144,7 +5165,7 @@ widget:
     expires: never
     kind: boolean
     notification_emails:
-      - mnakano@mozilla.com
+      - mnakano.birchill@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -6130,13 +6151,14 @@ browser.searchinit:
       - 1763528
       - 1801017
       - 1832463
+      - 1871199
     description: >
       Records the WebExtension ID of a search engine where the WebExtension
       is not installed (= 1), disabled (= 2), search engine no longer specified (= 4),
       a different name (= 5), where the submission URL is different between the
       search engine and the WebExtension (= 6). The value '3' has been replaced
       by '6' to distinguish newer entries.
-    expires: "124"
+    expires: "129"
     keyed: true
     kind: uint
     notification_emails:
@@ -6277,6 +6299,50 @@ startup:
     products:
       - 'firefox'
       - 'fennec'
+      - 'thunderbird'
+    record_in_processes:
+      - main
+    record_into_store:
+      - main
+      - new-profile
+
+  profile_database_version:
+    bug_numbers:
+      - 1878339
+    description: >
+      The version of the profiles.ini database loaded during startup. A value
+      of "0" is used to indicate that no file was present during startup.
+    expires: "133"
+    keyed: false
+    kind: string
+    notification_emails:
+      - dtownsend@mozilla.com
+      - kbryant@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'thunderbird'
+    record_in_processes:
+      - main
+    record_into_store:
+      - main
+      - new-profile
+
+  profile_count:
+    bug_numbers:
+      - 1878339
+    description: >
+      This records the number of known profiles after startup completes. This
+      includes any profiles that were created during startup.
+    expires: "133"
+    keyed: false
+    kind: uint
+    notification_emails:
+      - dtownsend@mozilla.com
+      - kbryant@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
       - 'thunderbird'
     record_in_processes:
       - main
@@ -8932,6 +8998,21 @@ shopping:
     description: >
       Indicates if the user has manually disabled ads. Set during shopping
       component init and updated when changed in browser.
+    expires: "134"
+    kind: boolean
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  auto_open_user_disabled:
+    bug_numbers:
+      - 1879119
+    description: >
+      Indicates if the user has manually disabled the auto open sidebar feature.
+      Set during shopping component init and updated when changed in browser.
     expires: "134"
     kind: boolean
     notification_emails:

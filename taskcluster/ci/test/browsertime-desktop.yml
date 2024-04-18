@@ -53,10 +53,14 @@ job-defaults:
                             - win64-custom-car
                             - win64-minidump-stackwalk
                             - win64-fix-stacks
-                        macos.*:
+                        macosx1015.*:
                             - macosx64-custom-car
                             - macosx64-minidump-stackwalk
                             - macosx64-fix-stacks
+                        macosx1300.*:
+                            - macosx-arm64-custom-car
+                            - macosx64-aarch64-minidump-stackwalk
+                            - macosx64-aarch64-fix-stacks
                         default: []
                 default:
                     by-test-platform:
@@ -105,13 +109,12 @@ browsertime-tp6:
                         - --extra-profiler-run
         run-on-projects:
             by-subtest:
-                netflix:  # Bug 1756212 - Disable temporarily due to perma on mac
+                netflix:
                     by-app:
                         firefox:
                             by-test-platform:
                                 windows.*-32.*: []
-                                (linux|windows10-64).*shippable-qr.*: [trunk, mozilla-beta, mozilla-release]
-                                macosx1015.*shippable-qr.*: []
+                                (macosx1015|linux|windows10-64).*shippable-qr.*: [trunk, mozilla-beta, mozilla-release]
                                 default: []
                         default: []
                 default:
@@ -124,7 +127,7 @@ browsertime-tp6:
                         default: []
         treeherder-symbol: Btime(tp6)
     raptor:
-        apps: [firefox, chrome, chromium]
+        apps: [firefox, chrome]
         test: tp6
         run-visual-metrics: true
         subtests:
@@ -159,7 +162,7 @@ browsertime-tp6:
 browsertime-responsiveness:
     <<: *tp6-defaults
     raptor:
-        apps: [firefox, chrome, chromium]
+        apps: [firefox, chrome]
         test: tp6
         run-visual-metrics: true
         subtests:
@@ -210,7 +213,7 @@ browsertime-tp6-essential:
                         - --conditioned-profile=settled
                         - --extra-profiler-run
         raptor:
-            apps: [firefox, chrome, chromium, custom-car]
+            apps: [firefox, chrome, custom-car]
             test: tp6
             run-visual-metrics:
                 by-test-platform:
@@ -295,16 +298,13 @@ browsertime-tp6-bytecode:
 browsertime-benchmark:
     description: Raptor (browsertime) Benchmark tests
     raptor:
-        apps: [firefox, chrome, chromium, safari, custom-car]
+        apps: [firefox, chrome, safari, custom-car]
         subtests:
             by-test-platform:
                 macosx1300.*shippable.*:
                     by-app:
-                        custom-car: []
                         chromium: []
                         safari: []  # Bug 1848400 safari perma-fails on osx1300
-                        chrome:
-                            - [speedometer, sp]
                         default:
                             - [speedometer, sp]
                             - [speedometer3, sp3]
@@ -346,14 +346,44 @@ browsertime-benchmark:
                             - [speedometer3, sp3]
                             - [motionmark-animometer-ramp, mm-ar]
                             - [motionmark-htmlsuite-ramp, mm-hr]
+                        chrome:
+                            by-test-platform:
+                                macosx1015.*shippable.*:
+                                    - ares6
+                                    - [assorted-dom, dom]
+                                    - [jetstream2, js2]
+                                    - [matrix-react-bench, mrb]
+                                    - [motionmark-animometer, mm-a]
+                                    - [motionmark-htmlsuite, mm-h]
+                                    - [speedometer, sp]
+                                    - [speedometer3, sp3]
+                                    - [stylebench, sb]
+                                    - [sunspider, ss]
+                                    - [unity-webgl, ugl]
+                                    - [webaudio, wa]
+                                default:
+                                    - ares6
+                                    - [assorted-dom, dom]
+                                    - [jetstream2, js2]
+                                    - [matrix-react-bench, mrb]
+                                    - [motionmark-animometer, mm-a]
+                                    - [motionmark-animometer-ramp, mm-ar]
+                                    - [motionmark-htmlsuite, mm-h]
+                                    - [motionmark-htmlsuite-ramp, mm-hr]
+                                    - [speedometer, sp]
+                                    - [speedometer3, sp3]
+                                    - [stylebench, sb]
+                                    - [sunspider, ss]
+                                    - [unity-webgl, ugl]
+                                    - [webaudio, wa]
                         default:
                             - ares6
                             - [assorted-dom, dom]
                             - [jetstream2, js2]
                             - [matrix-react-bench, mrb]
                             - [motionmark-animometer, mm-a]
-                            - [motionmark-htmlsuite, mm-h]
                             - [motionmark-animometer-ramp, mm-ar]
+                            - [motionmark-htmlsuite, mm-h]
                             - [motionmark-htmlsuite-ramp, mm-hr]
                             - [speedometer, sp]
                             - [speedometer3, sp3]
@@ -370,7 +400,6 @@ browsertime-benchmark:
                         by-test-platform:
                             linux1804-64-clang-trunk-qr/opt: 2
                             default: 1
-                    unity-webgl: 3
                     default:
                         by-test-platform:
                             windows10-64-ccov.*/.*: 3
@@ -390,13 +419,18 @@ browsertime-benchmark:
                             .*64.*shippable-qr/.*: [trunk, mozilla-release]
                             .*nightlyasrelease.*: [autoland]
                             default: []
+                    custom-car:
+                        by-test-platform:
+                            (linux|windows10-64).*shippable-qr.*: [mozilla-central]
+                            default: []
                     default: []
             unity-webgl:
                 by-app:
                     firefox:
                         by-test-platform:
                             windows.*-32.*: []
-                            .*64.*shippable-qr/.*: [trunk, mozilla-release]
+                            # Disabled on autoland due to bug 1720063, and bug 1795826
+                            .*64.*shippable-qr/.*: [mozilla-central]
                             default: []
                     default: []
             speedometer:
@@ -406,6 +440,10 @@ browsertime-benchmark:
                             windows.*-32.*: []
                             .*64.*shippable-qr/.*: [trunk, mozilla-beta, mozilla-release]
                             .*nightlyasrelease.*: [autoland]
+                            default: []
+                    custom-car:
+                        by-test-platform:
+                            (linux|windows10-64).*shippable-qr.*: [mozilla-central]
                             default: []
                     default: []
             default:
@@ -428,7 +466,7 @@ browsertime-benchmark:
             motionmark-htmlsuite: 1500
             motionmark-htmlsuite-ramp: 3000
             motionmark-animometer-ramp: 2100
-            unity-webgl: 1500
+            unity-webgl: 2400
             speedometer3:
                 by-test-platform:
                     macosx1300.*shippable.*: 4200
@@ -447,7 +485,7 @@ browsertime-benchmark:
 browsertime-benchmark-wasm:
     description: Raptor (browsertime) WASM benchmarks
     raptor:
-        apps: [firefox, chrome, chromium, safari]
+        apps: [firefox, chrome, safari]
         subtests:
             by-app:
                 firefox:
@@ -549,7 +587,7 @@ browsertime-tp6-live:
             - --live-sites
             - --extra-profiler-run
     raptor:
-        apps: [firefox, chrome, chromium, safari]
+        apps: [firefox, chrome, safari]
         test: tp6
         run-visual-metrics: true
         subtests:
@@ -593,7 +631,7 @@ browsertime-tp6-live:
                     - [google-slides, gslides]
                     - imdb
                     # - imgur (see bugs 1825337 & 1817420)
-                    # - instagram (see bug 1736999)
+                    - instagram
                     - linkedin
                     - microsoft
                     - netflix
@@ -620,7 +658,7 @@ browsertime-tp6-live:
                     - [google-slides, gslides]
                     - imdb
                     - imgur
-                    # - instagram (see bug 1736999)
+                    - instagram
                     - linkedin
                     - microsoft
                     - netflix
@@ -654,6 +692,7 @@ browsertime-tp6-live-sheriffed:
             - --chimera
             - --live-sites
             - --extra-profiler-run
+            - --browsertime-arg=maxLoadTime=240000
     run-on-projects:
         by-test-platform:
             (linux|windows10-64|macos)(?!.*shippable).*: []
@@ -739,7 +778,7 @@ browsertime-regression-tests:
 
 browsertime-upload:
     raptor:
-        apps: [firefox, chrome, chromium, safari]
+        apps: [firefox, chrome, safari]
         subtests:
             - [upload, upload-h2]
             - upload-h3
@@ -758,6 +797,19 @@ browsertime-upload:
     fetches:
         fetch:
             - upload-speed-test-file
+
+browsertime-pageload-benchmark:
+    raptor:
+        apps: [firefox]
+        subtests: [tp6-bench]
+    description: Raptor (browsertime) TP6 pageload benchmark test
+    max-run-time: 4500
+    mozharness:
+        extra-options:
+            - --browser-cycles=5
+    run-on-projects: []
+    tier: 2
+    treeherder-symbol: Btime(tp6-bench)
 
 browsertime-speculative:
     raptor:
@@ -784,3 +836,87 @@ browsertime-throttled:
     run-on-projects: []
     tier: 3
     treeherder-symbol: Btime(throttled)
+
+browsertime-tp6-webextensions:
+    <<: *tp6-defaults
+    <<: *tp6-essential-defaults
+    description: Raptor (browsertime) tp6 page-load tests with webextensions installed on Firefox Desktop
+    raptor:
+        apps: [firefox]
+        test: tp6
+        run-visual-metrics: true
+        subtests:
+            - amazon
+    fetches:
+        fetch:
+            - firefox-addons
+    run-on-projects:
+        by-app:
+            firefox:
+                by-test-platform:
+                    windows.*-32.*: []
+                    macosx1100.*shippable.*: [mozilla-central]
+                    .*64(?!.*nightlyasrelease).*shippable-qr/.*: [trunk-only]
+                    default: []
+            default: []
+    mozharness:
+        extra-options:
+            by-test-platform:
+                windows10-64.*shippable.*-qr.*:
+                    - --chimera
+                    - --browsertime
+                    - --browsertime-no-ffwindowrecorder
+                    - --conditioned-profile=settled-webext
+                default:
+                    - --chimera
+                    - --browsertime
+                    - --conditioned-profile=settled-webext
+    # TODO(Bug 1867781): promote to tier 2 after confirming no issue have been caught while runing as tier 3.
+    tier: 3
+    treeherder-symbol: Btime-webext(tp6)
+
+browsertime-indexeddb:
+    description: Raptor (browsertime) tests for IndexedDB
+    max-run-time: 2700
+    treeherder-symbol: Btime(idb)
+    limit-platforms:
+        by-app:
+            chrome:
+                - .*shippable.*
+            chromium:
+                - .*shippable.*
+            custom-car:
+                - .*64.*shippable.*
+            default: []
+    raptor:
+        apps: [firefox, chrome, chromium]
+        run-visual-metrics: false
+        subtests:
+            - addMab1
+            - addMabN
+            - addMar1
+            - addMarN
+            - addMbl1
+            - addMblN
+            - addkAB1
+            - addkABN
+            - addkAR1
+            - addkARN
+            - addkBL1
+            - addkBLN
+            - getkeyrng
+    run-on-projects:
+        by-app:
+            firefox:
+                by-test-platform:
+                    windows.*-32.*: []
+                    .*64.*shippable-qr/.*: [autoland, mozilla-central]
+                    default: []
+            default: []
+    tier:
+        by-app:
+            firefox: 2
+            default: 3
+    mozharness:
+        extra-options:
+            - --extra-profiler-run

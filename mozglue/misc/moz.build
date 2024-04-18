@@ -43,6 +43,7 @@ if CONFIG["OS_ARCH"] == "WINNT":
 SOURCES += [
     "AutoProfilerLabel.cpp",
     "AwakeTimeStamp.cpp",
+    "Debug.cpp",
     "MmapFaultHandler.cpp",
     "Printf.cpp",
     "SIMD.cpp",
@@ -51,7 +52,7 @@ SOURCES += [
     "Uptime.cpp",
 ]
 
-if CONFIG["CPU_ARCH"].startswith("x86"):
+if CONFIG["TARGET_CPU"].startswith("x86"):
     SOURCES += [
         "SIMD_avx2.cpp",
         "SSE.cpp",

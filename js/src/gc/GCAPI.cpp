@@ -777,6 +777,19 @@ const char* StateName(JS::Zone::GCState state) {
   MOZ_CRASH("Invalid Zone::GCState enum value");
 }
 
+const char* CellColorName(CellColor color) {
+  switch (color) {
+    case CellColor::White:
+      return "white";
+    case CellColor::Black:
+      return "black";
+    case CellColor::Gray:
+      return "gray";
+    default:
+      MOZ_CRASH("Unexpected cell color");
+  }
+}
+
 } /* namespace gc */
 } /* namespace js */
 
@@ -828,4 +841,14 @@ void AutoSelectGCHeap::onNurseryCollectionEnd() {
   }
 
   heap_ = gc::Heap::Tenured;
+}
+
+JS_PUBLIC_API void js::gc::LockStoreBuffer(JSRuntime* runtime) {
+  MOZ_ASSERT(runtime);
+  runtime->gc.lockStoreBuffer();
+}
+
+JS_PUBLIC_API void js::gc::UnlockStoreBuffer(JSRuntime* runtime) {
+  MOZ_ASSERT(runtime);
+  runtime->gc.unlockStoreBuffer();
 }

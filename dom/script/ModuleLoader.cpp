@@ -225,7 +225,8 @@ nsresult ModuleLoader::CompileFetchedModule(
   RefPtr<JS::Stencil> stencil;
   if (aRequest->IsTextSource()) {
     MaybeSourceText maybeSource;
-    nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource);
+    nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource,
+                                            aRequest->mLoadContext.get());
     NS_ENSURE_SUCCESS(rv, rv);
 
     auto compile = [&](auto& source) {
@@ -237,12 +238,7 @@ nsresult ModuleLoader::CompileFetchedModule(
     JS::DecodeOptions decodeOptions(aOptions);
     decodeOptions.borrowBuffer = true;
 
-    auto& bytecode = aRequest->mScriptBytecode;
-    auto& offset = aRequest->mBytecodeOffset;
-
-    JS::TranscodeRange range(bytecode.begin() + offset,
-                             bytecode.length() - offset);
-
+    JS::TranscodeRange range = aRequest->Bytecode();
     JS::TranscodeResult tr =
         JS::DecodeStencil(aCx, decodeOptions, range, getter_AddRefs(stencil));
     if (tr != JS::TranscodeResult::Ok) {
@@ -282,6 +278,7 @@ already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateTopLevel(
       aLoader->GetModuleLoader(),
       ModuleLoadRequest::NewVisitedSetForTopLevelImport(aURI), nullptr);
 
+  request->NoCacheEntryFound();
   return request.forget();
 }
 
@@ -299,13 +296,13 @@ already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateStaticImport(
       false,                            /* is dynamic import */
       aParent->mLoader, aParent->mVisitedSet, aParent->GetRootModule());
 
+  request->NoCacheEntryFound();
   return request.forget();
 }
 
 already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateDynamicImport(
     JSContext* aCx, nsIURI* aURI, LoadedScript* aMaybeActiveScript,
-    JS::Handle<JS::Value> aReferencingPrivate, JS::Handle<JSString*> aSpecifier,
-    JS::Handle<JSObject*> aPromise) {
+    JS::Handle<JSString*> aSpecifier, JS::Handle<JSObject*> aPromise) {
   MOZ_ASSERT(aSpecifier);
   MOZ_ASSERT(aPromise);
 
@@ -357,12 +354,13 @@ already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateDynamicImport(
       /* is top level */ true, /* is dynamic import */
       this, ModuleLoadRequest::NewVisitedSetForTopLevelImport(aURI), nullptr);
 
-  request->mDynamicReferencingPrivate = aReferencingPrivate;
+  request->mDynamicReferencingScript = aMaybeActiveScript;
   request->mDynamicSpecifier = aSpecifier;
   request->mDynamicPromise = aPromise;
 
   HoldJSObjects(request.get());
 
+  request->NoCacheEntryFound();
   return request.forget();
 }
 

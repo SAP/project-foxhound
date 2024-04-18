@@ -2,43 +2,31 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
-<panel id="report-broken-main-menu-panel"
-       class="cui-widget-panel panel-no-padding"
-       type="arrow"
-       role="alertdialog"
-       aria-labelledby="report-broken-site-panel-intro"
-       noautofocus="true"
-       tabspecific="true"
-       flip="slide"
-       orient="vertical">
-  <panelmultiview mainViewId="report-broken-site-popup-mainView"/>
-</panel>
-
 <panelview id="report-broken-site-popup-mainView"
            class="report-broken-site-view main-view PanelUI-subView"
-           role="document"
+           role="dialog"
+           aria-describedby="report-broken-site-panel-intro"
            data-l10n-id="report-broken-site-panel-header"
            data-l10n-attrs="title"
-           hidden="true"
-           showheader="true">
-  <!-- Once bug 1864957 is fixed, the wants-back-button attribute here
-       should probably be removed, as well as in PanelMultiView.sys.mjs.
-  -->
-  <box class="panel-header" wants-back-button="true">
-    <html:h1 role="heading" aria-level="1">
+           mainview-with-header="true">
+  <!-- The panel can be opened from the Help menubar, so with the current
+     - headerText implementation in PanelMultiView.sys.mjs the markup must
+     - be added manually. -->
+  <box class="panel-header">
+    <html:h1>
       <html:span data-l10n-id="report-broken-site-mainview-title"/>
     </html:h1>
   </box>
-  <toolbarseparator></toolbarseparator>
+  <toolbarseparator/>
   <vbox id="report-broken-site-panel-container"
         class="panel-subview-body">
-    <html:p data-l10n-id="report-broken-site-panel-intro"/>
+    <html:p id="report-broken-site-panel-intro"
+            data-l10n-id="report-broken-site-panel-intro"/>
     <label id="report-broken-site-popup-url-label"
            control="report-broken-site-popup-url"
            data-l10n-id="report-broken-site-panel-url"/>
     <html:input id="report-broken-site-popup-url"
                 allow-arrow-navigation="true"
-                aria-describedby="report-broken-site-panel-intro"
                 type="url" required="required" aria-required="true" />
     <label id="report-broken-site-popup-invalid-url-msg"
            class="invalid-message text-error"
@@ -113,16 +101,18 @@
            role="dialog"
            data-l10n-id="report-broken-site-panel-report-sent-header"
            data-l10n-attrs="title"
-           hidden="true"
-           showheader="true">
+           aria-describedby="report-broken-site-panel-report-sent-text"
+           has-customized-header="true"
+           no-back-button="true">
   <box class="panel-header panel-header-with-additional-element">
     <image class="checkmark-icon additional-element-on-inline-start"></image>
-    <html:h1 role="alert" aria-level="1">
+    <html:h1>
       <html:span data-l10n-id="report-broken-site-panel-report-sent-label"/>
     </html:h1>
   </box>
   <vbox class="panel-subview-body">
-    <html:p data-l10n-id="report-broken-site-panel-report-sent-text"
+    <html:p id="report-broken-site-panel-report-sent-text"
+            data-l10n-id="report-broken-site-panel-report-sent-text"
             class="subview-subheader"/>
   </vbox>
   <html:moz-button-group class="panel-footer">

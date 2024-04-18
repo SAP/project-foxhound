@@ -187,8 +187,8 @@ function getHTMLEditorIMESupport(aWindow)
 const kIsWin = (navigator.platform.indexOf("Win") == 0);
 const kIsMac = (navigator.platform.indexOf("Mac") == 0);
 
-const kLFLen = (kIsWin && !AppConstants.EARLY_BETA_OR_EARLIER) ? 2 : 1;
-const kLF = (kIsWin && !AppConstants.EARLY_BETA_OR_EARLIER) ? "\r\n" : "\n";
+const kLFLen = (kIsWin && false) ? 2 : 1;
+const kLF = (kIsWin && false) ? "\r\n" : "\n";
 
 function checkQueryContentResult(aResult, aMessage)
 {
@@ -6705,10 +6705,8 @@ function runCSSTransformTest()
       return;
     }
     lastCharRectTranslatedAsArray = synthesizeQueryTextRectArray(textarea.value.length - 1, textarea.value.length);
-    if (!checkQueryContentResult(lastCharRectTranslatedAsArray, "runCSSTransformTest: lastCharRectTranslatedAsArray, " + textarea.style.transform) ||
-        !checkRectArray(lastCharRectTranslatedAsArray, [lastCharRectTranslated], "runCSSTransformTest: lastCharRectTranslatedAsArray, " + textarea.style.transform)) {
-      return;
-    }
+    checkQueryContentResult(lastCharRectTranslatedAsArray, "runCSSTransformTest: lastCharRectTranslatedAsArray, " + textarea.style.transform);
+    checkRectArray(lastCharRectTranslatedAsArray, [lastCharRectTranslated], "runCSSTransformTest: lastCharRectTranslatedAsArray, " + textarea.style.transform);
   } finally {
     textarea.style.transform = "";
   }

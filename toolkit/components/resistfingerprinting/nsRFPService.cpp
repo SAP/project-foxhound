@@ -95,6 +95,8 @@ using namespace mozilla;
 static mozilla::LazyLogModule gResistFingerprintingLog(
     "nsResistFingerprinting");
 
+static mozilla::LazyLogModule gFingerprinterDetection("FingerprinterDetection");
+
 #define RESIST_FINGERPRINTINGPROTECTION_OVERRIDE_PREF \
   "privacy.fingerprintingProtection.overrides"
 #define RFP_TIMER_UNCONDITIONAL_VALUE 20
@@ -110,7 +112,7 @@ static constexpr uint32_t kVideoDroppedRatio = 5;
 
 // Fingerprinting protections that are enabled by default. This can be
 // overridden using the privacy.fingerprintingProtection.overrides pref.
-const RFPTarget kDefaultFingerintingProtections =
+const RFPTarget kDefaultFingerprintingProtections =
     RFPTarget::CanvasRandomization | RFPTarget::FontVisibilityLangPack;
 
 static constexpr uint32_t kSuspiciousFingerprintingActivityThreshold = 1;
@@ -126,7 +128,7 @@ static StaticRefPtr<nsRFPService> sRFPService;
 static bool sInitialized = false;
 
 // Actually enabled fingerprinting protections.
-static Atomic<RFPTarget> sEnabledFingerintingProtections;
+static Atomic<RFPTarget> sEnabledFingerprintingProtections;
 
 /* static */
 already_AddRefed<nsRFPService> nsRFPService::GetOrCreate() {
@@ -195,12 +197,13 @@ bool nsRFPService::IsRFPPrefEnabled(bool aIsPrivateMode) {
 
 /* static */
 bool nsRFPService::IsRFPEnabledFor(
-    RFPTarget aTarget,
+    bool aIsPrivateMode, RFPTarget aTarget,
     const Maybe<RFPTarget>& aOverriddenFingerprintingSettings) {
   MOZ_ASSERT(aTarget != RFPTarget::AllTargets);
 
   if (StaticPrefs::privacy_resistFingerprinting_DoNotUseDirectly() ||
-      StaticPrefs::privacy_resistFingerprinting_pbmode_DoNotUseDirectly()) {
+      (aIsPrivateMode &&
+       StaticPrefs::privacy_resistFingerprinting_pbmode_DoNotUseDirectly())) {
     if (aTarget == RFPTarget::JSLocale) {
       return StaticPrefs::privacy_spoof_english() == 2;
     }
@@ -208,7 +211,9 @@ bool nsRFPService::IsRFPEnabledFor(
   }
 
   if (StaticPrefs::privacy_fingerprintingProtection_DoNotUseDirectly() ||
-      StaticPrefs::privacy_fingerprintingProtection_pbmode_DoNotUseDirectly()) {
+      (aIsPrivateMode &&
+       StaticPrefs::
+           privacy_fingerprintingProtection_pbmode_DoNotUseDirectly())) {
     if (aTarget == RFPTarget::IsAlwaysEnabledForPrecompute) {
       return true;
     }
@@ -217,7 +222,7 @@ bool nsRFPService::IsRFPEnabledFor(
       return bool(aOverriddenFingerprintingSettings.ref() & aTarget);
     }
 
-    return bool(sEnabledFingerintingProtections & aTarget);
+    return bool(sEnabledFingerprintingProtections & aTarget);
   }
 
   return false;
@@ -233,10 +238,10 @@ void nsRFPService::UpdateFPPOverrideList() {
     return;
   }
 
-  RFPTarget enabled =
-      CreateOverridesFromText(targetOverrides, kDefaultFingerintingProtections);
+  RFPTarget enabled = CreateOverridesFromText(
+      targetOverrides, kDefaultFingerprintingProtections);
 
-  sEnabledFingerintingProtections = enabled;
+  sEnabledFingerprintingProtections = enabled;
 }
 
 /* static */
@@ -1401,6 +1406,46 @@ nsresult nsRFPService::RandomizePixels(nsICookieJarSettings* aCookieJarSettings,
   return NS_OK;
 }
 
+static const char* CanvasFingerprinterToString(
+    ContentBlockingNotifier::CanvasFingerprinter aFingerprinter) {
+  switch (aFingerprinter) {
+    case ContentBlockingNotifier::CanvasFingerprinter::eFingerprintJS:
+      return "FingerprintJS";
+    case ContentBlockingNotifier::CanvasFingerprinter::eAkamai:
+      return "Akamai";
+    case ContentBlockingNotifier::CanvasFingerprinter::eVariant1:
+      return "Variant1";
+    case ContentBlockingNotifier::CanvasFingerprinter::eVariant2:
+      return "Variant2";
+    case ContentBlockingNotifier::CanvasFingerprinter::eVariant3:
+      return "Variant3";
+    case ContentBlockingNotifier::CanvasFingerprinter::eVariant4:
+      return "Variant4";
+    case ContentBlockingNotifier::CanvasFingerprinter::eMaybe:
+      return "Maybe";
+  }
+  return "<error>";
+}
+
+static void MaybeCurrentCaller(nsACString& aFilename, uint32_t& aLineNum,
+                               uint32_t& aColumnNum) {
+  aFilename.AssignLiteral("<unknown>");
+
+  JSContext* cx = nsContentUtils::GetCurrentJSContext();
+  if (!cx) {
+    return;
+  }
+
+  JS::AutoFilename scriptFilename;
+  JS::ColumnNumberOneOrigin columnNum;
+  if (JS::DescribeScriptedCaller(cx, &scriptFilename, &aLineNum, &columnNum)) {
+    if (const char* file = scriptFilename.get()) {
+      aFilename = nsDependentCString(file);
+    }
+  }
+  aColumnNum = columnNum.oneOriginValue();
+}
+
 /* static */ void nsRFPService::MaybeReportCanvasFingerprinter(
     nsTArray<CanvasUsage>& aUses, nsIChannel* aChannel,
     nsACString& aOriginNoSuffix) {
@@ -1484,9 +1529,28 @@ nsresult nsRFPService::RandomizePixels(nsICookieJarSettings* aCookieJarSettings,
     fingerprinter = Some(ContentBlockingNotifier::CanvasFingerprinter::eMaybe);
   }
 
-  if (!(featureUsage & CanvasFeatureUsage::KnownFingerprintText) &&
-      fingerprinter.isNothing()) {
+  bool knownFingerprintText =
+      bool(featureUsage & CanvasFeatureUsage::KnownFingerprintText);
+  if (!knownFingerprintText && fingerprinter.isNothing()) {
     return;
+  }
+
+  if (MOZ_LOG_TEST(gFingerprinterDetection, LogLevel::Info)) {
+    nsAutoCString filename;
+    uint32_t lineNum = 0;
+    uint32_t columnNum = 0;
+    MaybeCurrentCaller(filename, lineNum, columnNum);
+
+    nsAutoCString origin(aOriginNoSuffix);
+    MOZ_LOG(
+        gFingerprinterDetection, LogLevel::Info,
+        ("Detected a potential canvas fingerprinter on %s in script %s:%d:%d "
+         "(KnownFingerprintText: %s, CanvasFingerprinter: %s)",
+         origin.get(), filename.get(), lineNum, columnNum,
+         knownFingerprintText ? "true" : "false",
+         fingerprinter.isSome()
+             ? CanvasFingerprinterToString(fingerprinter.value())
+             : "<none>"));
   }
 
   ContentBlockingNotifier::OnEvent(
@@ -1500,6 +1564,18 @@ nsresult nsRFPService::RandomizePixels(nsICookieJarSettings* aCookieJarSettings,
     nsIChannel* aChannel, nsACString& aOriginNoSuffix) {
   if (!aChannel) {
     return;
+  }
+
+  if (MOZ_LOG_TEST(gFingerprinterDetection, LogLevel::Info)) {
+    nsAutoCString filename;
+    uint32_t lineNum = 0;
+    uint32_t columnNum = 0;
+    MaybeCurrentCaller(filename, lineNum, columnNum);
+
+    nsAutoCString origin(aOriginNoSuffix);
+    MOZ_LOG(gFingerprinterDetection, LogLevel::Info,
+            ("Detected a potential font fingerprinter on %s in script %s:%d:%d",
+             origin.get(), filename.get(), lineNum, columnNum));
   }
 
   ContentBlockingNotifier::OnEvent(
@@ -1663,7 +1739,7 @@ nsRFPService::SetFingerprintingOverrides(
         NS_ConvertUTF8toUTF16(overridesText),
         mFingerprintingOverrides.Contains(domainKey)
             ? mFingerprintingOverrides.Get(domainKey)
-            : sEnabledFingerintingProtections);
+            : sEnabledFingerprintingProtections);
 
     // The newly added one will replace the existing one for the given domain
     // key.
@@ -1683,7 +1759,7 @@ nsRFPService::SetFingerprintingOverrides(
 
 NS_IMETHODIMP
 nsRFPService::GetEnabledFingerprintingProtections(uint64_t* aProtections) {
-  RFPTarget enabled = sEnabledFingerintingProtections;
+  RFPTarget enabled = sEnabledFingerprintingProtections;
 
   *aProtections = uint64_t(enabled);
   return NS_OK;

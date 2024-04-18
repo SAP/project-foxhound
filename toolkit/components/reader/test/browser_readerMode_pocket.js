@@ -114,10 +114,10 @@ add_task(async function () {
         panel,
         { attributes: true },
         () => {
-          return BrowserTestUtils.is_visible(panel);
+          return BrowserTestUtils.isVisible(panel);
         }
       );
-      ok(BrowserTestUtils.is_visible(panel), "Panel buttons are visible");
+      ok(BrowserTestUtils.isVisible(panel), "Panel buttons are visible");
 
       await SpecialPowers.spawn(browser, [], async function () {
         content.document.querySelector(".pocket-button").click();
@@ -126,11 +126,11 @@ add_task(async function () {
         panel,
         { attributes: true },
         () => {
-          return BrowserTestUtils.is_hidden(panel);
+          return BrowserTestUtils.isHidden(panel);
         }
       );
 
-      ok(BrowserTestUtils.is_hidden(panel), "Panel buttons are hidden");
+      ok(BrowserTestUtils.isHidden(panel), "Panel buttons are hidden");
     }
   );
 });

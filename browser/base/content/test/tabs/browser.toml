@@ -198,6 +198,7 @@ skip-if = ["verify && os == 'mac'"]
 https_first_disabled = true
 
 ["browser_new_tab_bookmarks_toolbar_height.js"]
+skip-if = ["!verify && os == 'mac'"] # Bug 1872477
 support-files = ["file_observe_height_changes.html"]
 
 ["browser_new_tab_in_privilegedabout_process_pref.js"]
@@ -214,6 +215,8 @@ support-files = ["file_new_tab_page.html"]
 ["browser_newwindow_tabstrip_overflow.js"]
 
 ["browser_open_newtab_start_observer_notification.js"]
+
+["browser_openURI_background.js"]
 
 ["browser_opened_file_tab_navigated_to_web.js"]
 https_first_disabled = true
@@ -315,6 +318,8 @@ skip-if = ["true"] # Bug 1616418 Bug 1549985
 
 ["browser_tab_play.js"]
 
+["browser_tab_preview.js"]
+
 ["browser_tab_tooltips.js"]
 
 ["browser_tabswitch_contextmenu.js"]
@@ -336,3 +341,6 @@ skip-if = ["true"] #bug 1642084
 ["browser_visibleTabs_bookmarkAllTabs.js"]
 
 ["browser_visibleTabs_contextMenu.js"]
+
+["browser_window_open_modifiers.js"]
+support-files = ["file_window_open.html"]

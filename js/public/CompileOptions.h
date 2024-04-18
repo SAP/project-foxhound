@@ -123,13 +123,21 @@ class JS_PUBLIC_API ReadOnlyDecodeOptions;
 class JS_PUBLIC_API PrefableCompileOptions {
  public:
   PrefableCompileOptions()
-      : importAssertions_(false),
+      : importAttributes_(false),
+        importAttributesAssertSyntax_(false),
         sourcePragmas_(true),
         throwOnAsmJSValidationFailure_(false) {}
 
-  bool importAssertions() const { return importAssertions_; }
-  PrefableCompileOptions& setImportAssertions(bool enabled) {
-    importAssertions_ = enabled;
+  bool importAttributes() const { return importAttributes_; }
+  PrefableCompileOptions& setImportAttributes(bool enabled) {
+    importAttributes_ = enabled;
+    return *this;
+  }
+  bool importAttributesAssertSyntax() const {
+    return importAttributesAssertSyntax_;
+  }
+  PrefableCompileOptions& setImportAttributesAssertSyntax(bool enabled) {
+    importAttributesAssertSyntax_ = enabled;
     return *this;
   }
 
@@ -167,7 +175,8 @@ class JS_PUBLIC_API PrefableCompileOptions {
   template <typename Printer>
   void dumpWith(Printer& print) const {
 #  define PrintFields_(Name) print(#Name, Name)
-    PrintFields_(importAssertions_);
+    PrintFields_(importAttributes_);
+    PrintFields_(importAttributesAssertSyntax_);
     PrintFields_(sourcePragmas_);
     PrintFields_(throwOnAsmJSValidationFailure_);
 #  undef PrintFields_
@@ -194,7 +203,8 @@ class JS_PUBLIC_API PrefableCompileOptions {
 
  private:
   // ==== Syntax-related options. ====
-  bool importAssertions_ : 1;
+  bool importAttributes_ : 1;
+  bool importAttributesAssertSyntax_ : 1;
 
   // The context has specified that source pragmas should be parsed.
   bool sourcePragmas_ : 1;
@@ -379,7 +389,10 @@ class JS_PUBLIC_API TransitiveCompileOptions {
     return eagerDelazificationStrategy_;
   }
 
-  bool importAssertions() const { return prefableOptions_.importAssertions(); }
+  bool importAttributes() const { return prefableOptions_.importAttributes(); }
+  bool importAttributesAssertSyntax() const {
+    return prefableOptions_.importAttributesAssertSyntax();
+  }
   bool sourcePragmas() const { return prefableOptions_.sourcePragmas(); }
   bool throwOnAsmJSValidationFailure() const {
     return prefableOptions_.throwOnAsmJSValidationFailure();
@@ -483,7 +496,7 @@ class JS_PUBLIC_API ReadOnlyCompileOptions : public TransitiveCompileOptions {
     this->TransitiveCompileOptions::dumpWith(print);
 #  define PrintFields_(Name) print(#Name, Name)
     PrintFields_(lineno);
-    print("column", column.zeroOriginValue());
+    print("column", column.oneOriginValue());
     PrintFields_(scriptSourceOffset);
     PrintFields_(isRunOnce);
     PrintFields_(noScriptRval);

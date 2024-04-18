@@ -25,7 +25,6 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
 #include "nsAttrValue.h"
-#include "nsAttrValueInlines.h"
 #include "nsCOMPtr.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentSecurityManager.h"
@@ -37,6 +36,7 @@
 #include "nsIContentSecurityPolicy.h"
 #include "nsIHttpChannel.h"
 #include "nsIInputStream.h"
+#include "nsILoadContext.h"
 #include "nsILoadInfo.h"
 #include "nsIParentChannel.h"
 #include "nsIReferrerInfo.h"
@@ -44,8 +44,6 @@
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 #include "nsQueryObject.h"
-#include "nsStreamUtils.h"
-#include "nsStringStream.h"
 #include "ParentChannelListener.h"
 #include "nsIChannel.h"
 #include "nsInterfaceRequestorAgg.h"
@@ -202,7 +200,8 @@ void EarlyHintPreloader::MaybeCreateAndInsertPreload(
     nsIURI* aBaseURI, nsIPrincipal* aPrincipal,
     nsICookieJarSettings* aCookieJarSettings,
     const nsACString& aResponseReferrerPolicy, const nsACString& aCSPHeader,
-    uint64_t aBrowsingContextID, nsIInterfaceRequestor* aCallbacks,
+    uint64_t aBrowsingContextID,
+    dom::CanonicalBrowsingContext* aLoadingBrowsingContext,
     bool aIsModulepreload) {
   nsAttrValue as;
   ParseAsValue(aLinkHeader.mAs, as);
@@ -290,6 +289,8 @@ void EarlyHintPreloader::MaybeCreateAndInsertPreload(
 
   RefPtr<EarlyHintPreloader> earlyHintPreloader = new EarlyHintPreloader();
 
+  earlyHintPreloader->mLoadContext = aLoadingBrowsingContext;
+
   // Security flags for modulepreload's request mode are computed here directly
   // until full support for worker destinations can be added.
   //
@@ -369,9 +370,8 @@ void EarlyHintPreloader::MaybeCreateAndInsertPreload(
   }
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
-  nsresult rv =
-      NS_CheckContentLoadPolicy(uri, secCheckLoadInfo, ""_ns, &shouldLoad,
-                                nsContentUtils::GetContentPolicy());
+  nsresult rv = NS_CheckContentLoadPolicy(uri, secCheckLoadInfo, &shouldLoad,
+                                          nsContentUtils::GetContentPolicy());
 
   if (NS_FAILED(rv) || NS_CP_REJECTED(shouldLoad)) {
     return;
@@ -379,7 +379,7 @@ void EarlyHintPreloader::MaybeCreateAndInsertPreload(
 
   NS_ENSURE_SUCCESS_VOID(earlyHintPreloader->OpenChannel(
       uri, aPrincipal, securityFlags, contentPolicyType, referrerInfo,
-      aCookieJarSettings, aBrowsingContextID, aCallbacks));
+      aCookieJarSettings, aBrowsingContextID));
 
   earlyHintPreloader->SetLinkHeader(aLinkHeader);
 
@@ -391,8 +391,7 @@ void EarlyHintPreloader::MaybeCreateAndInsertPreload(
 nsresult EarlyHintPreloader::OpenChannel(
     nsIURI* aURI, nsIPrincipal* aPrincipal, nsSecurityFlags aSecurityFlags,
     nsContentPolicyType aContentPolicyType, nsIReferrerInfo* aReferrerInfo,
-    nsICookieJarSettings* aCookieJarSettings, uint64_t aBrowsingContextID,
-    nsIInterfaceRequestor* aCallbacks) {
+    nsICookieJarSettings* aCookieJarSettings, uint64_t aBrowsingContextID) {
   MOZ_ASSERT(aContentPolicyType == nsContentPolicyType::TYPE_IMAGE ||
              aContentPolicyType ==
                  nsContentPolicyType::TYPE_INTERNAL_FETCH_PRELOAD ||
@@ -400,15 +399,12 @@ nsresult EarlyHintPreloader::OpenChannel(
              aContentPolicyType == nsContentPolicyType::TYPE_STYLESHEET ||
              aContentPolicyType == nsContentPolicyType::TYPE_FONT);
 
-  nsCOMPtr<nsIInterfaceRequestor> wrappedCallbacks;
-  NS_NewInterfaceRequestorAggregation(this, aCallbacks,
-                                      getter_AddRefs(wrappedCallbacks));
   nsresult rv =
       NS_NewChannel(getter_AddRefs(mChannel), aURI, aPrincipal, aSecurityFlags,
                     aContentPolicyType, aCookieJarSettings,
                     /* aPerformanceStorage */ nullptr,
                     /* aLoadGroup */ nullptr,
-                    /* aCallbacks */ wrappedCallbacks, nsIRequest::LOAD_NORMAL);
+                    /* aCallbacks */ this, nsIRequest::LOAD_NORMAL);
 
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -583,7 +579,7 @@ void EarlyHintPreloader::InvokeStreamListenerFunctions() {
   nsTArray<StreamListenerFunction> streamListenerFunctions =
       std::move(mStreamListenerFunctions);
 
-  ForwardStreamListenerFunctions(streamListenerFunctions, mParent);
+  ForwardStreamListenerFunctions(std::move(streamListenerFunctions), mParent);
 
   // We don't expect to get new stream listener functions added
   // via re-entrancy. If this ever happens, we should understand
@@ -697,8 +693,8 @@ EarlyHintPreloader::OnDataAvailable(nsIRequest* aRequest,
   nsresult rv = NS_ReadInputStreamToString(aInputStream, data, aCount);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mStreamListenerFunctions.AppendElement(
-      AsVariant(OnDataAvailableParams{aRequest, data, aOffset, aCount}));
+  mStreamListenerFunctions.AppendElement(AsVariant(
+      OnDataAvailableParams{aRequest, std::move(data), aOffset, aCount}));
 
   return NS_OK;
 }
@@ -819,6 +815,12 @@ EarlyHintPreloader::GetInterface(const nsIID& aIID, void** aResult) {
   if (aIID.Equals(NS_GET_IID(nsIRedirectResultListener))) {
     NS_ADDREF_THIS();
     *aResult = static_cast<nsIRedirectResultListener*>(this);
+    return NS_OK;
+  }
+
+  if (aIID.Equals(NS_GET_IID(nsILoadContext)) && mLoadContext != nullptr) {
+    nsCOMPtr<nsILoadContext> loadContext = mLoadContext;
+    loadContext.forget(aResult);
     return NS_OK;
   }
 

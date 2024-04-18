@@ -17,7 +17,6 @@ TESTING_JS_MODULES += [
     "content-src/asrouter/templates/CFR/templates/CFRUrlbarChiclet.schema.json",
     "content-src/asrouter/templates/CFR/templates/ExtensionDoorhanger.schema.json",
     "content-src/asrouter/templates/CFR/templates/InfoBar.schema.json",
-    "content-src/asrouter/templates/OnboardingMessage/ProtectionsPanelMessage.schema.json",
     "content-src/asrouter/templates/OnboardingMessage/Spotlight.schema.json",
     "content-src/asrouter/templates/OnboardingMessage/ToolbarBadgeMessage.schema.json",
     "content-src/asrouter/templates/OnboardingMessage/UpdateAction.schema.json",
@@ -32,7 +31,7 @@ SPHINX_TREES["docs"] = "docs"
 SPHINX_TREES["content-src/asrouter/docs"] = "content-src/asrouter/docs"
 
 XPCSHELL_TESTS_MANIFESTS += [
-    "test/xpcshell/xpcshell.ini",
+    "test/xpcshell/xpcshell.toml",
 ]
 
 XPIDL_SOURCES += [
@@ -46,8 +45,6 @@ EXTRA_JS_MODULES += [
 ]
 
 FINAL_TARGET_FILES.actors += [
-    "aboutwelcome/AboutWelcomeChild.sys.mjs",
-    "aboutwelcome/AboutWelcomeParent.sys.mjs",
     "actors/ASRouterChild.sys.mjs",
     "actors/ASRouterParent.sys.mjs",
 ]

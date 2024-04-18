@@ -34,9 +34,9 @@ impl ParseError {
             .with_labels(
                 self.labels
                     .iter()
-                    .map(|label| {
-                        Label::primary((), label.0.to_range().unwrap())
-                            .with_message(label.1.to_string())
+                    .filter_map(|label| label.0.to_range().map(|range| (label, range)))
+                    .map(|(label, range)| {
+                        Label::primary((), range).with_message(label.1.to_string())
                     })
                     .collect(),
             )
@@ -55,7 +55,11 @@ impl ParseError {
     }
 
     /// Emits a summary of the error to standard error stream.
-    pub fn emit_to_stderr_with_path(&self, source: &str, path: &str) {
+    pub fn emit_to_stderr_with_path<P>(&self, source: &str, path: P)
+    where
+        P: AsRef<std::path::Path>,
+    {
+        let path = path.as_ref().display().to_string();
         let files = SimpleFile::new(path, source);
         let config = codespan_reporting::term::Config::default();
         let writer = StandardStream::stderr(ColorChoice::Auto);
@@ -69,7 +73,11 @@ impl ParseError {
     }
 
     /// Emits a summary of the error to a string.
-    pub fn emit_to_string_with_path(&self, source: &str, path: &str) -> String {
+    pub fn emit_to_string_with_path<P>(&self, source: &str, path: P) -> String
+    where
+        P: AsRef<std::path::Path>,
+    {
+        let path = path.as_ref().display().to_string();
         let files = SimpleFile::new(path, source);
         let config = codespan_reporting::term::Config::default();
         let mut writer = NoColor::new(Vec::new());
@@ -243,6 +251,24 @@ pub enum Error<'a> {
     ExpectedPositiveArrayLength(Span),
     MissingWorkgroupSize(Span),
     ConstantEvaluatorError(ConstantEvaluatorError, Span),
+    AutoConversion {
+        dest_span: Span,
+        dest_type: String,
+        source_span: Span,
+        source_type: String,
+    },
+    AutoConversionLeafScalar {
+        dest_span: Span,
+        dest_scalar: String,
+        source_span: Span,
+        source_type: String,
+    },
+    ConcretizationFailed {
+        expr_span: Span,
+        expr_type: String,
+        scalar: String,
+        inner: ConstantEvaluatorError,
+    },
 }
 
 impl<'a> Error<'a> {
@@ -703,6 +729,46 @@ impl<'a> Error<'a> {
                     "must be paired with a @workgroup_size attribute".into(),
                 )],
                 notes: vec![],
+            },
+            Error::AutoConversion { dest_span, ref dest_type, source_span, ref source_type } => ParseError {
+                message: format!("automatic conversions cannot convert `{source_type}` to `{dest_type}`"),
+                labels: vec![
+                    (
+                        dest_span,
+                        format!("a value of type {dest_type} is required here").into(),
+                    ),
+                    (
+                        source_span,
+                        format!("this expression has type {source_type}").into(),
+                    )
+                ],
+                notes: vec![],
+            },
+            Error::AutoConversionLeafScalar { dest_span, ref dest_scalar, source_span, ref source_type } => ParseError {
+                message: format!("automatic conversions cannot convert elements of `{source_type}` to `{dest_scalar}`"),
+                labels: vec![
+                    (
+                        dest_span,
+                        format!("a value with elements of type {dest_scalar} is required here").into(),
+                    ),
+                    (
+                        source_span,
+                        format!("this expression has type {source_type}").into(),
+                    )
+                ],
+                notes: vec![],
+            },
+            Error::ConcretizationFailed { expr_span, ref expr_type, ref scalar, ref inner } => ParseError {
+                message: format!("failed to convert expression to a concrete type: {}", inner),
+                labels: vec![
+                    (
+                        expr_span,
+                        format!("this expression has type {}", expr_type).into(),
+                    )
+                ],
+                notes: vec![
+                    format!("the expression should have been converted to have {} scalar type", scalar),
+                ]
             },
         }
     }

@@ -132,7 +132,7 @@ export class PromptParent extends JSWindowActorParent {
 
     switch (message.name) {
       case "Prompt:Open":
-        if (!this.windowContext.isCurrentGlobal) {
+        if (!this.windowContext.isActiveInTab) {
           return undefined;
         }
 
@@ -301,6 +301,7 @@ export class PromptParent extends JSWindowActorParent {
 
       args.promptAborted = false;
       args.openedWithTabDialog = true;
+      args.owningBrowsingContext = this.browsingContext;
 
       // Convert args object to a prop bag for the dialog to consume.
       let bag;

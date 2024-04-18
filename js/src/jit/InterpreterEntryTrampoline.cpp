@@ -208,7 +208,7 @@ void JitRuntime::generateInterpreterEntryTrampoline(MacroAssembler& masm) {
   masm.passABIArg(arg0);  // cx
   masm.passABIArg(arg1);  // state
   masm.callWithABI<Fn, Interpret>(
-      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
+      ABIType::General, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
 #ifdef JS_CODEGEN_ARM64
   masm.syncStackPtr();
@@ -242,7 +242,7 @@ JitCode* JitRuntime::generateEntryTrampolineForScript(JSContext* cx,
     JitSpew(JitSpew_Codegen,
             "# Emitting Interpreter Entry Trampoline for %s (%s:%u:%u)",
             funName ? funName.get() : "*", script->filename(), script->lineno(),
-            script->column().zeroOriginValue());
+            script->column().oneOriginValue());
   }
 
   TempAllocator temp(&cx->tempLifoAlloc());

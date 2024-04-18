@@ -45,6 +45,23 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "browser.shopping.experience2023.ads.exposure",
   false
 );
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "autoOpenEnabled",
+  "browser.shopping.experience2023.autoOpen.enabled",
+  true
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "autoOpenEnabledByUser",
+  "browser.shopping.experience2023.autoOpen.userEnabled",
+  true,
+  function autoOpenEnabledByUserChanged() {
+    for (let actor of gAllActors) {
+      actor.autoOpenEnabledByUserChanged();
+    }
+  }
+);
 
 export class ShoppingSidebarChild extends RemotePageChild {
   constructor() {
@@ -74,19 +91,29 @@ export class ShoppingSidebarChild extends RemotePageChild {
         let uri = url ? Services.io.newURI(url) : null;
         // If we're going from null to null, bail out:
         if (!this.#productURI && !uri) {
-          return;
+          return null;
         }
 
         // If we haven't reloaded, check if the URIs represent the same product
         // as sites might change the URI after they have loaded (Bug 1852099).
         if (!isReload && this.isSameProduct(uri, this.#productURI)) {
-          return;
+          return null;
         }
 
         this.#productURI = uri;
         this.updateContent({ haveUpdatedURI: true });
         break;
+      case "ShoppingSidebar:ShowKeepClosedMessage":
+        this.sendToContent("ShowKeepClosedMessage");
+        break;
+      case "ShoppingSidebar:HideKeepClosedMessage":
+        this.sendToContent("HideKeepClosedMessage");
+        break;
+      case "ShoppingSidebar:IsKeepClosedMessageShowing":
+        return !!this.document.querySelector("shopping-container")
+          ?.wrappedJSObject.showingKeepClosedMessage;
     }
+    return null;
   }
 
   isSameProduct(newURI, currentURI) {
@@ -138,6 +165,9 @@ export class ShoppingSidebarChild extends RemotePageChild {
         ShoppingProduct.sendAttributionEvent("impression", aid);
         Glean.shopping.surfaceAdsImpression.record();
         break;
+      case "DisableShopping":
+        this.sendAsyncMessage("DisableShopping");
+        break;
     }
   }
 
@@ -161,27 +191,45 @@ export class ShoppingSidebarChild extends RemotePageChild {
     return lazy.optedIn === 1;
   }
 
-  get canFetchAndShowAd() {
+  get adsEnabled() {
     return lazy.adsEnabled;
   }
 
-  get userHasAdsEnabled() {
+  get adsEnabledByUser() {
     return lazy.adsEnabledByUser;
+  }
+
+  get canFetchAndShowAd() {
+    return this.adsEnabled && this.adsEnabledByUser;
+  }
+
+  get autoOpenEnabled() {
+    return lazy.autoOpenEnabled;
+  }
+
+  get autoOpenEnabledByUser() {
+    return lazy.autoOpenEnabledByUser;
   }
 
   optedInStateChanged() {
     // Force re-fetching things if needed by clearing the last product URI:
     this.#productURI = null;
     // Then let content know.
-    this.updateContent();
+    this.updateContent({ focusCloseButton: true });
   }
 
   adsEnabledByUserChanged() {
     this.sendToContent("adsEnabledByUserChanged", {
-      adsEnabledByUser: this.userHasAdsEnabled,
+      adsEnabledByUser: this.adsEnabledByUser,
     });
 
     this.requestRecommendations(this.#productURI);
+  }
+
+  autoOpenEnabledByUserChanged() {
+    this.sendToContent("autoOpenEnabledByUserChanged", {
+      autoOpenEnabledByUser: this.autoOpenEnabledByUser,
+    });
   }
 
   getProductURI() {
@@ -207,6 +255,7 @@ export class ShoppingSidebarChild extends RemotePageChild {
   async updateContent({
     haveUpdatedURI = false,
     isPolledRequest = false,
+    focusCloseButton = false,
   } = {}) {
     // updateContent is an async function, and when we're off making requests or doing
     // other things asynchronously, the actor can be destroyed, the user
@@ -232,11 +281,14 @@ export class ShoppingSidebarChild extends RemotePageChild {
     // Do not clear data however if an analysis was requested via a call-to-action.
     if (!isPolledRequest) {
       this.sendToContent("Update", {
-        adsEnabled: this.canFetchAndShowAd,
-        adsEnabledByUser: this.userHasAdsEnabled,
+        adsEnabled: this.adsEnabled,
+        adsEnabledByUser: this.adsEnabledByUser,
+        autoOpenEnabled: this.autoOpenEnabled,
+        autoOpenEnabledByUser: this.autoOpenEnabledByUser,
         showOnboarding: !this.canFetchAndShowData,
         data: null,
         recommendationData: null,
+        focusCloseButton,
       });
     }
     if (this.canFetchAndShowData) {
@@ -332,8 +384,10 @@ export class ShoppingSidebarChild extends RemotePageChild {
       }
 
       this.sendToContent("Update", {
-        adsEnabled: this.canFetchAndShowAd,
-        adsEnabledByUser: this.userHasAdsEnabled,
+        adsEnabled: this.adsEnabled,
+        adsEnabledByUser: this.adsEnabledByUser,
+        autoOpenEnabled: this.autoOpenEnabled,
+        autoOpenEnabledByUser: this.autoOpenEnabledByUser,
         showOnboarding: false,
         data,
         productUrl: this.#productURI.spec,
@@ -380,7 +434,7 @@ export class ShoppingSidebarChild extends RemotePageChild {
     return (
       uri.equalsExceptRef(this.#productURI) &&
       this.canFetchAndShowData &&
-      (lazy.adsExposure || (this.canFetchAndShowAd && this.userHasAdsEnabled))
+      (lazy.adsExposure || this.canFetchAndShowAd)
     );
   }
 
@@ -392,8 +446,7 @@ export class ShoppingSidebarChild extends RemotePageChild {
     return (
       uri.equalsExceptRef(this.#productURI) &&
       this.canFetchAndShowData &&
-      this.canFetchAndShowAd &&
-      this.userHasAdsEnabled
+      this.canFetchAndShowAd
     );
   }
 
@@ -427,6 +480,12 @@ export class ShoppingSidebarChild extends RemotePageChild {
     if (!recommendationData.length) {
       // We tried to fetch an ad, but didn't get one.
       Glean.shopping.surfaceNoAdsAvailable.record();
+    } else {
+      ShoppingProduct.sendAttributionEvent(
+        "placement",
+        recommendationData[0].aid
+      );
+      Glean.shopping.surfaceAdsPlacement.record();
     }
 
     this.sendToContent("UpdateRecommendations", {

@@ -48,7 +48,7 @@ add_task(async function test_experiment_control_toggle_style() {
           );
           Assert.ok(!pipWrapper.classList.contains(EXPERIMENT_CLASS_NAME));
           Assert.ok(
-            ContentTaskUtils.is_visible(pipExplainer),
+            ContentTaskUtils.isVisible(pipExplainer),
             "The PiP message should be visible on the toggle"
           );
         }
@@ -108,7 +108,7 @@ add_task(async function test_experiment_toggle_style() {
           );
           Assert.ok(pipWrapper.classList.contains(EXPERIMENT_CLASS_NAME));
           Assert.ok(
-            ContentTaskUtils.is_hidden(pipExplainer),
+            ContentTaskUtils.isHidden(pipExplainer),
             "The PiP message should not be visible on the toggle"
           );
         }

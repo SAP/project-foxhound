@@ -2501,17 +2501,6 @@ MOZ_ALWAYS_INLINE const nsTSubstring<CharT>& NonNullHelper(
 void UpdateReflectorGlobal(JSContext* aCx, JS::Handle<JSObject*> aObj,
                            ErrorResult& aError);
 
-/**
- * Used to implement the Symbol.hasInstance property of an interface object.
- */
-bool InterfaceHasInstance(JSContext* cx, unsigned argc, JS::Value* vp);
-
-bool InterfaceHasInstance(JSContext* cx, int prototypeID, int depth,
-                          JS::Handle<JSObject*> instance, bool* bp);
-
-// Used to implement the cross-context <Interface>.isInstance static method.
-bool InterfaceIsInstance(JSContext* cx, unsigned argc, JS::Value* vp);
-
 // Helper for lenient getters/setters to report to console.  If this
 // returns false, we couldn't even get a global.
 bool ReportLenientThisUnwrappingFailure(JSContext* cx, JSObject* obj);
@@ -2568,8 +2557,10 @@ already_AddRefed<T> ConstructJSImplementation(const char* aContractId,
  * As such, the string is not UTF-8 encoded.  Any UTF8 strings passed to these
  * methods will be mangled.
  */
-bool NonVoidByteStringToJsval(JSContext* cx, const nsACString& str,
-                              JS::MutableHandle<JS::Value> rval);
+inline bool NonVoidByteStringToJsval(JSContext* cx, const nsACString& str,
+                                     JS::MutableHandle<JS::Value> rval) {
+  return xpc::NonVoidLatin1StringToJsval(cx, str, rval);
+}
 inline bool ByteStringToJsval(JSContext* cx, const nsACString& str,
                               JS::MutableHandle<JS::Value> rval) {
   if (str.IsVoid()) {
@@ -2584,13 +2575,7 @@ inline bool ByteStringToJsval(JSContext* cx, const nsACString& str,
 // TODO(bug 1606957): This could probably be better.
 inline bool NonVoidUTF8StringToJsval(JSContext* cx, const nsACString& str,
                                      JS::MutableHandle<JS::Value> rval) {
-  JSString* jsStr =
-      JS_NewStringCopyUTF8N(cx, {str.BeginReading(), str.Length()});
-  if (!jsStr) {
-    return false;
-  }
-  rval.setString(jsStr);
-  return true;
+  return xpc::NonVoidUTF8StringToJsval(cx, str, rval);
 }
 
 inline bool UTF8StringToJsval(JSContext* cx, const nsACString& str,
@@ -3104,10 +3089,15 @@ inline RefPtr<T> StrongOrRawPtr(RefPtr<S>&& aPtr) {
   return std::move(aPtr);
 }
 
-template <class T, class ReturnType = std::conditional_t<IsRefcounted<T>::value,
-                                                         T*, UniquePtr<T>>>
-inline ReturnType StrongOrRawPtr(T* aPtr) {
-  return ReturnType(aPtr);
+template <class T, typename = std::enable_if_t<IsRefcounted<T>::value>>
+inline T* StrongOrRawPtr(T* aPtr) {
+  return aPtr;
+}
+
+template <class T, class S,
+          typename = std::enable_if_t<!IsRefcounted<S>::value>>
+inline UniquePtr<T> StrongOrRawPtr(UniquePtr<S>&& aPtr) {
+  return std::move(aPtr);
 }
 
 template <class T, template <typename> class SmartPtr, class S>

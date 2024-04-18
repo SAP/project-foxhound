@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "react";
+import React, { Component } from "devtools/client/shared/vendor/react";
 import {
   div,
   input,
@@ -12,15 +12,15 @@ import {
   datalist,
   option,
   span,
-} from "react-dom-factories";
-import PropTypes from "prop-types";
-import { connect } from "../../utils/connect";
+} from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import { connect } from "devtools/client/shared/vendor/react-redux";
 import { features } from "../../utils/prefs";
 import AccessibleImage from "../shared/AccessibleImage";
 
 import { objectInspector } from "devtools/client/shared/components/reps/index";
 
-import actions from "../../actions";
+import actions from "../../actions/index";
 import {
   getExpressions,
   getExpressionError,
@@ -31,15 +31,13 @@ import {
   getSelectedFrame,
   getOriginalFrameScope,
   getCurrentThread,
-} from "../../selectors";
+} from "../../selectors/index";
 import { getExpressionResultGripAndFront } from "../../utils/expressions";
 
-import { CloseButton } from "../shared/Button";
+import { CloseButton } from "../shared/Button/index";
 
-import "./Expressions.css";
-
-const { debounce } = require("devtools/shared/debounce");
-const classnames = require("devtools/client/shared/classnames.js");
+const { debounce } = require("resource://devtools/shared/debounce.js");
+const classnames = require("resource://devtools/client/shared/classnames.js");
 
 const { ObjectInspector } = objectInspector;
 

@@ -112,6 +112,12 @@ button::selection {
   all: unset;
 }
 
+iframe {
+  border: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
 /* Autocomplete Popup */
 .devtools-autocomplete-popup {
   overflow: hidden;
@@ -316,13 +322,13 @@ button::selection {
   content: "";
 }
 
-.devtools-button.checked::before {
+.devtools-button:is(.checked, [aria-pressed="true"])::before {
   color: var(--theme-icon-checked-color);
 }
 
 /* Icon-only buttons */
 .devtools-button:hover::before,
-.devtools-button.checked::before {
+.devtools-button:is(.checked, [aria-pressed="true"])::before {
   opacity: 1;
 }
 
@@ -350,17 +356,17 @@ button::selection {
 
 /* Selectable button which is unchecked. */
 
-.devtools-button:not(:empty, .checked):hover,
-.devtools-button:empty:is(:hover:active,.checked),
+.devtools-button:not(:empty, .checked, [aria-pressed="true"]):hover,
+.devtools-button:empty:is(:hover:active,.checked, [aria-pressed="true"]),
 .devtools-button[aria-haspopup="menu"][aria-expanded="true"] {
   background-color: var(--toolbarbutton-hover-background);
 }
 
-.devtools-button:not(:empty, .checked):hover:active {
+.devtools-button:not(:empty, .checked, [aria-pressed="true"]):hover:active {
   background-color: var(--theme-selection-background-hover);
 }
 
-.devtools-button:not(:empty, .checked):focus {
+.devtools-button:not(:empty, .checked, [aria-pressed="true"]):focus {
   background-color: var(--toolbarbutton-focus-background);
   color: var(--toolbarbutton-focus-color);
 }
@@ -376,13 +382,13 @@ button::selection {
 
 /* Selectable button which is checked. */
 
-.devtools-button:not(:empty).checked {
+.devtools-button:not(:empty):is(.checked, [aria-pressed="true"]) {
   background: var(--toolbarbutton-checked-background);
   color: var(--toolbarbutton-checked-color);
-}
 
-.devtools-button:not(:empty).checked:focus {
-  background-color: var(--toolbarbutton-checked-focus-background);
+  &:focus {
+    background-color: var(--toolbarbutton-checked-focus-background);
+  }
 }
 
 .devtools-togglebutton[aria-pressed="true"] {
@@ -437,6 +443,13 @@ button::selection {
   background-color: var(--theme-body-background);
   color: var(--theme-body-color);
   flex-grow: 1;
+
+  &::placeholder {
+    /* override UA style */
+    opacity: 1;
+    /* Set a dimmed color that still gives us enough contrast  */
+    color: var(--theme-text-color-alt);
+  }
 }
 
 .devtools-searchinput,

@@ -37,6 +37,8 @@ class CookieServiceChild final : public PCookieServiceChild,
 
   CookieServiceChild();
 
+  void Init();
+
   static already_AddRefed<CookieServiceChild> GetSingleton();
 
   void TrackCookieLoad(nsIChannel* aChannel);
@@ -65,6 +67,9 @@ class CookieServiceChild final : public PCookieServiceChild,
 
   mozilla::ipc::IPCResult RecvAddCookie(const CookieStruct& aCookie,
                                         const OriginAttributes& aAttrs);
+
+  void RemoveSingleCookie(const CookieStruct& aCookie,
+                          const OriginAttributes& aAttrs);
 
   CookiesMap mCookiesMap;
   nsCOMPtr<mozIThirdPartyUtil> mThirdPartyUtil;

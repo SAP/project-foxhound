@@ -19,6 +19,7 @@ XPIDL_MODULE = "gfx"
 EXPORTS += [
     "COLRFonts.h",
     "DrawMode.h",
+    "FontPaletteCache.h",
     "gfx2DGlue.h",
     "gfxAlphaRecovery.h",
     "gfxASurface.h",
@@ -198,6 +199,7 @@ SOURCES += [
 UNIFIED_SOURCES += [
     "CJKCompatSVS.cpp",
     "COLRFonts.cpp",
+    "FontPaletteCache.cpp",
     "gfxAlphaRecovery.cpp",
     "gfxBaseSharedMemorySurface.cpp",
     "gfxBlur.cpp",
@@ -266,6 +268,7 @@ LOCAL_INCLUDES += [
     "/dom/media/platforms/apple",
     "/dom/xml",
     "/gfx/cairo/cairo/src",
+    "/third_party/xsimd/include",
     "/widget/gtk",
 ]
 

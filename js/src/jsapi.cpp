@@ -100,6 +100,7 @@
 #include "vm/StringType.h"
 #include "vm/Time.h"
 #include "vm/ToSource.h"
+#include "vm/Watchtower.h"
 #include "vm/WrapperObject.h"
 #include "wasm/WasmModule.h"
 #include "wasm/WasmProcess.h"
@@ -1413,7 +1414,10 @@ JS_PUBLIC_API bool JS_UpdateWeakPointerAfterGCUnbarriered(JSTracer* trc,
 
 JS_PUBLIC_API void JS_SetGCParameter(JSContext* cx, JSGCParamKey key,
                                      uint32_t value) {
-  MOZ_ALWAYS_TRUE(cx->runtime()->gc.setParameter(cx, key, value));
+  // Bug 1742118: JS_SetGCParameter has no way to return an error
+  // The GC ignores invalid values internally but this is not reported to the
+  // caller.
+  (void)cx->runtime()->gc.setParameter(cx, key, value);
 }
 
 JS_PUBLIC_API void JS_ResetGCParameter(JSContext* cx, JSGCParamKey key) {
@@ -1465,7 +1469,15 @@ JS_PUBLIC_API void JS_SetGCParametersBasedOnAvailableMemory(
   }
 }
 
-JS_PUBLIC_API JSString* JS_NewExternalString(
+JS_PUBLIC_API JSString* JS_NewExternalStringLatin1(
+    JSContext* cx, const Latin1Char* chars, size_t length,
+    const JSExternalStringCallbacks* callbacks) {
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+  return JSExternalString::new_(cx, chars, length, callbacks);
+}
+
+JS_PUBLIC_API JSString* JS_NewExternalUCString(
     JSContext* cx, const char16_t* chars, size_t length,
     const JSExternalStringCallbacks* callbacks) {
   AssertHeapIsIdle();
@@ -1473,7 +1485,35 @@ JS_PUBLIC_API JSString* JS_NewExternalString(
   return JSExternalString::new_(cx, chars, length, callbacks);
 }
 
-JS_PUBLIC_API JSString* JS_NewMaybeExternalString(
+JS_PUBLIC_API JSString* JS_NewMaybeExternalStringLatin1(
+    JSContext* cx, const JS::Latin1Char* chars, size_t length,
+    const JSExternalStringCallbacks* callbacks, bool* allocatedExternal) {
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+  return NewMaybeExternalString(cx, chars, length, callbacks,
+                                allocatedExternal);
+}
+
+JS_PUBLIC_API JSString* JS_NewMaybeExternalStringUTF8(
+    JSContext* cx, const JS::UTF8Chars& utf8,
+    const JSExternalStringCallbacks* callbacks, bool* allocatedExternal) {
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+
+  JS::SmallestEncoding encoding = JS::FindSmallestEncoding(utf8);
+  if (encoding == JS::SmallestEncoding::ASCII) {
+    // ASCII case can use the external buffer as Latin1 buffer.
+    return NewMaybeExternalString(
+        cx, reinterpret_cast<JS::Latin1Char*>(utf8.begin().get()),
+        utf8.length(), callbacks, allocatedExternal);
+  }
+
+  // Non-ASCII case cannot use the external buffer.
+  *allocatedExternal = false;
+  return NewStringCopyUTF8N(cx, utf8, encoding);
+}
+
+JS_PUBLIC_API JSString* JS_NewMaybeExternalUCString(
     JSContext* cx, const char16_t* chars, size_t length,
     const JSExternalStringCallbacks* callbacks, bool* allocatedExternal) {
   AssertHeapIsIdle();
@@ -2111,9 +2151,11 @@ JS_PUBLIC_API void JS_SetAllNonReservedSlotsToUndefined(JS::HandleObject obj) {
     return;
   }
 
+  NativeObject& nobj = obj->as<NativeObject>();
+  MOZ_RELEASE_ASSERT(!Watchtower::watchesPropertyModification(&nobj));
   const JSClass* clasp = obj->getClass();
   unsigned numReserved = JSCLASS_RESERVED_SLOTS(clasp);
-  unsigned numSlots = obj->as<NativeObject>().slotSpan();
+  unsigned numSlots = nobj.slotSpan();
   for (unsigned i = numReserved; i < numSlots; i++) {
     obj->as<NativeObject>().setSlot(i, UndefinedValue());
   }
@@ -2123,8 +2165,10 @@ JS_PUBLIC_API void JS_SetReservedSlot(JSObject* obj, uint32_t index,
                                       const Value& value) {
   // Note: we don't use setReservedSlot so that this also works on swappable DOM
   // objects. See NativeObject::getReservedSlotRef comment.
+  NativeObject& nobj = obj->as<NativeObject>();
   MOZ_ASSERT(index < JSCLASS_RESERVED_SLOTS(obj->getClass()));
-  obj->as<NativeObject>().setSlot(index, value);
+  MOZ_ASSERT(!Watchtower::watchesPropertyModification(&nobj));
+  nobj.setSlot(index, value);
 }
 
 JS_PUBLIC_API void JS_InitReservedSlot(JSObject* obj, uint32_t index, void* ptr,
@@ -3115,7 +3159,7 @@ JS_PUBLIC_API JSString* JS_NewStringCopyUTF8Z(JSContext* cx,
 }
 
 JS_PUBLIC_API JSString* JS_NewStringCopyUTF8N(JSContext* cx,
-                                              const JS::UTF8Chars s) {
+                                              const JS::UTF8Chars& s) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
   return NewStringCopyUTF8N(cx, s);
@@ -3274,7 +3318,7 @@ JS_PUBLIC_API bool JS_GetStringCharAt(JSContext* cx, JSString* str,
 }
 
 JS_PUBLIC_API bool JS_CopyStringChars(JSContext* cx,
-                                      mozilla::Range<char16_t> dest,
+                                      const mozilla::Range<char16_t>& dest,
                                       JSString* str) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
@@ -4411,9 +4455,6 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
     case JSJITCOMPILER_WRITE_PROTECT_CODE:
       jit::JitOptions.maybeSetWriteProtectCode(!!value);
       break;
-    case JSJITCOMPILER_WATCHTOWER_MEGAMORPHIC:
-      jit::JitOptions.enableWatchtowerMegamorphic = !!value;
-      break;
     case JSJITCOMPILER_WASM_FOLD_OFFSETS:
       jit::JitOptions.wasmFoldOffsets = !!value;
       break;
@@ -4502,9 +4543,6 @@ JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
       break;
     case JSJITCOMPILER_WRITE_PROTECT_CODE:
       *valueOut = jit::JitOptions.writeProtectCode ? 1 : 0;
-      break;
-    case JSJITCOMPILER_WATCHTOWER_MEGAMORPHIC:
-      *valueOut = jit::JitOptions.enableWatchtowerMegamorphic ? 1 : 0;
       break;
     case JSJITCOMPILER_WASM_FOLD_OFFSETS:
       *valueOut = jit::JitOptions.wasmFoldOffsets ? 1 : 0;

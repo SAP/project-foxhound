@@ -20,7 +20,7 @@ GPU_IMPL_JS_WRAP(Texture)
 
 static Maybe<uint8_t> GetBytesPerBlockSingleAspect(
     dom::GPUTextureFormat aFormat) {
-  auto format = WebGPUChild::ConvertTextureFormat(aFormat);
+  auto format = ConvertTextureFormat(aFormat);
   uint32_t bytes = ffi::wgpu_texture_format_block_size_single_aspect(format);
   if (bytes == 0) {
     // The above function returns zero if the texture has multiple aspects like
@@ -45,24 +45,66 @@ Texture::Texture(Device* const aParent, RawId aId,
   MOZ_RELEASE_ASSERT(aId);
 }
 
-Texture::~Texture() { Cleanup(); }
-
 void Texture::Cleanup() {
-  if (mValid && mParent) {
-    mValid = false;
-    auto bridge = mParent->GetBridge();
-    if (bridge && bridge->IsOpen()) {
-      bridge->SendTextureDrop(mId);
-    }
+  if (!mParent) {
+    return;
   }
+
+  auto bridge = mParent->GetBridge();
+  if (bridge && bridge->IsOpen()) {
+    bridge->SendTextureDrop(mId);
+  }
+
+  // After cleanup is called, no other method should ever be called on the
+  // object so we don't have to null-check mParent in other places.
+  // This serves the purpose of preventing SendTextureDrop from happening
+  // twice. TODO: Does it matter for breaking cycles too? Cleanup is called
+  // by the macros that deal with cycle colleciton.
+  mParent = nullptr;
 }
+
+Texture::~Texture() { Cleanup(); }
 
 already_AddRefed<TextureView> Texture::CreateView(
     const dom::GPUTextureViewDescriptor& aDesc) {
   auto bridge = mParent->GetBridge();
-  RawId id = 0;
-  if (bridge->IsOpen()) {
-    id = bridge->TextureCreateView(mId, mParent->mId, aDesc);
+
+  ffi::WGPUTextureViewDescriptor desc = {};
+
+  webgpu::StringHelper label(aDesc.mLabel);
+  desc.label = label.Get();
+
+  ffi::WGPUTextureFormat format = {ffi::WGPUTextureFormat_Sentinel};
+  if (aDesc.mFormat.WasPassed()) {
+    format = ConvertTextureFormat(aDesc.mFormat.Value());
+    desc.format = &format;
+  }
+  ffi::WGPUTextureViewDimension dimension =
+      ffi::WGPUTextureViewDimension_Sentinel;
+  if (aDesc.mDimension.WasPassed()) {
+    dimension = ffi::WGPUTextureViewDimension(aDesc.mDimension.Value());
+    desc.dimension = &dimension;
+  }
+
+  // Ideally we'd just do something like "aDesc.mMipLevelCount.ptrOr(nullptr)"
+  // but dom::Optional does not seem to have very many nice things.
+  uint32_t mipCount =
+      aDesc.mMipLevelCount.WasPassed() ? aDesc.mMipLevelCount.Value() : 0;
+  uint32_t layerCount =
+      aDesc.mArrayLayerCount.WasPassed() ? aDesc.mArrayLayerCount.Value() : 0;
+
+  desc.aspect = ffi::WGPUTextureAspect(aDesc.mAspect);
+  desc.base_mip_level = aDesc.mBaseMipLevel;
+  desc.mip_level_count = aDesc.mMipLevelCount.WasPassed() ? &mipCount : nullptr;
+  desc.base_array_layer = aDesc.mBaseArrayLayer;
+  desc.array_layer_count =
+      aDesc.mArrayLayerCount.WasPassed() ? &layerCount : nullptr;
+
+  ipc::ByteBuf bb;
+  RawId id = ffi::wgpu_client_create_texture_view(bridge->GetClient(), mId,
+                                                  &desc, ToFFI(&bb));
+  if (bridge->CanSend()) {
+    bridge->SendTextureAction(mId, mParent->mId, std::move(bb));
   }
 
   RefPtr<TextureView> view = new TextureView(this, id);
@@ -70,12 +112,10 @@ already_AddRefed<TextureView> Texture::CreateView(
 }
 
 void Texture::Destroy() {
-  // TODO: we don't have to implement it right now, but it's used by the
-  // examples
-
-  // XXX Bug 1860958.
+  auto bridge = mParent->GetBridge();
+  if (bridge && bridge->IsOpen()) {
+    bridge->SendTextureDestroy(mId, mParent->GetId());
+  }
 }
-
-void Texture::ForceDestroy() { Cleanup(); }
 
 }  // namespace mozilla::webgpu

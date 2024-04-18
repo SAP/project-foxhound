@@ -2,14 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "react";
-import { div, ul, h2, span, li } from "react-dom-factories";
-import PropTypes from "prop-types";
+import React, { Component } from "devtools/client/shared/vendor/react";
+import {
+  div,
+  ul,
+  h2,
+  span,
+  li,
+} from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import Modal from "./shared/Modal";
 import { formatKeyShortcut } from "../utils/text";
-const classnames = require("devtools/client/shared/classnames.js");
-
-import "./ShortcutsModal.css";
+const classnames = require("resource://devtools/client/shared/classnames.js");
 
 const isMacOS = Services.appinfo.OS === "Darwin";
 

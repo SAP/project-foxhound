@@ -14,11 +14,11 @@ add_task(async function testSingleRequest() {
 
   const onNetworkEvents = waitForNetworkEvents(REQUEST_URL, 1);
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [REQUEST_URL], _url => {
-    content.wrappedJSObject.sendRequest(_url);
+    content.wrappedJSObject.fetch(_url);
   });
 
-  const eventsCount = await onNetworkEvents;
-  is(eventsCount, 1, "Received the expected number of network events");
+  const events = await onNetworkEvents;
+  is(events.length, 1, "Received the expected number of network events");
 });
 
 add_task(async function testMultipleRequests() {
@@ -34,14 +34,14 @@ add_task(async function testMultipleRequests() {
     [REQUEST_URL, EXPECTED_REQUESTS_COUNT],
     (_url, _count) => {
       for (let i = 0; i < _count; i++) {
-        content.wrappedJSObject.sendRequest(_url);
+        content.wrappedJSObject.fetch(_url);
       }
     }
   );
 
-  const eventsCount = await onNetworkEvents;
+  const events = await onNetworkEvents;
   is(
-    eventsCount,
+    events.length,
     EXPECTED_REQUESTS_COUNT,
     "Received the expected number of network events"
   );
@@ -62,7 +62,7 @@ add_task(async function testOnNetworkEventArguments() {
   });
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [REQUEST_URL], _url => {
-    content.wrappedJSObject.sendRequest(_url);
+    content.wrappedJSObject.fetch(_url);
   });
 
   const args = await onNetworkEvent;

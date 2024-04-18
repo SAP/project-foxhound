@@ -64,20 +64,6 @@ const BASE_MESSAGES = () => [
     trigger: { id: "toolbarBadgeUpdate" },
   },
   {
-    id: "PROTECTIONS_PANEL_1",
-    template: "protections_panel",
-    content: {
-      title: { string_id: "cfr-protections-panel-header" },
-      body: { string_id: "cfr-protections-panel-body" },
-      link_text: { string_id: "cfr-protections-panel-link-text" },
-      cta_url: `${Services.urlFormatter.formatURLPref(
-        "app.support.baseURL"
-      )}etp-promotions?as=u&utm_source=inproduct`,
-      cta_type: "OPEN_URL",
-    },
-    trigger: { id: "protectionsPanelOpen" },
-  },
-  {
     id: "MILESTONE_MESSAGE_87",
     groups: ["cfr"],
     content: {
@@ -278,10 +264,12 @@ const BASE_MESSAGES = () => [
             progress_bar: true,
             logo: {},
             title: {
-              string_id: "mr2022-onboarding-mobile-download-title",
+              string_id:
+                "onboarding-mobile-download-security-and-privacy-title",
             },
             subtitle: {
-              string_id: "mr2022-onboarding-mobile-download-subtitle",
+              string_id:
+                "onboarding-mobile-download-security-and-privacy-subtitle",
             },
             hero_image: {
               url: "chrome://activity-stream/content/data/content/assets/mobile-download-qr-existing-user.svg",
@@ -990,8 +978,10 @@ const BASE_MESSAGES = () => [
       lifetime: 1,
     },
     trigger: { id: "defaultBrowserCheck" },
-    targeting: `source == 'newtab' && 'browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt'|preferenceValue == false
-    && 'browser.startup.windowsLaunchOnLogin.enabled'|preferenceValue == true && isDefaultBrowser && !activeNotifications`,
+    targeting: `source == 'newtab'
+    && 'browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt'|preferenceValue == false
+    && 'browser.startup.windowsLaunchOnLogin.enabled'|preferenceValue == true && isDefaultBrowser && !activeNotifications
+    && !launchOnLoginEnabled`,
   },
   {
     id: "INFOBAR_LAUNCH_ON_LOGIN_FINAL",
@@ -1053,11 +1043,88 @@ const BASE_MESSAGES = () => [
       lifetime: 1,
     },
     trigger: { id: "defaultBrowserCheck" },
-    targeting: `source == 'newtab' && 'browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt'|preferenceValue == false
+    targeting: `source == 'newtab'
+    && 'browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt'|preferenceValue == false
     && 'browser.startup.windowsLaunchOnLogin.enabled'|preferenceValue == true && isDefaultBrowser && !activeNotifications
     && messageImpressions.INFOBAR_LAUNCH_ON_LOGIN[messageImpressions.INFOBAR_LAUNCH_ON_LOGIN | length - 1]
     && messageImpressions.INFOBAR_LAUNCH_ON_LOGIN[messageImpressions.INFOBAR_LAUNCH_ON_LOGIN | length - 1] <
-      currentDate|date - ${FOURTEEN_DAYS_IN_MS}`,
+      currentDate|date - ${FOURTEEN_DAYS_IN_MS}
+    && !launchOnLoginEnabled`,
+  },
+  {
+    id: "FOX_DOODLE_SET_DEFAULT",
+    template: "spotlight",
+    groups: ["eco"],
+    skip_in_tests: "it fails unrelated tests",
+    content: {
+      backdrop: "transparent",
+      id: "FOX_DOODLE_SET_DEFAULT",
+      screens: [
+        {
+          content: {
+            logo: {
+              height: "125px",
+              imageURL:
+                "chrome://activity-stream/content/data/content/assets/fox-doodle-waving.gif",
+              reducedMotionImageURL:
+                "chrome://activity-stream/content/data/content/assets/fox-doodle-waving-static.png",
+            },
+            title: {
+              fontSize: "22px",
+              fontWeight: 590,
+              letterSpacing: 0,
+              paddingInline: "24px",
+              paddingBlock: "4px 0",
+              string_id: "fox-doodle-pin-headline",
+            },
+            subtitle: {
+              fontSize: "15px",
+              letterSpacing: 0,
+              lineHeight: "1.4",
+              marginBlock: "8px 16px",
+              paddingInline: "24px",
+              string_id: "fox-doodle-pin-body",
+            },
+            primary_button: {
+              action: {
+                navigate: true,
+                type: "SET_DEFAULT_BROWSER",
+              },
+              label: {
+                paddingBlock: "0",
+                paddingInline: "16px",
+                marginBlock: "4px 0",
+                string_id: "fox-doodle-pin-primary",
+              },
+            },
+            secondary_button: {
+              action: {
+                navigate: true,
+              },
+              label: {
+                marginBlock: "0 -20px",
+                string_id: "fox-doodle-pin-secondary",
+              },
+            },
+            dismiss_button: {
+              action: {
+                navigate: true,
+              },
+            },
+          },
+        },
+      ],
+      template: "multistage",
+      transitions: true,
+    },
+    frequency: {
+      lifetime: 2,
+    },
+    targeting:
+      "source == 'startup' && !isMajorUpgrade && !activeNotifications && !isDefaultBrowser && !willShowDefaultPrompt && (currentDate|date - profileAgeCreated|date) / 86400000 >= 28",
+    trigger: {
+      id: "defaultBrowserCheck",
+    },
   },
 ];
 

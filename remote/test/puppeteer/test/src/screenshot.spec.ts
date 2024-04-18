@@ -18,7 +18,12 @@ import assert from 'assert';
 
 import expect from 'expect';
 
-import {getTestState, launch, setupTestBrowserHooks} from './mocha-utils.js';
+import {
+  getTestState,
+  isHeadless,
+  launch,
+  setupTestBrowserHooks,
+} from './mocha-utils.js';
 
 describe('Screenshots', function () {
   setupTestBrowserHooks();
@@ -47,22 +52,6 @@ describe('Screenshots', function () {
       });
       expect(screenshot).toBeGolden('screenshot-clip-rect.png');
     });
-    it('should use scale for clip', async () => {
-      const {page, server} = await getTestState();
-
-      await page.setViewport({width: 500, height: 500});
-      await page.goto(server.PREFIX + '/grid.html');
-      const screenshot = await page.screenshot({
-        clip: {
-          x: 50,
-          y: 100,
-          width: 150,
-          height: 100,
-          scale: 2,
-        },
-      });
-      expect(screenshot).toBeGolden('screenshot-clip-rect-scale2.png');
-    });
     it('should get screenshot bigger than the viewport', async () => {
       const {page, server} = await getTestState();
       await page.setViewport({width: 50, height: 50});
@@ -76,6 +65,21 @@ describe('Screenshots', function () {
         },
       });
       expect(screenshot).toBeGolden('screenshot-offscreen-clip.png');
+    });
+    it('should clip clip bigger than the viewport without "captureBeyondViewport"', async () => {
+      const {page, server} = await getTestState();
+      await page.setViewport({width: 50, height: 50});
+      await page.goto(server.PREFIX + '/grid.html');
+      const screenshot = await page.screenshot({
+        captureBeyondViewport: false,
+        clip: {
+          x: 25,
+          y: 25,
+          width: 100,
+          height: 100,
+        },
+      });
+      expect(screenshot).toBeGolden('screenshot-offscreen-clip-2.png');
     });
     it('should run in parallel', async () => {
       const {page, server} = await getTestState();
@@ -108,6 +112,18 @@ describe('Screenshots', function () {
       });
       expect(screenshot).toBeGolden('screenshot-grid-fullpage.png');
     });
+    it('should take fullPage screenshots without captureBeyondViewport', async () => {
+      const {page, server} = await getTestState();
+
+      await page.setViewport({width: 500, height: 500});
+      await page.goto(server.PREFIX + '/grid.html');
+      const screenshot = await page.screenshot({
+        fullPage: true,
+        captureBeyondViewport: false,
+      });
+      expect(screenshot).toBeGolden('screenshot-grid-fullpage-2.png');
+      expect(page.viewport()).toMatchObject({width: 500, height: 500});
+    });
     it('should run in parallel in multiple pages', async () => {
       const {server, context} = await getTestState();
 
@@ -139,36 +155,6 @@ describe('Screenshots', function () {
         })
       );
     });
-    it('should allow transparency', async () => {
-      const {page, server} = await getTestState();
-
-      await page.setViewport({width: 100, height: 100});
-      await page.goto(server.EMPTY_PAGE);
-      const screenshot = await page.screenshot({omitBackground: true});
-      expect(screenshot).toBeGolden('transparent.png');
-    });
-    it('should render white background on jpeg file', async () => {
-      const {page, server} = await getTestState();
-
-      await page.setViewport({width: 100, height: 100});
-      await page.goto(server.EMPTY_PAGE);
-      const screenshot = await page.screenshot({
-        omitBackground: true,
-        type: 'jpeg',
-      });
-      expect(screenshot).toBeGolden('white.jpg');
-    });
-    it('should work with webp', async () => {
-      const {page, server} = await getTestState();
-
-      await page.setViewport({width: 100, height: 100});
-      await page.goto(server.PREFIX + '/grid.html');
-      const screenshot = await page.screenshot({
-        type: 'webp',
-      });
-
-      expect(screenshot).toBeInstanceOf(Buffer);
-    });
     it('should work with odd clip size on Retina displays', async () => {
       const {page} = await getTestState();
 
@@ -193,16 +179,6 @@ describe('Screenshots', function () {
       expect(Buffer.from(screenshot, 'base64')).toBeGolden(
         'screenshot-sanity.png'
       );
-    });
-    it('should work in "fromSurface: false" mode', async () => {
-      const {page, server} = await getTestState();
-
-      await page.setViewport({width: 500, height: 500});
-      await page.goto(server.PREFIX + '/grid.html');
-      const screenshot = await page.screenshot({
-        fromSurface: false,
-      });
-      expect(screenshot).toBeDefined(); // toBeGolden('screenshot-fromsurface-false.png');
     });
   });
 
@@ -382,5 +358,67 @@ describe('Screenshots', function () {
       const screenshot = await elementHandle.screenshot();
       expect(screenshot).toBeGolden('screenshot-element-fractional-offset.png');
     });
+    it('should work with webp', async () => {
+      const {page, server} = await getTestState();
+
+      await page.setViewport({width: 100, height: 100});
+      await page.goto(server.PREFIX + '/grid.html');
+      const screenshot = await page.screenshot({
+        type: 'webp',
+      });
+
+      expect(screenshot).toBeInstanceOf(Buffer);
+    });
+  });
+
+  describe('Cdp', () => {
+    it('should use scale for clip', async () => {
+      const {page, server} = await getTestState();
+
+      await page.setViewport({width: 500, height: 500});
+      await page.goto(server.PREFIX + '/grid.html');
+      const screenshot = await page.screenshot({
+        clip: {
+          x: 50,
+          y: 100,
+          width: 150,
+          height: 100,
+          scale: 2,
+        },
+      });
+      expect(screenshot).toBeGolden('screenshot-clip-rect-scale2.png');
+    });
+    it('should allow transparency', async () => {
+      const {page, server} = await getTestState();
+
+      await page.setViewport({width: 100, height: 100});
+      await page.goto(server.EMPTY_PAGE);
+      const screenshot = await page.screenshot({omitBackground: true});
+      expect(screenshot).toBeGolden('transparent.png');
+    });
+    it('should render white background on jpeg file', async () => {
+      const {page, server} = await getTestState();
+
+      await page.setViewport({width: 100, height: 100});
+      await page.goto(server.EMPTY_PAGE);
+      const screenshot = await page.screenshot({
+        omitBackground: true,
+        type: 'jpeg',
+      });
+      expect(screenshot).toBeGolden('white.jpg');
+    });
+    (!isHeadless ? it : it.skip)(
+      'should work in "fromSurface: false" mode',
+      async () => {
+        const {page, server} = await getTestState();
+
+        await page.setViewport({width: 500, height: 500});
+        await page.goto(server.PREFIX + '/grid.html');
+        const screenshot = await page.screenshot({
+          fromSurface: false,
+        });
+        expect(screenshot).toBeDefined(); // toBeGolden('screenshot-fromsurface-false.png');
+      }
+    );
   });
 });

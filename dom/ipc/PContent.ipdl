@@ -127,11 +127,10 @@ using mozilla::glean::perf::PageLoadExtra from "mozilla/glean/GleanMetrics.h";
 using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextTransaction from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextInitializer from "mozilla/dom/BrowsingContext.h";
-using mozilla::dom::PermitUnloadResult from "nsIContentViewer.h";
+using mozilla::dom::PermitUnloadResult from "nsIDocumentViewer.h";
 using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
 using mozilla::dom::WindowContextTransaction from "mozilla/dom/WindowContext.h";
 [MoveOnly] using base::SharedMemoryHandle from "base/shared_memory.h";
-using mozilla::fontlist::Pointer from "SharedFontList.h";
 using gfxSparseBitSet from "gfxFontUtils.h";
 using FontVisibility from "gfxFontEntry.h";
 using mozilla::dom::MediaControlAction from "mozilla/dom/MediaControlKeySource.h";
@@ -160,6 +159,7 @@ using mozilla::dom::Wireframe from "mozilla/dom/DocumentBinding.h";
 using mozilla::PerfStats::MetricMask from "mozilla/PerfStats.h";
 [RefCounted] using class nsIX509Cert from "nsIX509Cert.h";
 using nsIDNSService::ResolverMode from "nsIDNSService.h";
+using mozilla::dom::UserActivation::Modifiers from "mozilla/dom/UserActivation.h";
 
 union ChromeRegistryItem
 {
@@ -301,6 +301,10 @@ struct JSWindowActorInfo
   // False if `url` is for JSM or nothing.
   bool isESModule;
 
+  // This is to align with JSProcessActorInfo.
+  // This attribute isn't used for JSWindow Actors.
+  bool loadInDevToolsLoader;
+
   // The module of the url.
   nsCString? url;
 
@@ -321,6 +325,9 @@ struct JSProcessActorInfo
     // True if `url` is for ESM.
     // False if `url` is for JSM or nothing.
     bool isESModule;
+
+    // True if the actor should be loaded in the distinct loader dedicated to DevTools.
+    bool loadInDevToolsLoader;
 
     // The module of the url.
     nsCString? url;
@@ -472,7 +479,7 @@ union PClipboardReadRequestOrError {
  * and a content process. There is exactly one PContentParent/PContentChild pair
  * for each content process.
  */
-[NestedUpTo=inside_cpow, NeedsOtherPid]
+[NestedUpTo=inside_cpow, NeedsOtherPid, ChildProc=Content]
 sync protocol PContent
 {
     manages PBrowser;
@@ -1132,9 +1139,6 @@ parent:
                           bool hasValidUserGestureActivation);
     async ExtProtocolChannelConnectParent(uint64_t registrarId);
 
-    // PrefService message
-    sync GetGfxVars() returns (GfxVarUpdate[] vars);
-
     sync SyncMessage(nsString aMessage, ClonedMessageData aData)
       returns (StructuredCloneData[] retval);
 
@@ -1220,7 +1224,9 @@ parent:
     sync GetExternalClipboardFormats(int32_t aWhichClipboard, bool aPlainTextOnly) returns (nsCString[] aTypes);
 
     // Requests getting data from clipboard.
-    async GetClipboardAsync(nsCString[] aTypes, int32_t aWhichClipboard)
+    async GetClipboardAsync(nsCString[] aTypes, int32_t aWhichClipboard,
+                            MaybeDiscardedWindowContext aRequestingWindowContext,
+                            nsIPrincipal aRequestingPrincipal)
         returns (PClipboardReadRequestOrError aClipboardReadRequest);
 
     // Clears the clipboard.
@@ -1327,21 +1333,6 @@ parent:
     async ShutdownPerfStats(nsCString aPerfStats);
 
     /**
-     * Request graphics initialization information from the parent.
-     */
-    sync GetGraphicsDeviceInitData()
-        returns (ContentDeviceData aData);
-
-    /**
-     * Request a buffer containing the contents of the output color profile.
-     * If set, this is the file pointed to by
-     * gfx.color_management.display_profile, otherwise it contains a
-     * platform-specific default
-     */
-    sync GetOutputColorProfileData()
-        returns (uint8_t[] aOutputColorProfileData);
-
-    /**
      * A shared font list (see gfx/thebes/SharedFontList.*) contains a list
      * of shared-memory blocks that are used to store all the font list data.
      * The font list created in the parent process is the only one that can
@@ -1446,24 +1437,27 @@ parent:
      * @param aGeneration
      *   Font-list generation, so requests relating to an obsolete list can be
      *   ignored (see comments for GetFontListShmBlock).
-     * @param aFacePtr
-     *   Font-list shared-memory "pointer" to the Face record to be updated.
-     *   A Pointer is a record of a shared-memory block index and an offset
-     *   within that block, which each process that maps the block can convert
-     *   into a real pointer in its address space.
+     * @param aFamilyIndex
+     *   Index of the font family in the font list (see aAlias for which list).
+     * @param aAlias
+     *   Whether aFamilyIndex refers to the Families() or AliasFamilies() list.
+     * @param aFaceIndex
+     *   Index of the face within the family's Faces() list.
      * @param aMap
      *   The character coverage map of the face. (This will be stored as a
      *   SharedBitSet record within the shared font list, and the Face record
      *   will be updated to reference it.)
      */
-    async SetCharacterMap(uint32_t aGeneration, Pointer aFacePtr, gfxSparseBitSet aMap);
+    async SetCharacterMap(uint32_t aGeneration, uint32_t aFamilyIndex, bool aAlias,
+                          uint32_t aFaceIndex, gfxSparseBitSet aMap);
 
     /**
      * Ask the parent to set up the merged charmap for a family, to accelerate
      * future fallback searches.
-     * aFamilyPtr may refer to an element of either the Families() or AliasFamilies().
+     * aFamilyIndex may refer to an element in either Families() or AliasFamilies(),
+     * with aAlias determining which.
      */
-    async SetupFamilyCharMap(uint32_t aGeneration, Pointer aFamilyPtr);
+    async SetupFamilyCharMap(uint32_t aGeneration, uint32_t aFamilyIndex, bool aAlias);
 
     /**
      * Ask the parent to try and complete the InitOtherFamilyNames task, because
@@ -1537,6 +1531,7 @@ parent:
                        bool aForWindowDotPrint,
                        nullable nsIURI aURIToLoad,
                        nsCString aFeatures,
+                       Modifiers aModifiers,
                        nullable nsIPrincipal aTriggeringPrincipal,
                        nullable nsIContentSecurityPolicy aCsp,
                        nullable nsIReferrerInfo aReferrerInfo,
@@ -1550,6 +1545,7 @@ parent:
       bool aCalledFromJS,
       nullable nsIURI aURIToLoad,
       nsCString aFeatures,
+      Modifiers aModifiers,
       nsString aName,
       nullable nsIPrincipal aTriggeringPrincipal,
       nullable nsIContentSecurityPolicy aCsp,

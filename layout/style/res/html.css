@@ -769,8 +769,6 @@ video > .caption-box {
   white-space: pre-line;
   background-color: rgba(0, 0, 0, 0.8);
   font: 10px sans-serif;
-  font-size: var(--cue-font-size);
-  writing-mode: var(--cue-writing-mode, inherit);
   overflow-wrap: break-word;
   /* TODO : enable unicode-bidi, right now enable it would cause incorrect
             display direction, maybe related with bug 1558431. */
@@ -876,16 +874,6 @@ ruby, rb, rt, rtc {
  * https://drafts.csswg.org/css-scoping/#slots-in-shadow-tree */
 slot {
   display: contents;
-}
-
-/* Un-invert images and videos for users using inverted colors.
- * "User agents must add the following rule to their UA style sheet"
- * https://www.w3.org/TR/mediaqueries-5/#inverted
- */
-@media (inverted-colors) {
-  img:not(picture > img), picture, video {
-    filter: invert(100%);
-  }
 }
 
 /* Hide noscript elements if scripting is enabled */

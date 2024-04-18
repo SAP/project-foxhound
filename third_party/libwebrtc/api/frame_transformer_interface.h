@@ -71,10 +71,6 @@ class TransformableAudioFrameInterface : public TransformableFrameInterface {
  public:
   virtual ~TransformableAudioFrameInterface() = default;
 
-  // TODO(crbug.com/1453226): Remove after a few weeks.
-  [[deprecated("Use specific getters instead.")]] virtual const RTPHeader&
-  GetHeader() const = 0;
-
   virtual rtc::ArrayView<const uint32_t> GetContributingSources() const = 0;
 
   // TODO(crbug.com/1453226): Change this to pure virtual after it
@@ -83,11 +79,7 @@ class TransformableAudioFrameInterface : public TransformableFrameInterface {
     return absl::nullopt;
   }
 
-  // TODO(crbug.com/1456628): Change this to pure virtual after it
-  // is implemented everywhere.
-  virtual absl::optional<uint64_t> AbsoluteCaptureTimestamp() const {
-    return absl::nullopt;
-  }
+  virtual absl::optional<uint64_t> AbsoluteCaptureTimestamp() const = 0;
 
   enum class FrameType { kEmptyFrame, kAudioFrameSpeech, kAudioFrameCN };
 

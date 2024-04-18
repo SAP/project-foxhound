@@ -2,15 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React from "react";
-import { button } from "react-dom-factories";
-import PropTypes from "prop-types";
+import React from "devtools/client/shared/vendor/react";
+import { button } from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
 import AccessibleImage from "../AccessibleImage";
 
-const classnames = require("devtools/client/shared/classnames.js");
-
-import "./styles/CommandBarButton.css";
+const classnames = require("resource://devtools/client/shared/classnames.js");
 
 export function debugBtn(
   onClick,

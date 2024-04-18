@@ -2,33 +2,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "react";
-import { button, div, span } from "react-dom-factories";
-import PropTypes from "prop-types";
-import { connect } from "../../utils/connect";
-import actions from "../../actions";
+import React, { Component } from "devtools/client/shared/vendor/react";
+import {
+  button,
+  div,
+  span,
+} from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import { connect } from "devtools/client/shared/vendor/react-redux";
+import actions from "../../actions/index";
 
-import { getEditor } from "../../utils/editor";
+import { getEditor } from "../../utils/editor/index";
 import { searchKeys } from "../../constants";
 
 import { getRelativePath } from "../../utils/sources-tree/utils";
 import { getFormattedSourceId } from "../../utils/source";
-import { getProjectSearchQuery, getNavigateCounter } from "../../selectors";
+import {
+  getProjectSearchQuery,
+  getNavigateCounter,
+} from "../../selectors/index";
 
 import SearchInput from "../shared/SearchInput";
 import AccessibleImage from "../shared/AccessibleImage";
 
-const { PluralForm } = require("devtools/shared/plural-form");
-const classnames = require("devtools/client/shared/classnames.js");
-const Tree = require("devtools/client/shared/components/Tree");
-const { debounce } = require("devtools/shared/debounce");
-const { throttle } = require("devtools/shared/throttle");
+const { PluralForm } = require("resource://devtools/shared/plural-form.js");
+const classnames = require("resource://devtools/client/shared/classnames.js");
+const Tree = require("resource://devtools/client/shared/components/Tree.js");
+const { debounce } = require("resource://devtools/shared/debounce.js");
+const { throttle } = require("resource://devtools/shared/throttle.js");
 
 const {
   HTMLTooltip,
-} = require("devtools/client/shared/widgets/tooltip/HTMLTooltip");
-
-import "./ProjectSearch.css";
+} = require("resource://devtools/client/shared/widgets/tooltip/HTMLTooltip.js");
 
 export const statusType = {
   initial: "INITIAL",

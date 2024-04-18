@@ -14,9 +14,9 @@ BROWSER_CHROME_MANIFESTS += [
 MOCHITEST_MANIFESTS += ["mochitests/mochitest.toml"]
 
 XPCSHELL_TESTS_MANIFESTS += [
-    "unit/node_execute/xpcshell.ini",
-    "unit/xpcshell.ini",
-    "unit_ipc/xpcshell.ini",
+    "unit/node_execute/xpcshell.toml",
+    "unit/xpcshell.toml",
+    "unit_ipc/xpcshell.toml",
 ]
 
 TESTING_JS_MODULES += [
@@ -25,11 +25,9 @@ TESTING_JS_MODULES += [
     "unit/test_http3_prio_helpers.js",
 ]
 
-PERFTESTS_MANIFESTS += ["perf/perftest.ini", "unit/perftest.ini"]
+PERFTESTS_MANIFESTS += ["perf/perftest.toml", "unit/perftest.toml"]
 
-MARIONETTE_UNIT_MANIFESTS += [
-    "marionette/manifest.ini",
-]
+MARIONETTE_MANIFESTS += ["marionette/manifest.toml"]
 
 if CONFIG["FUZZING_INTERFACES"]:
     TEST_DIRS += ["fuzz"]

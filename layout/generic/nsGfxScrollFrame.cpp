@@ -17,7 +17,7 @@
 #include "base/compiler_specific.h"
 #include "DisplayItemClip.h"
 #include "nsCOMPtr.h"
-#include "nsIContentViewer.h"
+#include "nsIDocumentViewer.h"
 #include "nsPresContext.h"
 #include "nsView.h"
 #include "nsViewportInfo.h"
@@ -602,29 +602,31 @@ ScrollReflowInput::ScrollReflowInput(nsHTMLScrollFrame* aFrame,
 
 }  // namespace mozilla
 
-// XXXldb Can this go away?
 static nsSize ComputeInsideBorderSize(const ScrollReflowInput& aState,
                                       const nsSize& aDesiredInsideBorderSize) {
   // aDesiredInsideBorderSize is the frame size; i.e., it includes
   // borders and padding (but the scrolled child doesn't have
   // borders). The scrolled child has the same padding as us.
-  nscoord contentWidth = aState.mReflowInput.ComputedWidth();
-  if (contentWidth == NS_UNCONSTRAINEDSIZE) {
-    contentWidth = aDesiredInsideBorderSize.width -
-                   aState.mReflowInput.ComputedPhysicalPadding().LeftRight();
+  const WritingMode wm = aState.mReflowInput.GetWritingMode();
+  const LogicalSize desiredInsideBorderSize(wm, aDesiredInsideBorderSize);
+  LogicalSize contentSize = aState.mReflowInput.ComputedSize();
+  const LogicalMargin padding = aState.mReflowInput.ComputedLogicalPadding(wm);
+
+  if (contentSize.ISize(wm) == NS_UNCONSTRAINEDSIZE) {
+    contentSize.ISize(wm) =
+        desiredInsideBorderSize.ISize(wm) - padding.IStartEnd(wm);
   }
-  nscoord contentHeight = aState.mReflowInput.ComputedHeight();
-  if (contentHeight == NS_UNCONSTRAINEDSIZE) {
-    contentHeight = aDesiredInsideBorderSize.height -
-                    aState.mReflowInput.ComputedPhysicalPadding().TopBottom();
+  if (contentSize.BSize(wm) == NS_UNCONSTRAINEDSIZE) {
+    contentSize.BSize(wm) =
+        desiredInsideBorderSize.BSize(wm) - padding.BStartEnd(wm);
   }
 
-  contentWidth = aState.mReflowInput.ApplyMinMaxWidth(contentWidth);
-  contentHeight = aState.mReflowInput.ApplyMinMaxHeight(contentHeight);
-  return nsSize(
-      contentWidth + aState.mReflowInput.ComputedPhysicalPadding().LeftRight(),
-      contentHeight +
-          aState.mReflowInput.ComputedPhysicalPadding().TopBottom());
+  contentSize.ISize(wm) =
+      aState.mReflowInput.ApplyMinMaxISize(contentSize.ISize(wm));
+  contentSize.BSize(wm) =
+      aState.mReflowInput.ApplyMinMaxBSize(contentSize.BSize(wm));
+
+  return (contentSize + padding.Size(wm)).GetPhysicalSize(wm);
 }
 
 /**
@@ -685,7 +687,6 @@ bool nsHTMLScrollFrame::TryLayout(ScrollReflowInput& aState,
                                    scrollbarGutter.TopBottom());
 
   // First, compute our inside-border size and scrollport size
-  // XXXldb Can we depend more on ComputeSize here?
   nsSize kidSize = GetContainSizeAxes().ContainSize(
       aKidMetrics->PhysicalSize(), *aState.mReflowInput.mFrame);
   const nsSize desiredInsideBorderSize = kidSize + scrollbarGutterSize;
@@ -1693,9 +1694,9 @@ nsMargin nsHTMLScrollFrame::GetDesiredScrollbarSizes() const {
   auto size = GetNonOverlayScrollbarSize(pc, scrollbarWidth);
   if (styles.mVertical != StyleOverflow::Hidden) {
     if (IsScrollbarOnRight()) {
-      result.left = size;
-    } else {
       result.right = size;
+    } else {
+      result.left = size;
     }
   }
 
@@ -2386,7 +2387,7 @@ void nsHTMLScrollFrame::ScrollToInternal(
 
 void nsHTMLScrollFrame::ScrollToCSSPixels(const CSSIntPoint& aScrollPosition,
                                           ScrollMode aMode) {
-  CSSIntPoint currentCSSPixels = GetScrollPositionCSSPixels();
+  CSSIntPoint currentCSSPixels = GetRoundedScrollPositionCSSPixels();
   // Transmogrify this scroll to a relative one if there's any on-going
   // animation in APZ triggered by __user__.
   // Bug 1740164: We will apply it for cases there's no animation in APZ.
@@ -2448,7 +2449,7 @@ void nsHTMLScrollFrame::ScrollToCSSPixelsForApz(
   // 'this' might be destroyed here
 }
 
-CSSIntPoint nsHTMLScrollFrame::GetScrollPositionCSSPixels() {
+CSSIntPoint nsHTMLScrollFrame::GetRoundedScrollPositionCSSPixels() {
   return CSSIntPoint::FromAppUnitsRounded(GetScrollPosition());
 }
 
@@ -2834,6 +2835,9 @@ static nscoord ClampAndAlignWithPixels(nscoord aDesired, nscoord aBoundLower,
   nscoord destUpper = clamped(aDestUpper, aBoundLower, aBoundUpper);
 
   nscoord desired = clamped(aDesired, destLower, destUpper);
+  if (StaticPrefs::layout_scroll_disable_pixel_alignment()) {
+    return desired;
+  }
 
   double currentLayerVal = (aRes * aCurrent) / aAppUnitsPerPixel;
   double desiredLayerVal = (aRes * desired) / aAppUnitsPerPixel;
@@ -3153,6 +3157,7 @@ void nsHTMLScrollFrame::ScrollToImpl(
     mApzScrollPos = pt;
   } else if (aOrigin == ScrollOrigin::AnchorAdjustment) {
     AppendScrollUpdate(ScrollPositionUpdate::NewMergeableScroll(aOrigin, pt));
+    mApzScrollPos = pt;
   } else if (aOrigin != ScrollOrigin::Apz) {
     AppendScrollUpdate(ScrollPositionUpdate::NewScroll(mLastScrollOrigin, pt));
   }
@@ -5005,7 +5010,12 @@ void nsHTMLScrollFrame::ScrollByCSSPixelsInternal(const CSSIntPoint& aDelta,
   // the previous scrolling operation, but there may be some edge cases where
   // the current position in CSS pixels differs from the given position, the
   // cases should be fixed in bug 1556685.
-  CSSIntPoint currentCSSPixels = GetScrollPositionCSSPixels();
+  CSSPoint currentCSSPixels;
+  if (StaticPrefs::layout_scroll_disable_pixel_alignment()) {
+    currentCSSPixels = GetScrollPositionCSSPixels();
+  } else {
+    currentCSSPixels = GetRoundedScrollPositionCSSPixels();
+  }
   nsPoint pt = CSSPoint::ToAppUnits(currentCSSPixels + aDelta);
 
   nscoord halfPixel = nsPresContext::CSSPixelsToAppUnits(0.5f);
@@ -5318,11 +5328,11 @@ auto nsHTMLScrollFrame::GetPageLoadingState() -> LoadingState {
   bool loadCompleted = false, stopped = false;
   nsCOMPtr<nsIDocShell> ds = GetContent()->GetComposedDoc()->GetDocShell();
   if (ds) {
-    nsCOMPtr<nsIContentViewer> cv;
-    ds->GetContentViewer(getter_AddRefs(cv));
-    if (cv) {
-      loadCompleted = cv->GetLoadCompleted();
-      stopped = cv->GetIsStopped();
+    nsCOMPtr<nsIDocumentViewer> viewer;
+    ds->GetDocViewer(getter_AddRefs(viewer));
+    if (viewer) {
+      loadCompleted = viewer->GetLoadCompleted();
+      stopped = viewer->GetIsStopped();
     }
   }
   return loadCompleted
@@ -5426,10 +5436,6 @@ void nsHTMLScrollFrame::FireScrollEndEvent() {
   WidgetGUIEvent event(true, eScrollend, nullptr);
   event.mFlags.mBubbles = mIsRoot;
   event.mFlags.mCancelable = false;
-  // If apz.scrollend-event.content.enabled is not set, the event should
-  // only be dispatched to the browser chrome.
-  event.mFlags.mOnlyChromeDispatch =
-      !StaticPrefs::apz_scrollend_event_content_enabled();
   RefPtr<nsINode> target =
       mIsRoot ? static_cast<nsINode*>(presContext->Document()) : GetContent();
   EventDispatcher::Dispatch(target, presContext, &event, nullptr, &status);
@@ -6835,6 +6841,9 @@ bool nsHTMLScrollFrame::GetBorderRadii(const nsSize& aFrameSize,
 
 static nscoord SnapCoord(nscoord aCoord, double aRes,
                          nscoord aAppUnitsPerPixel) {
+  if (StaticPrefs::layout_scroll_disable_pixel_alignment()) {
+    return aCoord;
+  }
   double snappedToLayerPixels = NS_round((aRes * aCoord) / aAppUnitsPerPixel);
   return NSToCoordRoundWithClamp(snappedToLayerPixels * aAppUnitsPerPixel /
                                  aRes);

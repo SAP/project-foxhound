@@ -32,7 +32,6 @@
 #include "mozilla/Services.h"
 #include "mozilla/StartupTimeline.h"
 #include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/Try.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -496,43 +495,13 @@ uint32_t nsAppShellService::CalculateWindowZLevel(nsIAppWindow* aParent,
       but pre-Mac OS X, right?) know how to stack dependent windows. On these
       platforms, give the dependent window the same level as its parent,
       so we won't try to override the normal platform behaviour. */
-  if ((aChromeMask & nsIWebBrowserChrome::CHROME_DEPENDENT) && aParent)
+  if ((aChromeMask & nsIWebBrowserChrome::CHROME_DEPENDENT) && aParent) {
     aParent->GetZLevel(&zLevel);
+  }
 #endif
 
   return zLevel;
 }
-
-#ifdef XP_WIN
-/*
- * Checks to see if any existing window is currently in fullscreen mode.
- */
-static bool CheckForFullscreenWindow() {
-  nsCOMPtr<nsIWindowMediator> wm(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
-  if (!wm) return false;
-
-  nsCOMPtr<nsISimpleEnumerator> windowList;
-  wm->GetAppWindowEnumerator(nullptr, getter_AddRefs(windowList));
-  if (!windowList) return false;
-
-  for (;;) {
-    bool more = false;
-    windowList->HasMoreElements(&more);
-    if (!more) return false;
-
-    nsCOMPtr<nsISupports> supportsWindow;
-    windowList->GetNext(getter_AddRefs(supportsWindow));
-    nsCOMPtr<nsIBaseWindow> baseWin(do_QueryInterface(supportsWindow));
-    if (baseWin) {
-      nsCOMPtr<nsIWidget> widget;
-      baseWin->GetMainWidget(getter_AddRefs(widget));
-      if (widget && widget->SizeMode() == nsSizeMode_Fullscreen) {
-        return true;
-      }
-    }
-  }
-}
-#endif
 
 /*
  * Just do the window-making part of CreateTopLevelWindow
@@ -554,30 +523,36 @@ nsresult nsAppShellService::JustCreateTopWindow(
   // If the parent is currently fullscreen, tell the child to ignore persisted
   // full screen states. This way new browser windows open on top of fullscreen
   // windows normally.
-  if (window && CheckForFullscreenWindow()) window->IgnoreXULSizeMode(true);
+  if (nsCOMPtr<nsIBaseWindow> baseWin = do_QueryInterface(aParent)) {
+    nsCOMPtr<nsIWidget> widget;
+    baseWin->GetMainWidget(getter_AddRefs(widget));
+    if (widget && widget->SizeMode() == nsSizeMode_Fullscreen) {
+      window->IgnoreXULSizeMode(true);
+    }
+  }
 #endif
 
   widget::InitData widgetInitData;
-
-  if (aIsHiddenWindow)
+  if (aIsHiddenWindow) {
     widgetInitData.mWindowType = widget::WindowType::Invisible;
-  else
+  } else {
     widgetInitData.mWindowType =
         aChromeMask & nsIWebBrowserChrome::CHROME_OPENAS_DIALOG
             ? widget::WindowType::Dialog
             : widget::WindowType::TopLevel;
+  }
 
-  if (aChromeMask & nsIWebBrowserChrome::CHROME_WINDOW_POPUP)
-    widgetInitData.mWindowType = widget::WindowType::Popup;
-
-  if (aChromeMask & nsIWebBrowserChrome::CHROME_SUPPRESS_ANIMATION)
+  if (aChromeMask & nsIWebBrowserChrome::CHROME_SUPPRESS_ANIMATION) {
     widgetInitData.mIsAnimationSuppressed = true;
+  }
 
-  if (aChromeMask & nsIWebBrowserChrome::CHROME_ALWAYS_ON_TOP)
+  if (aChromeMask & nsIWebBrowserChrome::CHROME_ALWAYS_ON_TOP) {
     widgetInitData.mAlwaysOnTop = true;
+  }
 
-  if (aChromeMask & nsIWebBrowserChrome::CHROME_REMOTE_WINDOW)
+  if (aChromeMask & nsIWebBrowserChrome::CHROME_REMOTE_WINDOW) {
     widgetInitData.mHasRemoteContent = true;
+  }
 
 #if defined(MOZ_WIDGET_GTK) || defined(XP_WIN)
   // Windows/Gtk PIP window support. It's Chrome dialog window, always on top
@@ -595,6 +570,8 @@ nsresult nsAppShellService::JustCreateTopWindow(
     widgetInitData.mPIPWindow = true;
   }
 #endif
+
+  widgetInitData.mIsAlert = !!(aChromeMask & nsIWebBrowserChrome::CHROME_ALERT);
 
 #ifdef XP_MACOSX
   // Mac OS X sheet support
@@ -620,31 +597,36 @@ nsresult nsAppShellService::JustCreateTopWindow(
 
   // note default chrome overrides other OS chrome settings, but
   // not internal chrome
-  if (aChromeMask & nsIWebBrowserChrome::CHROME_DEFAULT)
+  if (aChromeMask & nsIWebBrowserChrome::CHROME_DEFAULT) {
     widgetInitData.mBorderStyle = BorderStyle::Default;
-  else if ((aChromeMask & nsIWebBrowserChrome::CHROME_ALL) ==
-           nsIWebBrowserChrome::CHROME_ALL)
+  } else if ((aChromeMask & nsIWebBrowserChrome::CHROME_ALL) ==
+             nsIWebBrowserChrome::CHROME_ALL) {
     widgetInitData.mBorderStyle = BorderStyle::All;
-  else {
+  } else {
     widgetInitData.mBorderStyle = BorderStyle::None;  // assumes none == 0x00
-    if (aChromeMask & nsIWebBrowserChrome::CHROME_WINDOW_BORDERS)
+    if (aChromeMask & nsIWebBrowserChrome::CHROME_WINDOW_BORDERS) {
       widgetInitData.mBorderStyle |= BorderStyle::Border;
-    if (aChromeMask & nsIWebBrowserChrome::CHROME_TITLEBAR)
+    }
+    if (aChromeMask & nsIWebBrowserChrome::CHROME_TITLEBAR) {
       widgetInitData.mBorderStyle |= BorderStyle::Title;
-    if (aChromeMask & nsIWebBrowserChrome::CHROME_WINDOW_CLOSE)
+    }
+    if (aChromeMask & nsIWebBrowserChrome::CHROME_WINDOW_CLOSE) {
       widgetInitData.mBorderStyle |= BorderStyle::Close;
+    }
     if (aChromeMask & nsIWebBrowserChrome::CHROME_WINDOW_RESIZE) {
       widgetInitData.mResizable = true;
       widgetInitData.mBorderStyle |= BorderStyle::ResizeH;
       // only resizable windows get the maximize button (but not dialogs)
-      if (!(aChromeMask & nsIWebBrowserChrome::CHROME_OPENAS_DIALOG))
+      if (!(aChromeMask & nsIWebBrowserChrome::CHROME_OPENAS_DIALOG)) {
         widgetInitData.mBorderStyle |= BorderStyle::Maximize;
+      }
     }
     // all windows (except dialogs) get minimize buttons and the system menu
-    if (!(aChromeMask & nsIWebBrowserChrome::CHROME_OPENAS_DIALOG))
+    if (!(aChromeMask & nsIWebBrowserChrome::CHROME_OPENAS_DIALOG)) {
       widgetInitData.mBorderStyle |= BorderStyle::Minimize | BorderStyle::Menu;
+    }
     // but anyone can explicitly ask for a minimize button
-    if (aChromeMask & nsIWebBrowserChrome::CHROME_WINDOW_MIN) {
+    if (aChromeMask & nsIWebBrowserChrome::CHROME_WINDOW_MINIMIZE) {
       widgetInitData.mBorderStyle |= BorderStyle::Minimize;
     }
   }
@@ -713,7 +695,7 @@ nsresult nsAppShellService::JustCreateTopWindow(
           "hardcoding the system principal");
       // Use the system principal as the storage principal too until the new
       // window finishes navigating and gets a real storage principal.
-      rv = docShell->CreateAboutBlankContentViewer(
+      rv = docShell->CreateAboutBlankDocumentViewer(
           nsContentUtils::GetSystemPrincipal(),
           nsContentUtils::GetSystemPrincipal(),
           /* aCsp = */ nullptr, /* aBaseURI = */ nullptr,
@@ -736,7 +718,6 @@ nsresult nsAppShellService::JustCreateTopWindow(
   }
 
   window.forget(aResult);
-  if (parent) parent->AddChildWindow(*aResult);
 
   if (center) rv = (*aResult)->Center(parent, parent ? false : true, false);
 

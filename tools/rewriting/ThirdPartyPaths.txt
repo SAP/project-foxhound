@@ -89,12 +89,14 @@ gfx/vr/service/openvr/src/vrpathregistry_public.h
 gfx/wr/
 gfx/ycbcr/
 intl/icu/
+intl/icu_capi/
 ipc/chromium/src/third_party/
 js/src/ctypes/libffi/
 js/src/dtoa.c
 js/src/editline/
 js/src/jit/arm64/vixl/
 js/src/octane/
+js/src/tests/test262/
 js/src/vtune/disable_warnings.h
 js/src/vtune/ittnotify_config.h
 js/src/vtune/ittnotify.h
@@ -164,6 +166,8 @@ testing/mozbase/mozproxy/mozproxy/backends/mitm/scripts/catapult/
 testing/talos/talos/tests/devtools/addon/content/pages/
 testing/talos/talos/tests/dromaeo/
 testing/talos/talos/tests/kraken/
+testing/talos/talos/tests/offscreencanvas/benchmarks/video/demuxer_mp4.js
+testing/talos/talos/tests/offscreencanvas/benchmarks/video/mp4box.all.min.js
 testing/talos/talos/tests/v8_7/
 testing/web-platform/tests/resources/webidl2/
 testing/web-platform/tests/tools/third_party/
@@ -178,8 +182,10 @@ toolkit/components/jsoncpp/
 toolkit/components/normandy/vendor/
 toolkit/components/passwordmgr/PasswordRulesParser.sys.mjs
 toolkit/components/protobuf/
+toolkit/components/reader/readability/
 toolkit/components/translation/cld2/
-toolkit/components/translations/bergamot-translator
+toolkit/components/translations/bergamot-translator/thirdparty
+toolkit/components/translations/bergamot-translator/bergamot-translator.js
 toolkit/components/url-classifier/chromium/
 toolkit/components/utils/mozjexl.js
 toolkit/components/viaduct/fetch_msg_types.pb.cc

@@ -16,19 +16,19 @@
 
 import {
   chain,
-  Rule,
-  SchematicContext,
+  type Rule,
+  type SchematicContext,
   SchematicsException,
-  Tree,
+  type Tree,
 } from '@angular-devkit/schematics';
 
 import {addCommonFiles} from '../utils/files.js';
 import {getApplicationProjects} from '../utils/json.js';
 import {
   TestRunner,
-  SchematicsSpec,
-  AngularProject,
-  PuppeteerSchematicsConfig,
+  type SchematicsSpec,
+  type AngularProject,
+  type PuppeteerSchematicsConfig,
 } from '../utils/types.js';
 
 // You don't have to export the function as default. You can also have more than one rule
@@ -55,8 +55,8 @@ function parseUserTestArgs(userArgs: Record<string, string>): SchematicsSpec {
     options['route'] = userArgs['r'];
   }
 
-  if (options['route'] && !options['route'].startsWith('/')) {
-    options['route'] = `/${options['route']}`;
+  if (options['route'] && options['route'].startsWith('/')) {
+    options['route'] = options['route'].substring(1);
   }
 
   return options as SchematicsSpec;

@@ -36,6 +36,7 @@
 #include "js/experimental/JSStencil.h"  // JS::Stencil
 #include "js/GCAPI.h"                   // JS::AutoCheckCannotGC
 #include "js/Printer.h"                 // js::Fprinter
+#include "js/RealmOptions.h"            // JS::RealmBehaviors
 #include "js/RootingAPI.h"              // Rooted
 #include "js/Transcoding.h"             // JS::TranscodeBuffer
 #include "js/Utility.h"                 // js_malloc, js_calloc, js_free
@@ -50,6 +51,7 @@
 #include "vm/JSObject.h"      // JSObject, TenuredObject
 #include "vm/JSONPrinter.h"   // js::JSONPrinter
 #include "vm/JSScript.h"      // BaseScript, JSScript
+#include "vm/Realm.h"         // JS::Realm
 #include "vm/RegExpObject.h"  // js::RegExpObject
 #include "vm/Scope.h"  // Scope, *Scope, ScopeKind::*, ScopeKindString, ScopeIter, ScopeKindIsCatch, BindingIter, GetScopeDataTrailingNames, SizeOfParserScopeData
 #include "vm/ScopeKind.h"    // ScopeKind
@@ -2619,6 +2621,10 @@ bool CompilationStencil::instantiateStencilAfterPreparation(
   bool isInitialParse = stencil.isInitialStencil();
   MOZ_ASSERT(stencil.isInitialStencil() == input.isInitialStencil());
 
+  // Assert the consistency between the compile option and the target global.
+  MOZ_ASSERT_IF(cx->realm()->behaviors().discardSource(),
+                !stencil.canLazilyParse);
+
   CompilationAtomCache& atomCache = input.atomCache;
   const JS::InstantiateOptions options(input.options);
 
@@ -4428,7 +4434,7 @@ void ScriptStencilExtra::dumpFields(js::JSONPrinter& json) const {
   json.property("toStringStart", extent.toStringStart);
   json.property("toStringEnd", extent.toStringEnd);
   json.property("lineno", extent.lineno);
-  json.property("column", extent.column.zeroOriginValue());
+  json.property("column", extent.column.oneOriginValue());
   json.endObject();
 
   json.property("memberInitializers", memberInitializers_);
@@ -4591,7 +4597,7 @@ static void DumpInputScriptFields(js::JSONPrinter& json,
     json.property("toStringStart", extent.toStringStart);
     json.property("toStringEnd", extent.toStringEnd);
     json.property("lineno", extent.lineno);
-    json.property("column", extent.column.zeroOriginValue());
+    json.property("column", extent.column.oneOriginValue());
   }
   json.endObject();
 

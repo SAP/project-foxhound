@@ -181,6 +181,10 @@ void MacroAssembler::branchToComputedAddress(const BaseIndex& address) {
   MOZ_CRASH();
 }
 
+void MacroAssembler::move8ZeroExtend(Register src, Register dest) {
+  MOZ_CRASH();
+}
+
 void MacroAssembler::move8SignExtend(Register src, Register dest) {
   MOZ_CRASH();
 }
@@ -957,6 +961,11 @@ void MacroAssembler::branchTestMagic(Condition cond, const ValueOperand& value,
 
 void MacroAssembler::branchTestString(Condition cond, const ValueOperand& value,
                                       Label* label) {
+  MOZ_CRASH();
+}
+
+void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Imm32 rhs,
+                                 Register src, Register dest) {
   MOZ_CRASH();
 }
 
