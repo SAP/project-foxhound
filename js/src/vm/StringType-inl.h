@@ -487,11 +487,13 @@ inline JSLinearString::JSLinearString(
     setLengthAndFlags(chars.length(), INIT_LINEAR_FLAGS | LATIN1_CHARS_BIT);
     d.s.u2.nonInlineCharsLatin1 = chars.data();
   }
+  initTaint();
 }
 
 void JSLinearString::disownCharsBecauseError() {
   setLengthAndFlags(0, INIT_LINEAR_FLAGS | LATIN1_CHARS_BIT);
   d.s.u2.nonInlineCharsLatin1 = nullptr;
+  clearTaint();
 }
 
 template <js::AllowGC allowGC, typename CharT>
@@ -663,6 +665,9 @@ inline JSExternalString::JSExternalString(
   setLengthAndFlags(length, EXTERNAL_FLAGS | LATIN1_CHARS_BIT);
   d.s.u2.nonInlineCharsLatin1 = chars;
   d.s.u3.externalCallbacks = callbacks;
+
+  // TaintFox
+  initTaint();
 }
 
 template <typename CharT>
@@ -731,6 +736,9 @@ inline js::ThinInlineAtom::ThinInlineAtom(size_t length, JS::Latin1Char** chars,
   setLengthAndFlags(length,
                     INIT_THIN_INLINE_FLAGS | LATIN1_CHARS_BIT | ATOM_BIT);
   *chars = d.inlineStorageLatin1;
+
+  // TaintFox
+  initTaint();
 }
 
 inline js::ThinInlineAtom::ThinInlineAtom(size_t length, char16_t** chars,
@@ -738,6 +746,9 @@ inline js::ThinInlineAtom::ThinInlineAtom(size_t length, char16_t** chars,
     : NormalAtom(hash) {
   setLengthAndFlags(length, INIT_THIN_INLINE_FLAGS | ATOM_BIT);
   *chars = d.inlineStorageTwoByte;
+
+  // TaintFox
+  initTaint();
 }
 #endif
 

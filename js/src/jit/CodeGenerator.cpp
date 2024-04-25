@@ -11881,6 +11881,8 @@ void CodeGenerator::visitSubstr(LSubstr* lir) {
     masm.bind(&notInline);
     masm.newGCString(output, temp0, gen->initialStringHeap(), slowPath);
     masm.store32(length, Address(output, JSString::offsetOfLength()));
+    // TaintFox: initialize taint information.
+    masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
     masm.storeDependentStringBase(string, output);
 
     auto initializeDependentString = [&](CharEncoding encoding) {
