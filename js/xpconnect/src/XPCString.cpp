@@ -144,7 +144,7 @@ bool XPCStringConvert::Latin1ToJSVal(JSContext* cx, const nsACString& latin1,
   if (latin1.IsLiteral()) {
     return StringLiteralToJSVal(
         cx, reinterpret_cast<const JS::Latin1Char*>(latin1.BeginReading()),
-        length, vp);
+        length, latin1.Taint(), vp);
   }
 
   nsStringBuffer* buf = nsStringBuffer::FromString(latin1);
@@ -163,6 +163,10 @@ bool XPCStringConvert::Latin1ToJSVal(JSContext* cx, const nsACString& latin1,
   if (!str) {
     return false;
   }
+
+  // TaintFox: Transfer taint information to newly created JS string.
+  JS_SetStringTaint(cx, str, latin1.Taint());
+
   vp.setString(str);
   return true;
 }
@@ -176,7 +180,7 @@ bool XPCStringConvert::UTF8ToJSVal(JSContext* cx, const nsACString& utf8,
 
   if (utf8.IsLiteral()) {
     return UTF8StringLiteralToJSVal(
-        cx, JS::UTF8Chars(utf8.BeginReading(), length), vp);
+        cx, JS::UTF8Chars(utf8.BeginReading(), length), utf8.Taint(), vp);
   }
 
   nsStringBuffer* buf = nsStringBuffer::FromString(utf8);
@@ -196,6 +200,10 @@ bool XPCStringConvert::UTF8ToJSVal(JSContext* cx, const nsACString& utf8,
   if (!str) {
     return false;
   }
+
+  // TaintFox: Transfer taint information to newly created JS string.
+  JS_SetStringTaint(cx, str, utf8.Taint());
+
   vp.setString(str);
   return true;
 }

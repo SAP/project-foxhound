@@ -1532,6 +1532,7 @@ class FatInlineAtom : public JSAtom {
   // space as a JSFatInlineString, except we take the hash value out of it.
   static constexpr size_t InlineBytes = sizeof(JSFatInlineString) -
                                         sizeof(JSString::Base) -
+                                        sizeof(StringTaint) -
                                         sizeof(js::HashNumber);
 
   static constexpr size_t ExtensionBytes =

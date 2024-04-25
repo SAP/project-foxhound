@@ -266,7 +266,7 @@ class MOZ_STACK_CLASS DOMString {
   void AssignTaint(const StringTaint& aTaint) {
     if (IsNull() || IsEmpty()) {
       return;
-    } else if (HasLiteral() || HasAtom()) {
+    } else if (HasLiteral()) {
       mTaint = aTaint;
     } else if (mState == State::OwnedStringBuffer) {
       mStringBuffer->AssignTaint(aTaint);
@@ -281,7 +281,7 @@ class MOZ_STACK_CLASS DOMString {
   StringTaint& Taint() {
     if (IsNull() || IsEmpty()) {
       return mTaint;
-    } else if (HasLiteral() || HasAtom()) {
+    } else if (HasLiteral()) {
       return mTaint;
     } else if (mState == State::OwnedStringBuffer) {
       return mStringBuffer->Taint();
@@ -302,8 +302,6 @@ class MOZ_STACK_CLASS DOMString {
       return StringBufferLength();
     } else if (HasLiteral()) {
       return LiteralLength();
-    } else if (HasAtom()) {
-      return mAtom->GetLength();
     } else {
       return mString->Length();
     }

@@ -266,17 +266,9 @@ class XPCStringConvert {
                           nsStringBuffer** sharedBuffer,
                           JS::MutableHandle<JS::Value> vp);
 
-  static MOZ_ALWAYS_INLINE bool StringBufferToJSVal(
-      JSContext* cx, nsStringBuffer* buf, uint32_t length,
-      JS::MutableHandle<JS::Value> rval, bool* sharedBuffer) {
-    const StringTaint& taint = buf ? buf->Taint() : EmptyTaint;
-    return StringBufferToJSVal(cx, buf, length, taint, rval, sharedBuffer);
-  }
-
   // Convert the given stringbuffer/length pair to a jsval
   static MOZ_ALWAYS_INLINE bool UCStringBufferToJSVal(
       JSContext* cx, nsStringBuffer* buf, uint32_t length,
-      const StringTaint& taint,
       JS::MutableHandle<JS::Value> rval, bool* sharedBuffer) {
     JSString* str = JS_NewMaybeExternalUCString(
         cx, static_cast<const char16_t*>(buf->Data()), length,
@@ -284,6 +276,10 @@ class XPCStringConvert {
     if (!str) {
       return false;
     }
+
+    // TaintFox: Transfer taint information to newly created JS string.
+    JS_SetStringTaint(cx, str, buf->Taint());
+
     rval.setString(str);
     return true;
   }
@@ -297,6 +293,10 @@ class XPCStringConvert {
     if (!str) {
       return false;
     }
+
+    // TaintFox: Transfer taint information to newly created JS string.
+    JS_SetStringTaint(cx, str, buf->Taint());
+
     rval.setString(str);
     return true;
   }
@@ -312,7 +312,7 @@ class XPCStringConvert {
     }
 
     // TaintFox: Transfer taint information to newly created JS string.
-    JS_SetStringTaint(cx, str, taint);
+    JS_SetStringTaint(cx, str, buf->Taint());
 
     rval.setString(str);
     return true;
@@ -340,6 +340,7 @@ class XPCStringConvert {
   static inline bool StringLiteralToJSVal(JSContext* cx,
                                           const JS::Latin1Char* literal,
                                           uint32_t length,
+                                          const StringTaint& taint,
                                           JS::MutableHandle<JS::Value> rval) {
     bool ignored;
     JSString* str = JS_NewMaybeExternalStringLatin1(
@@ -347,12 +348,17 @@ class XPCStringConvert {
     if (!str) {
       return false;
     }
+
+    // TaintFox: propagate taint
+    JS_SetStringTaint(cx, str, taint);
+
     rval.setString(str);
     return true;
   }
 
   static inline bool UTF8StringLiteralToJSVal(
       JSContext* cx, const JS::UTF8Chars& chars,
+      const StringTaint& taint,
       JS::MutableHandle<JS::Value> rval) {
     bool ignored;
     JSString* str = JS_NewMaybeExternalStringUTF8(
@@ -360,6 +366,10 @@ class XPCStringConvert {
     if (!str) {
       return false;
     }
+
+    // TaintFox: propagate taint
+    JS_SetStringTaint(cx, str, taint);
+
     rval.setString(str);
     return true;
   }
@@ -529,7 +539,7 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
     nsStringBuffer* buf = str.StringBuffer();
     bool shared;
     // Need to pass Taint explicitly here:
-    if (!XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, str.Taint(), rval,
+    if (!XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, rval,
                                                  &shared)) {
       return false;
     }

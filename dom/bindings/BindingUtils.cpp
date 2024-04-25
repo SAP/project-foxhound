@@ -2636,22 +2636,6 @@ void ConstructJSImplementation(const char* aContractId,
   }
 }
 
-bool NonVoidByteStringToJsval(JSContext* cx, const nsACString& str,
-                              JS::MutableHandle<JS::Value> rval) {
-  // ByteStrings are not UTF-8 encoded.
-  JSString* jsStr = JS_NewStringCopyN(cx, str.Data(), str.Length());
-  if (!jsStr) {
-    return false;
-  }
-
-  // Taintfox: propagate taint
-  JS_SetStringTaint(cx, jsStr, str.Taint());
-
-  rval.setString(jsStr);
-
-  return true;
-}
-
 bool NormalizeUSVString(nsAString& aString) {
   return EnsureUTF16Validity(aString);
 }

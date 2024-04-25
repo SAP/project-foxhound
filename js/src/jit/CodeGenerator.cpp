@@ -11470,7 +11470,8 @@ static void CopyStringChars(MacroAssembler& masm, Register to, Register from,
     size_t charsPerPtr = ptrWidth / fromWidth;
 
     // Unroll small loops.
-    constexpr size_t unrollLoopLimit = 3;
+    // Tainting: Add one more unroll (originally 3) as our strings are slightly bigger
+    constexpr size_t unrollLoopLimit = 4;
     size_t loopCount = std::min(maxInlineLength, maximumLength) / charsPerPtr;
 
 #ifdef JS_64BIT
